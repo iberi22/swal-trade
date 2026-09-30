@@ -31,6 +31,11 @@ jobs:
           bash -n scripts/publish-public-snapshot.sh
           node --check apps/key-spike/app.js
           node --check apps/key-spike/signing.js
+      - name: La página publicada en /lab/keys es idéntica a apps/key-spike
+        run: |
+          for f in index.html app.js signing.js styles.css; do
+            cmp apps/key-spike/$f workers/public-site/static/lab/keys/$f
+          done
 
   synapse-core:
     name: synapse-core (Rust + WASM)
