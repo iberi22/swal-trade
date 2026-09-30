@@ -1,0 +1,121 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --card: #161b22;
+  --line: #2a313c;
+  --text: #e6edf3;
+  --muted: #9aa7b4;
+  --accent: #f0b90b;
+  --danger: #f85149;
+  --ok: #3fb950;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 1rem 3rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+header {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 0 0.5rem;
+}
+
+h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+h2 { font-size: 1.1rem; margin: 0 0 .35rem; }
+h3 { font-size: .9rem; margin: 1.1rem 0 .35rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+.banner {
+  margin: 0;
+  padding: .55rem .8rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(240, 185, 11, .08);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: .9rem;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.1rem 1.2rem;
+}
+
+.hint { color: var(--muted); font-size: .88rem; margin: .2rem 0 .8rem; }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  margin: .5rem 0;
+}
+
+label { color: var(--muted); font-size: .85rem; min-width: 12rem; }
+
+input[type="text"], input[type="password"] {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  padding: .45rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0b0f14;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .85rem;
+}
+
+button {
+  padding: .45rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #21262d;
+  color: var(--text);
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.secondary { background: transparent; color: var(--muted); }
+button.danger { border-color: var(--danger); color: var(--danger); }
+
+pre {
+  margin: .4rem 0 0;
+  padding: .7rem .8rem;
+  background: #0b0f14;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+pre.pem { color: var(--ok); max-height: 14rem; }
+pre.status { color: var(--muted); max-height: 12rem; }
+pre.log { color: var(--text); }
+
+footer {
+  max-width: 960px;
+  margin: 1.2rem auto 0;
+  color: var(--muted);
+  font-size: .8rem;
+}
