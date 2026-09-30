@@ -1,0 +1,10 @@
+{
+  "name": "swal-trade-public-site",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Worker de Cloudflare y página estática pública de swal-trade",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}
