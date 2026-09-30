@@ -552,9 +552,9 @@ impl PositionSizer {
                         "Position size ${:.2} below minimum ${:.2}",
                         position_size_usdt, MIN_POSITION_SIZE_USDT
                     ));
+                    // El motivo concreto (riesgo, margen o balance), no siempre el riesgo.
                     rationale.push(format!(
-                        "Risk cap of ${:.2} cannot host the ${:.2} minimum order: position size set to 0",
-                        max_risk_usdt, MIN_POSITION_SIZE_USDT
+                        "Minimum order not tradable ({reason}): position size set to 0"
                     ));
                     0.0
                 }
