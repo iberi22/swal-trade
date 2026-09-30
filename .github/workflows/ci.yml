@@ -22,11 +22,15 @@ jobs:
           node-version: 22
       - name: Tests del Worker
         run: node --test workers/public-site/test/
+      - name: Tests de la prueba de claves
+        run: node --test apps/key-spike/signing.test.mjs
       - name: Comprobar sintaxis
         run: |
           node --check workers/public-site/src/worker.js
           node --check workers/public-site/static/app.js
           bash -n scripts/publish-public-snapshot.sh
+          node --check apps/key-spike/app.js
+          node --check apps/key-spike/signing.js
 
   security:
     name: security (gitleaks, historial completo)

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://testnet.binancefuture.com wss://testnet.binancefuture.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>Key Spike — Binance Futures TESTNET (no custodio)</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>Key Spike — firma no custodiada</h1>
+  <p class="banner" id="banner">SOLO TESTNET · <span id="base-url"></span> · no es posible cambiar a mainnet en este spike</p>
+</header>
+
+<main>
+  <section class="card" aria-labelledby="t-claves">
+    <h2 id="t-claves">1. Gestión de claves</h2>
+    <p class="hint">Las claves privadas se generan en el navegador como objetos <code>CryptoKey</code> <strong>no exportables</strong> y se guardan en IndexedDB. Nunca salen del dispositivo.</p>
+
+    <div class="row">
+      <button type="button" id="btn-rsa">Generar clave RSA</button>
+      <button type="button" id="btn-ed">Generar clave Ed25519</button>
+    </div>
+
+    <div class="row">
+      <label for="in-hmac">Secreto HMAC (se pega una vez y se borra el campo):</label>
+      <div class="row">
+        <input type="password" id="in-hmac" autocomplete="off" spellcheck="false" placeholder="API secret de testnet">
+        <button type="button" id="btn-hmac">Usar clave HMAC</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="in-apikey">API key (X-MBX-APIKEY, no es un secreto):</label>
+      <input type="text" id="in-apikey" autocomplete="off" spellcheck="false" placeholder="clave de API de testnet">
+    </div>
+
+    <div class="row">
+      <button type="button" id="btn-save-apikey" class="secondary">Guardar API key</button>
+      <button type="button" id="btn-wipe" class="danger">Borrar claves</button>
+    </div>
+
+    <h3>Clave pública (PEM)</h3>
+    <p class="hint">Copia este PEM y pégalo en Binance Futures Testnet → API Management, en el campo de clave pública RSA/Ed25519 autogenerada. Luego guarda la API key que te devuelva.</p>
+    <pre id="out-pubpem" class="pem" tabindex="0">— sin clave generada —</pre>
+    <div class="row">
+      <button type="button" id="btn-copy-pem" class="secondary">Copiar PEM</button>
+    </div>
+
+    <h3>Estado</h3>
+    <pre id="out-status" class="status">— sin estado —</pre>
+  </section>
+
+  <section class="card" aria-labelledby="t-rest">
+    <h2 id="t-rest">2. REST firmado</h2>
+    <p class="hint">Todos los requests llevan <code>recvWindow=5000</code> y el timestamp corregido con el reloj del servidor.</p>
+    <div class="row">
+      <button type="button" id="btn-sync">Sincronizar reloj</button>
+      <button type="button" id="btn-balance">Consultar balance</button>
+      <button type="button" id="btn-order">Orden de prueba</button>
+      <button type="button" id="btn-cancel">Cancelar orden</button>
+      <button type="button" id="btn-test-endpoint" class="secondary">Probar /fapi/v1/order/test</button>
+    </div>
+    <div class="row">
+      <label for="in-orderid">orderId de la última orden (para cancelar):</label>
+      <input type="text" id="in-orderid" inputmode="numeric" placeholder="orderId">
+    </div>
+    <pre id="out-rest" class="log" tabindex="0">— sin peticiones —</pre>
+  </section>
+
+  <section class="card" aria-labelledby="t-ws">
+    <h2 id="t-ws">3. WebSocket API (Ed25519)</h2>
+    <p class="hint">El payload de <code>session.logon</code> se firma con Ed25519 y los parámetros van ordenados alfabéticamente, unidos por <code>&amp;</code>. Los nombres de método son configurables porque la documentación de WS cambia con frecuencia.</p>
+    <div class="row">
+      <label for="in-ws-method">Método de consulta de cuenta:</label>
+      <input type="text" id="in-ws-method" value="v2/account.balance" spellcheck="false">
+    </div>
+    <div class="row">
+      <button type="button" id="btn-ws">Conectar y probar</button>
+      <button type="button" id="btn-ws-close" class="secondary">Cerrar socket</button>
+    </div>
+    <pre id="out-ws" class="log" tabindex="0">— sin conexión —</pre>
+  </section>
+</main>
+
+<footer>
+  <p>Spike técnico. No usar con fondos reales: el endpoint es exclusivamente el testnet de Binance USDⓈ-M Futures.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
