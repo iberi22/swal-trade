@@ -9,6 +9,7 @@ step() { echo; echo "==> $*"; }
 
 step "Tests del Worker"
 node --test workers/public-site/test/ || fail=1
+node --test apps/key-spike/signing.test.mjs || fail=1
 
 step "Sintaxis"
 node --check workers/public-site/src/worker.js || fail=1
