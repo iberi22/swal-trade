@@ -129,7 +129,7 @@ dependencia git:
 
 ```toml
 [dependencies]
-synapse-core = { git = "https://github.com/iberi22/swal-trade", path = "crates/synapse-core" }
+synapse-core = { git = "https://github.com/iberi22/swal-trade" }  # Cargo encuentra el paquete por nombre dentro del repo
 ```
 
 Se usa exactamente el mismo código fuente que corre en el navegador, así que una

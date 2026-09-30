@@ -149,6 +149,19 @@ pub struct SymbolPositionConfig {
     pub max_loss_usdt: f64,
 }
 
+/// Devuelve `v` si es finito, y `0.0` si no.
+///
+/// Para los campos que el plan **muestra** (no los que usa para decidir). Un
+/// `NaN` en un campo de salida acaba en la PWA como un hueco silencioso, y un
+/// `inf` como un número imposible; el motivo del bloqueo ya está en `warnings`.
+fn finite_or_zero(v: f64) -> f64 {
+    if v.is_finite() {
+        v
+    } else {
+        0.0
+    }
+}
+
 /// Calculadora de tamaño de posición.
 #[derive(Debug, Clone)]
 pub struct PositionSizer {
@@ -232,12 +245,57 @@ impl PositionSizer {
         self
     }
 
+    /// Problemas de la configuración del dimensionador, en texto.
+    ///
+    /// Cada uno de estos números es un multiplicador o un divisor del cálculo
+    /// de riesgo, así que un valor roto no produce un plan "sin tope": produce
+    /// un plan cuyo riesgo no se puede conocer. Se devuelven como motivos
+    /// legible en vez de como `Result` para que la PWA los muestre junto al
+    /// resto de advertencias del plan.
+    fn config_problems(&self) -> Vec<String> {
+        let mut problems = Vec::new();
+
+        // 0x no abre posición y hace que `100.0 / leverage` sea infinito, lo
+        // que dejaría el stop loss "seguro" en infinito y el riesgo en 0.
+        if self.leverage == 0 {
+            problems.push("leverage = 0 (the minimum is 1)".to_string());
+        }
+        for (name, value) in [
+            ("max_risk_pct", self.max_risk_pct),
+            ("stop_loss_pct", self.stop_loss_pct),
+            ("take_profit_pct", self.take_profit_pct),
+        ] {
+            if !(value.is_finite() && value > 0.0) {
+                problems.push(format!("{name} = {value} is not a finite positive number"));
+            }
+        }
+        if let Some(cap) = self.max_margin_per_order_usdt {
+            if !(cap.is_finite() && cap > 0.0) {
+                problems.push(format!(
+                    "max_margin_per_order_usdt = {cap} is not a finite positive number"
+                ));
+            }
+        }
+        problems
+    }
+
     /// Calcula el plan de sesión a partir del balance actual.
+    ///
+    /// # Fail closed
+    ///
+    /// Si algún número de entrada o de la configuración no es utilizable —no
+    /// finito, negativo, o `0` en `leverage`— el plan sale **inactivo y con
+    /// tamaño 0**, con el motivo en `warnings`. No se "interpreta" el dato ni
+    /// se asume que vale cero: comparar contra `NaN` devuelve `false` en Rust,
+    /// así que saltarse la validación devolvería un plan con tamaños plausibles
+    /// y riesgo real desconocido.
     ///
     /// # Guardia de volatilidad
     ///
     /// Con `market_volatility` por encima de [`VOLATILITY_THRESHOLD`] el tamaño
     /// se reduce progresivamente; en [`VOLATILITY_MAX`] o más, se bloquea todo.
+    /// Una volatilidad no finita o negativa es "volatilidad desconocida", que
+    /// es el peor caso: se trata como [`VOLATILITY_MAX`].
     pub fn calculate_session_plan(
         &self,
         total_balance: f64,
@@ -249,8 +307,51 @@ impl PositionSizer {
         let mut rationale = Vec::new();
         let mut warnings = Vec::new();
 
-        // 0. Guardia de volatilidad.
-        let volatility_multiplier = if market_volatility >= VOLATILITY_MAX {
+        // 0. Números de entrada y configuración no utilizables: el plan se
+        // bloquea entero. Se comprueba antes de la aritmética para que ningún
+        // `NaN` llegue ni al rationale ni a los campos del plan.
+        let config_problems = self.config_problems();
+        let input_problems = [
+            ("total_balance", total_balance, total_balance >= 0.0),
+            ("unrealized_pnl", unrealized_pnl, true),
+            ("used_margin", used_margin, used_margin >= 0.0),
+        ]
+        .into_iter()
+        .filter(|(_, v, sign_ok)| !(v.is_finite() && *sign_ok))
+        .map(|(name, v, _)| format!("{name} = {v} is not a usable number"))
+        .collect::<Vec<String>>();
+
+        let mut invalid_inputs = config_problems;
+        invalid_inputs.extend(input_problems);
+        let hard_block = !invalid_inputs.is_empty();
+        for problem in &invalid_inputs {
+            warnings.push(format!("⛔ INVALID INPUT: {problem} - plan blocked"));
+            rationale.push(format!("Blocked: {problem}"));
+        }
+
+        // 0b. Guardia de volatilidad. Un valor no finito o negativo no es
+        // "volatilidad baja": es volatilidad desconocida, y se trata como el
+        // extremo. Antes `NaN >= 1.0` y `NaN > 0.5` eran `false`, así que el
+        // NaN caía en la rama de "volatilidad segura" y devolvía el tamaño
+        // completo: fail open con el feed roto.
+        //
+        // El multiplicador se anula también si la entrada o la configuración no
+        // eran utilizables: con `max_risk_pct` en `NaN` la comparación del paso
+        // 6 (`riesgo > NaN`) es `false`, así que el topado de riesgo no se
+        // aplicaría y el plan saldría con el tamaño sin topar.
+        let volatility_usable = market_volatility.is_finite() && market_volatility >= 0.0;
+        let volatility_multiplier = if hard_block {
+            // Ya avisado en el paso 0, no hace falta un segundo motivo aquí.
+            0.0
+        } else if !volatility_usable {
+            warnings.push(format!(
+                "⛔ INVALID VOLATILITY: market_volatility = {market_volatility} is not a usable number: all positions BLOCKED"
+            ));
+            rationale.push(format!(
+                "Volatility {market_volatility} is not a usable number: treated as the extreme case, position size set to 0"
+            ));
+            0.0
+        } else if market_volatility >= VOLATILITY_MAX {
             warnings.push("⛔ EXTREME VOLATILITY: All positions BLOCKED".to_string());
             rationale.push(format!(
                 "Volatility {:.1}% >= {:.0}%: Position size set to 0",
@@ -331,14 +432,19 @@ impl PositionSizer {
             0.0
         };
 
-        // 4b. Guardia de volatilidad sobre el tamaño.
+        // 4b. Guardia de volatilidad sobre el tamaño. Con la volatilidad no
+        // utilizable o con el plan ya bloqueado por la entrada, el motivo
+        // está en el paso 0, así que aquí no se repite con un `NaN` dentro
+        // del texto.
         if volatility_multiplier < 1.0 {
             let original_size = base_position_size;
             base_position_size *= volatility_multiplier;
-            warnings.push(format!(
-                "⚠️ VOLATILITY GUARD: Position size reduced from ${:.2} -> ${:.2} (volatility: {:.1}%)",
-                original_size, base_position_size, market_volatility * 100.0
-            ));
+            if volatility_usable && !hard_block {
+                warnings.push(format!(
+                    "⚠️ VOLATILITY GUARD: Position size reduced from ${:.2} -> ${:.2} (volatility: {:.1}%)",
+                    original_size, base_position_size, market_volatility * 100.0
+                ));
+            }
         }
 
         // 4c. Tope de margen por orden. Solo puede reducir.
@@ -371,8 +477,12 @@ impl PositionSizer {
         };
 
         // 6. Ajuste al tope de riesgo.
-        let (position_size_usdt, adjusted_risk_pct) = if risk_per_trade_pct > self.max_risk_pct {
-            let max_risk_usdt = equity * (self.max_risk_pct / 100.0);
+        //
+        // `max_risk_usdt` se calcula una vez y se reutiliza en el paso 7: es el
+        // presupuesto de riesgo real (nocional x SL%) que la operación puede
+        // consumir, en USDT.
+        let max_risk_usdt = (equity * (self.max_risk_pct / 100.0)).max(0.0);
+        let position_size_usdt = if risk_per_trade_pct > self.max_risk_pct {
             let adjusted_size =
                 max_risk_usdt / (self.leverage as f64 * (self.stop_loss_pct / 100.0));
             warnings.push(format!(
@@ -383,22 +493,80 @@ impl PositionSizer {
                 "Risk capped at {:.1}% per trade (${:.2})",
                 self.max_risk_pct, max_risk_usdt
             ));
-            (adjusted_size, self.max_risk_pct)
+            adjusted_size
         } else {
-            (base_position_size, risk_per_trade_pct)
+            base_position_size
         };
 
         // 7. Tamaño mínimo.
-        let final_position_size =
-            if position_size_usdt < MIN_POSITION_SIZE_USDT && position_size_usdt > 0.0 {
-                warnings.push(format!(
-                    "Position size ${:.2} below minimum ${:.2}",
-                    position_size_usdt, MIN_POSITION_SIZE_USDT
-                ));
-                MIN_POSITION_SIZE_USDT
+        //
+        // El exchange no acepta órdenes por debajo de MIN_POSITION_SIZE_USDT,
+        // así que hay que subir hasta ahí… pero SOLO si subir no rompe ninguna
+        // de las tres cosas que el tamaño tiene que respetar: el tope de
+        // riesgo, el tope de margen por orden y el balance disponible. Subir a
+        // ciegas convertía un topado de $0,40 en una orden de $1,00 que
+        // arriesga 2,5 veces lo permitido: el dimensionador dejaba de ser
+        // conservador para fabricar una orden inenviable.
+        //
+        // Cuando la subida no cabe, no se sube: el plan sale con tamaño 0 y el
+        // motivo en `warnings`. Preferimos no operar a operar con más riesgo
+        // del que la persona usuaria autorizó, y el caso real es una cuenta
+        // tan pequeña que ni la orden mínima le sale rentable.
+        let final_position_size = if position_size_usdt >= MIN_POSITION_SIZE_USDT {
+            position_size_usdt
+        } else if position_size_usdt <= 0.0 {
+            // No hay nada que subir: o no hay slots, o no hay balance, o la
+            // volatilidad ya lo dejó a cero.
+            0.0
+        } else {
+            // Riesgo real (nocional x SL%) que arrastraría la orden mínima.
+            let min_risk_usdt =
+                MIN_POSITION_SIZE_USDT * self.leverage as f64 * (self.stop_loss_pct / 100.0);
+            let margin_cap = self.max_margin_per_order_usdt.unwrap_or(f64::INFINITY);
+
+            let blocked_by = if min_risk_usdt > max_risk_usdt {
+                Some(format!(
+                    "el tamaño mínimo del exchange supera el riesgo permitido (${:.2} de margen arriesgarían ${:.2} y el tope es ${:.2})",
+                    MIN_POSITION_SIZE_USDT, min_risk_usdt, max_risk_usdt
+                ))
+            } else if MIN_POSITION_SIZE_USDT > margin_cap {
+                Some(format!(
+                    "el tamaño mínimo del exchange supera el tope de margen por orden (${:.2} > ${:.2})",
+                    MIN_POSITION_SIZE_USDT, margin_cap
+                ))
+            } else if MIN_POSITION_SIZE_USDT > available_balance {
+                Some(format!(
+                    "el tamaño mínimo del exchange supera el balance disponible (${:.2} > ${:.2})",
+                    MIN_POSITION_SIZE_USDT, available_balance
+                ))
             } else {
-                position_size_usdt
+                None
             };
+
+            match blocked_by {
+                Some(reason) => {
+                    warnings.push(format!(
+                        "⛔ MINIMUM ORDER NOT TRADABLE: {reason}: position blocked at $0.00"
+                    ));
+                    warnings.push(format!(
+                        "Position size ${:.2} below minimum ${:.2}",
+                        position_size_usdt, MIN_POSITION_SIZE_USDT
+                    ));
+                    rationale.push(format!(
+                        "Risk cap of ${:.2} cannot host the ${:.2} minimum order: position size set to 0",
+                        max_risk_usdt, MIN_POSITION_SIZE_USDT
+                    ));
+                    0.0
+                }
+                None => {
+                    warnings.push(format!(
+                        "Position size ${:.2} below minimum ${:.2}",
+                        position_size_usdt, MIN_POSITION_SIZE_USDT
+                    ));
+                    MIN_POSITION_SIZE_USDT
+                }
+            }
+        };
 
         // 8. Nocional con apalancamiento.
         let position_notional = final_position_size * self.leverage as f64;
@@ -424,11 +592,22 @@ impl PositionSizer {
         ));
 
         // 10. Riesgo final (riesgo nocional real: margen x apalancamiento x SL%).
+        //
+        // Se calcula sobre el tamaño FINAL, después de la subida al mínimo del
+        // exchange, y el porcentaje se deriva de aquí. Antes el
+        // `risk_per_trade_pct` venía del paso 6, es decir, de antes de esa
+        // subida: el plan podía reportar 0,4% de riesgo y llevar una posición
+        // que arriesgaba el triple. Un plan bloqueado reporta 0 y 0.
         let final_risk_usdt =
             final_position_size * self.leverage as f64 * (max_stop_loss_pct / 100.0);
+        let risk_per_trade_pct = if equity > 0.0 {
+            (final_risk_usdt / equity) * 100.0
+        } else {
+            0.0
+        };
         rationale.push(format!(
             "Risk per trade: ${:.2} ({:.2}% of equity)",
-            final_risk_usdt, adjusted_risk_pct
+            final_risk_usdt, risk_per_trade_pct
         ));
 
         // 11. Riesgo total de cartera.
@@ -464,8 +643,13 @@ impl PositionSizer {
                 "Paper".to_string()
             },
             strategy_name: self.strategy_name.clone(),
-            total_balance,
-            reserved_balance,
+            // Se devuelven solo si son finitos: con una entrada corrupta el
+            // plan va bloqueado (tamaño 0, inactivo) y estos dos campos son
+            // los que la PWA pinta como "saldo" y "reserva". Un `NaN` ahí se
+            // vería como "—" sin explicación, y un `inf` rompería el cálculo
+            // del siguiente plan.
+            total_balance: finite_or_zero(total_balance),
+            reserved_balance: finite_or_zero(reserved_balance),
             available_balance,
             max_positions,
             current_positions: current_open_positions,
@@ -475,7 +659,7 @@ impl PositionSizer {
             leverage: self.leverage,
             max_stop_loss_pct,
             risk_per_trade_usdt: final_risk_usdt,
-            risk_per_trade_pct: adjusted_risk_pct,
+            risk_per_trade_pct,
             symbol_configs: HashMap::new(),
             rationale,
             warnings,
@@ -484,18 +668,40 @@ impl PositionSizer {
     }
 
     /// Calcula la configuración de posición de un símbolo concreto.
+    ///
+    /// # Errores
+    ///
+    /// Falla si `current_price` no es un precio utilizable. Antes dividía
+    /// directamente, y con `0` daba `inf`, con `NaN` daba `NaN` y con un
+    /// precio negativo daba una cantidad negativa: los tres llegaban a la PWA
+    /// como una configuración de posición aparentemente válida. Aquí el
+    /// `Err` es explícito para que quien llame no pueda ignorarlo.
     pub fn calculate_symbol_config(
         &self,
         plan: &TradingSessionPlan,
         symbol: &str,
         current_price: f64,
-    ) -> SymbolPositionConfig {
+    ) -> Result<SymbolPositionConfig, String> {
+        if !(current_price.is_finite() && current_price > 0.0) {
+            return Err(format!(
+                "Invalid current_price for {symbol}: {current_price} (expected a finite positive price)"
+            ));
+        }
+        // El nocional del plan también tiene que ser utilizable: un plan con
+        // `NaN` no se puede convertir en cantidad.
+        if !plan.position_notional.is_finite() {
+            return Err(format!(
+                "Invalid plan position_notional: {} (expected a finite USDT amount)",
+                plan.position_notional
+            ));
+        }
+
         let quantity = plan.position_notional / current_price;
 
         let sl_distance = current_price * (plan.max_stop_loss_pct / 100.0);
         let tp_distance = current_price * (self.take_profit_pct / 100.0);
 
-        SymbolPositionConfig {
+        Ok(SymbolPositionConfig {
             symbol: symbol.to_string(),
             current_price,
             quantity,
@@ -504,7 +710,7 @@ impl PositionSizer {
             take_profit_price_long: current_price + tp_distance,
             take_profit_price_short: current_price - tp_distance,
             max_loss_usdt: plan.risk_per_trade_usdt,
-        }
+        })
     }
 }
 
@@ -611,7 +817,9 @@ mod tests {
     fn test_symbol_config() {
         let sizer = PositionSizer::new("Moderate", true, 10, 2.0, 4.0);
         let plan = sizer.calculate_session_plan(5000.0, 0, 0.0, 0.0, 0.0);
-        let config = sizer.calculate_symbol_config(&plan, "BTCUSDT", 95000.0);
+        let config = sizer
+            .calculate_symbol_config(&plan, "BTCUSDT", 95000.0)
+            .expect("precio válido");
 
         println!("Symbol config: {config:?}");
         assert!(config.quantity > 0.0);
@@ -813,5 +1021,330 @@ mod tests {
         let plan = sizer.calculate_session_plan(1000.0, 0, 0.0, 0.0, 0.0);
         assert_eq!(plan.created_at_ms, 1_700_000_000_000);
         assert_eq!(plan.session_id, "Clocked-paper-1700000000000");
+    }
+
+    // -----------------------------------------------------------------------
+    // Fail closed: la volatilidad no utilizable no es "volatilidad baja".
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn non_finite_volatility_blocks_the_plan() {
+        // Antes `NaN >= 1.0` y `NaN > 0.5` eran `false`: el NaN caía en la
+        // rama de "volatilidad segura" y devolvía el tamaño completo.
+        let sizer = PositionSizer::new("Feed", false, 10, 2.0, 4.0);
+        let healthy = sizer.calculate_session_plan(1000.0, 0, 0.0, 0.0, 0.10);
+
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1] {
+            let plan = sizer.calculate_session_plan(1000.0, 0, 0.0, 0.0, bad);
+            assert_eq!(
+                plan.position_size_usdt, 0.0,
+                "volatility {bad} must block the plan, got {}",
+                plan.position_size_usdt
+            );
+            assert_eq!(plan.position_notional, 0.0, "volatility {bad}");
+            assert!(
+                !plan.is_active,
+                "volatility {bad} must leave the plan inactive"
+            );
+            assert!(
+                plan.warnings
+                    .iter()
+                    .any(|w| w.contains("INVALID VOLATILITY")),
+                "volatility {bad}: {:?}",
+                plan.warnings
+            );
+            // Todos los números que la PWA usa para decidir tienen que ser
+            // finitos y cero: el bloqueo es total, no parcial.
+            assert_eq!(plan.position_size_usdt, 0.0, "volatility {bad}");
+            assert_eq!(plan.position_notional, 0.0, "volatility {bad}");
+            assert_eq!(plan.risk_per_trade_usdt, 0.0, "volatility {bad}");
+            assert_eq!(plan.risk_per_trade_pct, 0.0, "volatility {bad}");
+            assert!(plan.max_stop_loss_pct.is_finite(), "volatility {bad}");
+            let (can, _reason) = can_execute_trade(&plan, 0);
+            assert!(!can, "volatility {bad} must not allow trading");
+        }
+
+        // Y el plan sano sigue igual que antes del cambio.
+        assert!(healthy.position_size_usdt > 0.0);
+        assert!(healthy.is_active);
+    }
+
+    #[test]
+    fn zero_volatility_is_still_the_healthy_case() {
+        // Frontera: 0% de volatilidad es un dato válido y medible.
+        let sizer = PositionSizer::new("Calm", false, 10, 2.0, 4.0);
+        let plan = sizer.calculate_session_plan(1000.0, 0, 0.0, 0.0, 0.0);
+        assert!(plan.position_size_usdt > 0.0);
+        assert!(plan.is_active);
+        assert!(!plan.warnings.iter().any(|w| w.contains("INVALID")));
+    }
+
+    #[test]
+    fn invalid_configuration_blocks_the_plan() {
+        // Mismo criterio para la configuración: `max_risk_pct` en `NaN` hace
+        // que el topado de riesgo no se aplique, así que el plan tiene que
+        // salir bloqueado, no "sin tope".
+        let cases: Vec<(PositionSizer, &str)> = vec![
+            (
+                PositionSizer::new("ZeroLev", false, 0, 2.0, 4.0),
+                "leverage = 0",
+            ),
+            (
+                PositionSizer::new("NaNRisk", false, 10, 2.0, 4.0).with_max_risk_pct(f64::NAN),
+                "max_risk_pct",
+            ),
+            (
+                PositionSizer::new("NegRisk", false, 10, 2.0, 4.0).with_max_risk_pct(-1.0),
+                "max_risk_pct",
+            ),
+            (
+                PositionSizer::new("NaNSl", false, 10, f64::NAN, 4.0),
+                "stop_loss_pct",
+            ),
+            (
+                PositionSizer::new("NaNTp", false, 10, 2.0, f64::NAN),
+                "take_profit_pct",
+            ),
+            (
+                PositionSizer::new("NaNCap", false, 10, 2.0, 4.0)
+                    .with_max_margin_per_order(Some(f64::NAN)),
+                "max_margin_per_order_usdt",
+            ),
+        ];
+
+        for (sizer, needle) in cases {
+            let plan = sizer.calculate_session_plan(10_000.0, 0, 0.0, 0.0, 0.0);
+            assert_eq!(
+                plan.position_size_usdt, 0.0,
+                "{needle}: got {}",
+                plan.position_size_usdt
+            );
+            assert!(!plan.is_active, "{needle}");
+            assert!(
+                plan.warnings
+                    .iter()
+                    .any(|w| w.contains("INVALID INPUT") && w.contains(needle)),
+                "{needle}: {:?}",
+                plan.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_account_input_blocks_the_plan() {
+        let sizer = PositionSizer::new("Acct", false, 10, 2.0, 4.0);
+
+        for (balance, pnl, margin, needle) in [
+            (f64::NAN, 0.0, 0.0, "total_balance"),
+            (-100.0, 0.0, 0.0, "total_balance"),
+            (1000.0, f64::NAN, 0.0, "unrealized_pnl"),
+            (1000.0, f64::INFINITY, 0.0, "unrealized_pnl"),
+            (1000.0, 0.0, f64::NAN, "used_margin"),
+            (1000.0, 0.0, -5.0, "used_margin"),
+        ] {
+            let plan = sizer.calculate_session_plan(balance, 0, pnl, margin, 0.0);
+            assert_eq!(plan.position_size_usdt, 0.0, "{needle}");
+            assert!(!plan.is_active, "{needle}");
+            // Los saldos que la PWA pinta no pueden ser NaN ni inf.
+            assert!(plan.total_balance.is_finite(), "{needle}");
+            assert!(plan.reserved_balance.is_finite(), "{needle}");
+            assert!(plan.available_balance.is_finite(), "{needle}");
+            assert!(plan.risk_per_trade_usdt.is_finite(), "{needle}");
+            assert!(plan.risk_per_trade_pct.is_finite(), "{needle}");
+            assert!(
+                plan.warnings
+                    .iter()
+                    .any(|w| w.contains("INVALID INPUT") && w.contains(needle)),
+                "{needle}: {:?}",
+                plan.warnings
+            );
+        }
+    }
+
+    #[test]
+    fn blocked_plan_reports_zero_risk() {
+        // Un plan bloqueado tiene que reportar 0 de riesgo en las dos unidades,
+        // no el riesgo del tamaño que NO se va a abrir.
+        let sizer = PositionSizer::new("NaNRisk", false, 10, 2.0, 4.0).with_max_risk_pct(f64::NAN);
+        let plan = sizer.calculate_session_plan(10_000.0, 0, 0.0, 0.0, 0.0);
+        assert_eq!(plan.risk_per_trade_usdt, 0.0);
+        assert_eq!(plan.risk_per_trade_pct, 0.0);
+        assert_eq!(plan.position_notional, 0.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // La subida al mínimo del exchange no puede romper ningún tope.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn minimum_bump_is_refused_when_it_exceeds_the_risk_cap() {
+        // Equity 10, tope 2% => $0,20 de riesgo. Con 20x y SL del 2%, el
+        // mínimo del exchange ($1 de margen) arriesgaría $0,40: el doble de
+        // lo permitido. Antes se subía a $1 y se perdía el topado.
+        let sizer = PositionSizer::new("Micro", true, 20, 2.0, 4.0).with_real_max_positions(3);
+        let plan = sizer.calculate_session_plan(10.0, 0, 0.0, 0.0, 0.0);
+
+        assert_eq!(plan.position_size_usdt, 0.0);
+        assert_eq!(plan.position_notional, 0.0);
+        assert_eq!(plan.risk_per_trade_usdt, 0.0);
+        assert_eq!(plan.risk_per_trade_pct, 0.0);
+        assert!(!plan.is_active);
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| w.contains("el tamaño mínimo del exchange supera el riesgo permitido")),
+            "{:?}",
+            plan.warnings
+        );
+        let (can, reason) = can_execute_trade(&plan, 0);
+        assert!(!can, "un plan bloqueado no se puede ejecutar");
+        assert!(reason.contains("not active"), "{reason}");
+    }
+
+    #[test]
+    fn minimum_bump_is_refused_when_it_exceeds_the_margin_cap() {
+        // Con tope de margen de $0,50 no hay forma de llegar al mínimo de $1.
+        let sizer = PositionSizer::new("Capped", false, 5, 1.0, 2.0)
+            .with_paper_max_positions(20)
+            .with_max_margin_per_order(Some(0.5));
+        let plan = sizer.calculate_session_plan(1000.0, 0, 0.0, 0.0, 0.0);
+
+        assert_eq!(plan.position_size_usdt, 0.0);
+        assert!(!plan.is_active);
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| w
+                    .contains("el tamaño mínimo del exchange supera el tope de margen por orden")),
+            "{:?}",
+            plan.warnings
+        );
+    }
+
+    #[test]
+    fn minimum_bump_is_refused_when_it_exceeds_the_available_balance() {
+        // Cuenta micro: equity 1,01 (< 50) con 5% de reserva deja $0,9595
+        // disponibles, por debajo del mínimo de $1 del exchange. Con 1x y SL
+        // del 2% el presupuesto de riesgo ($0,0202) sí alcanza para el mínimo
+        // ($0,02), así que el tope de riesgo NO es lo que bloquea: es que no
+        // hay balance para llegar al mínimo. Por eso el apalancamiento es 1x.
+        let sizer = PositionSizer::new("Micro", false, 1, 2.0, 4.0).with_paper_max_positions(1);
+        let plan = sizer.calculate_session_plan(1.01, 0, 0.0, 0.0, 0.0);
+
+        assert!(
+            plan.available_balance > 0.0,
+            "el reparto tiene que ser positivo"
+        );
+        assert!(
+            plan.available_balance < MIN_POSITION_SIZE_USDT,
+            "el caso tiene que ser real: available = {}",
+            plan.available_balance
+        );
+        assert_eq!(plan.position_size_usdt, 0.0);
+        assert!(!plan.is_active);
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| w.contains("el tamaño mínimo del exchange supera el balance disponible")),
+            "{:?}",
+            plan.warnings
+        );
+    }
+
+    #[test]
+    fn minimum_bump_is_applied_when_every_tope_allows_it() {
+        // El camino bueno: el reparto sale por debajo del mínimo, pero subir a
+        // $1 cabe en el balance y en el tope de riesgo (10x x SL 1% = $0,10 de
+        // riesgo con $1 de margen, contra un presupuesto de $0,40).
+        let sizer = PositionSizer::new("Small", false, 10, 1.0, 2.0).with_paper_max_positions(20);
+        let plan = sizer.calculate_session_plan(20.0, 0, 0.0, 0.0, 0.0);
+
+        assert_eq!(plan.position_size_usdt, MIN_POSITION_SIZE_USDT);
+        assert_eq!(plan.position_notional, 10.0);
+        assert!(plan.is_active);
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|w| w.contains("below minimum") && !w.contains("NOT TRADABLE")),
+            "{:?}",
+            plan.warnings
+        );
+        // El riesgo reportado es el del tamaño SUBIDO, no el del reparto.
+        // $1 de margen x 10x x 1% = $0,10 sobre $20 de equity = 0,5%.
+        assert!(
+            (plan.risk_per_trade_usdt - 0.10).abs() < 1e-9,
+            "got {}",
+            plan.risk_per_trade_usdt
+        );
+        assert!(
+            (plan.risk_per_trade_pct - 0.5).abs() < 1e-9,
+            "got {}",
+            plan.risk_per_trade_pct
+        );
+    }
+
+    #[test]
+    fn reported_risk_matches_the_final_size_in_the_normal_case() {
+        // Sin subida al mínimo, el porcentaje reportado tiene que seguir siendo
+        // el del tamaño planificado: el cambio del paso 10 no puede alterar el
+        // caso normal.
+        let sizer = PositionSizer::new("Normal", true, 10, 2.0, 4.0);
+        let plan = sizer.calculate_session_plan(5000.0, 0, 0.0, 0.0, 0.0);
+
+        let expected_pct = (plan.risk_per_trade_usdt / (plan.total_balance + 0.0)) * 100.0;
+        assert!(
+            (plan.risk_per_trade_pct - expected_pct).abs() < 1e-9,
+            "{} vs {}",
+            plan.risk_per_trade_pct,
+            expected_pct
+        );
+        assert!(plan.risk_per_trade_pct <= MAX_RISK_PER_TRADE_PCT);
+    }
+
+    // -----------------------------------------------------------------------
+    // `calculate_symbol_config` no divide por un precio no utilizable.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn symbol_config_rejects_invalid_price() {
+        let sizer = PositionSizer::new("Px", true, 10, 2.0, 4.0);
+        let plan = sizer.calculate_session_plan(5000.0, 0, 0.0, 0.0, 0.0);
+
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -95000.0] {
+            let err = sizer
+                .calculate_symbol_config(&plan, "BTCUSDT", bad)
+                .unwrap_err();
+            assert!(err.contains("Invalid current_price"), "price {bad}: {err}");
+            assert!(
+                err.contains("BTCUSDT"),
+                "el motivo debe nombrar el símbolo: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn symbol_config_handles_the_smallest_valid_price() {
+        // 1e-300 es un precio absurdity pequeño pero finito y positivo: la
+        // cantidad será enorme, pero no inválida.
+        let sizer = PositionSizer::new("Px", true, 10, 2.0, 4.0);
+        let plan = sizer.calculate_session_plan(5000.0, 0, 0.0, 0.0, 0.0);
+        let config = sizer
+            .calculate_symbol_config(&plan, "BTCUSDT", 1e-300)
+            .expect("1e-300 es un precio válido");
+        assert!(config.quantity.is_finite());
+        assert!(config.stop_loss_price_long.is_finite());
+    }
+
+    #[test]
+    fn symbol_config_rejects_a_corrupt_plan_notional() {
+        // Aunque el precio sea bueno, un nocional corrupto no se puede
+        // convertir en cantidad.
+        let sizer = PositionSizer::new("Px", true, 10, 2.0, 4.0);
+        let mut plan = sizer.calculate_session_plan(5000.0, 0, 0.0, 0.0, 0.0);
+        plan.position_notional = f64::NAN;
+        let err = sizer
+            .calculate_symbol_config(&plan, "BTCUSDT", 95000.0)
+            .unwrap_err();
+        assert!(err.contains("position_notional"), "{err}");
     }
 }

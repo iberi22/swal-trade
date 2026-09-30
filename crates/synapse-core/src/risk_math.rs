@@ -183,7 +183,18 @@ const TARGET_VOL: f64 = 0.02;
 ///
 /// Fórmula: `(base_leverage * 0.02 / atr_pct).clamp(min_leverage, max_leverage)`
 ///
-/// Devuelve `min_leverage` cuando `atr_pct` es cero o no finito.
+/// # Configuración inválida
+///
+/// Cualquier entrada no finita, o un `atr_pct`/`base_leverage` no positivo,
+/// devuelve `min_leverage`: es el mismo suelo que se aplica cuando no se puede
+/// calcular el valor, y es el lado conservador porque nunca devuelve más
+/// apalancamiento del pedido en un mercado que no se puede medir.
+///
+/// Los límites invertidos (`min_leverage > max_leverage`) también devuelven
+/// `min_leverage`. `f64::clamp` entra en pánico si `min > max`, así que la
+/// función **no puede** delegar el recorte en él sin comprobarlo antes. Sin ese
+/// chequeo, un par de límites mal configurado (por ejemplo `min = 10`,
+/// `max = 1`) abortaba el hilo: en WASM, la pestaña entera.
 #[inline]
 pub fn calc_dynamic_leverage(
     atr_pct: f64,
@@ -199,6 +210,11 @@ pub fn calc_dynamic_leverage(
         return min_leverage;
     }
     if atr_pct <= 0.0 || base_leverage <= 0.0 {
+        return min_leverage;
+    }
+    // `f64::clamp` hace `assert!(min <= max)`: con los límites al revés el
+    // pánico es inmediato. Se decide aquí, antes de recortar.
+    if min_leverage > max_leverage {
         return min_leverage;
     }
 
@@ -322,5 +338,44 @@ mod tests {
         // atr=2.5%, base=5x => 5 * 0.02 / 0.025 = 4.0
         let lev = calc_dynamic_leverage(0.025, 5.0, 10.0, 1.0);
         assert!((lev - 4.0).abs() < 1e-12, "expected 4.0, got {lev}");
+    }
+
+    #[test]
+    fn inverted_bounds_do_not_panic_and_return_min() {
+        // `f64::clamp` hace `assert!(min <= max)`: con min > max entraba en
+        // pánico y abortaba el hilo (en WASM, la pestaña entera).
+        let lev = calc_dynamic_leverage(0.02, 3.0, 1.0, 10.0);
+        assert!(
+            (lev - 10.0).abs() < 1e-12,
+            "expected min_leverage 10.0, got {lev}"
+        );
+    }
+
+    #[test]
+    fn inverted_bounds_are_safe_on_every_atr() {
+        // El mismo par de límites invertidos con cualquier volatilidad: tiene
+        // que devolver siempre el suelo, nunca entrar en pánico.
+        for atr in [0.001, 0.005, 0.02, 0.1, 0.5, 1.0, 10.0, 1000.0] {
+            let lev = calc_dynamic_leverage(atr, 5.0, 1.0, 10.0);
+            assert!(
+                (lev - 10.0).abs() < 1e-12,
+                "atr {atr}: expected 10.0, got {lev}"
+            );
+        }
+    }
+
+    #[test]
+    fn equal_bounds_do_not_panic() {
+        // min == max es legal para `clamp` y deja un único valor posible.
+        let lev = calc_dynamic_leverage(0.02, 3.0, 4.0, 4.0);
+        assert!((lev - 4.0).abs() < 1e-12, "expected 4.0, got {lev}");
+    }
+
+    #[test]
+    fn inverted_bounds_with_non_finite_atr_still_return_min() {
+        // El chequeo de límites invertidos no puede alterar la salida de las
+        // rutas ya tratadas: NaN sigue devolviendo min_leverage.
+        let lev = calc_dynamic_leverage(f64::NAN, 3.0, 1.0, 10.0);
+        assert!((lev - 10.0).abs() < 1e-12, "expected 10.0, got {lev}");
     }
 }

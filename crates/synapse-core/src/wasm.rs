@@ -2,12 +2,20 @@
 //!
 //! Solo se compila con `--features wasm`. Todos los enlaces reciben y devuelven
 //! `JsValue` mediante `serde-wasm-bindgen`, así que el contrato con el
-//! frontend es JSON: los `snake_case` de Rust se convierten a `camelCase` en
-//! JavaScript, y los `Option<f64>` de los indicadores llegan como `null`.
+//! frontend es JSON: los campos se **nombran en `camelCase`** en JavaScript y en
+//! Rust siguen siendo `snake_case`, y los `Option<f64>` de los indicadores
+//! llegan como `null`.
+//!
+//! Los `rename_all = "camelCase"` viven en los propios structs ([`SizePositionInput`]
+//! y los tres de `order_guard`), no aquí, para que la regla se vea en la
+//! definición del dato y no dependa de que alguien la aplique desde este
+//! módulo. Así el mismo JSON vale para la PWA y para el backend privado que
+//! consume el crate en nativo.
 //!
 //! Un fallo de deserialización se devuelve como `Err(JsValue)` con el mensaje
 //! del error, no como excepción de Rust: el frontend decide cómo mostrarlo.
 
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::indicators;
@@ -17,7 +25,13 @@ use crate::sizing::{PositionSizer, TradingSessionPlan};
 /// Entrada de [`size_position`]: los parámetros del dimensionador más el reloj
 /// inyectado. Los campos de override son opcionales y, si faltan, se usan los
 /// valores por defecto de la librería.
+///
+/// `camelCase` porque es un struct que existe **solo** para la frontera con
+/// JavaScript: es exactamente el objeto que la PWA construye y pasa a
+/// `sizePosition`. Sin el `rename_all`, un objeto con `totalBalance` fallaba al
+/// deserializar y la PWA no tenía forma de calcular el plan.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SizePositionInput {
     strategy_name: String,
     is_real: bool,
@@ -41,8 +55,26 @@ struct SizePositionInput {
     now_ms: i64,
 }
 
-fn to_js<T: serde::Serialize>(value: &T) -> Result<JsValue, JsValue> {
-    serde_wasm_bindgen::to_value(value).map_err(|e| JsValue::from_str(&e.to_string()))
+/// Serializa hacia JavaScript con el serializador **JSON compatible** de
+/// `serde-wasm-bindgen`.
+///
+/// Sin esto, `to_value` usa el serializador por defecto, que se comporta de
+/// forma distinta a JSON en dos puntos que la PWA nota:
+///
+/// - los mapas salen como `Map` de JavaScript, no como objetos. El
+///   `symbol_configs` del plan aparecería como `Map` y no se podría leer con
+///   `config.BTCUSDT.quantity` ni recorrer con `Object.entries`;
+/// - los enteros de 64 bits salen como `BigInt` cuando el valor no cabe en un
+///   `f64` exacto, y comparar un `BigInt` con un número lanza `TypeError`.
+///
+/// `json_compatible()` arregla los dos: objetos planos, números como números y
+/// `None`/`()` como `null` en vez de `undefined`. El resultado se puede
+/// convertir con `JSON.stringify` sin pérdida.
+fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsValue> {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    value
+        .serialize(&serializer)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 fn from_js<T: serde::de::DeserializeOwned>(value: JsValue) -> Result<T, JsValue> {
@@ -55,9 +87,9 @@ fn series(values: JsValue) -> Result<Vec<f64>, JsValue> {
 
 /// Verifica una orden contra los límites y el estado de la cuenta.
 ///
-/// Recibe tres objetos (`order`, `limits`, `account`) y devuelve
-/// `{ decision: "allow" }` o `{ decision: "reject", reasons: [...] }` con los
-/// motivos en español.
+/// Recibe tres objetos (`order`, `limits`, `account`) con los campos en
+/// `camelCase` y devuelve `{ decision: "allow" }` o
+/// `{ decision: "reject", reasons: [...] }` con los motivos en español.
 #[wasm_bindgen]
 pub fn check_order(order: JsValue, limits: JsValue, account: JsValue) -> Result<JsValue, JsValue> {
     let order: OrderIntent = from_js(order)?;
@@ -133,4 +165,58 @@ pub fn atr(
     let lows = series(lows)?;
     let closes = series(closes)?;
     to_js(&indicators::atr(&highs, &lows, &closes, period as usize))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_position_input_deserializes_from_camel_case() {
+        let json = r#"{
+            "strategyName": "test_strat",
+            "isReal": true,
+            "leverage": 10,
+            "stopLossPct": 1.5,
+            "takeProfitPct": 3.0,
+            "totalBalance": 1000.0,
+            "currentOpenPositions": 2,
+            "unrealizedPnl": 25.0,
+            "usedMargin": 50.0,
+            "marketVolatility": 0.02,
+            "maxMarginPerOrderUsdt": 100.0,
+            "paperMaxPositions": 5,
+            "realMaxPositions": 3,
+            "maxRiskPct": 2.0,
+            "nowMs": 1700000000000
+        }"#;
+        let parsed: SizePositionInput =
+            serde_json::from_str(json).expect("valid camelCase JSON for SizePositionInput");
+        assert_eq!(parsed.strategy_name, "test_strat");
+        assert!(parsed.is_real);
+        assert_eq!(parsed.leverage, 10);
+        assert_eq!(parsed.stop_loss_pct, 1.5);
+        assert_eq!(parsed.total_balance, 1000.0);
+        assert_eq!(parsed.current_open_positions, 2);
+        assert_eq!(parsed.max_margin_per_order_usdt, Some(100.0));
+        assert_eq!(parsed.now_ms, 1700000000000);
+    }
+
+    #[test]
+    #[cfg(target_arch = "wasm32")]
+    fn to_js_serializes_with_json_compatible() {
+        #[derive(Serialize)]
+        struct Sample {
+            name: String,
+            count: u64,
+            flag: Option<bool>,
+        }
+        let sample = Sample {
+            name: "test".to_string(),
+            count: 42,
+            flag: None,
+        };
+        let js = to_js(&sample);
+        assert!(js.is_ok());
+    }
 }
