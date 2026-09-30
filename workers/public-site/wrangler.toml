@@ -16,3 +16,11 @@ binding = "ASSETS"
 [[kv_namespaces]]
 binding = "SNAPSHOTS"
 id = "03c8f6ddfa0f4498b952700977c781b4"
+
+# Snapshot público en D1 (100.000 escrituras/día gratis). KV queda como respaldo de lectura:
+# el plan gratuito solo permite 1.000 escrituras KV/día para toda la cuenta.
+[[d1_databases]]
+binding = "DB"
+database_name = "swal-trade-public"
+database_id = "02b5d8ec-cfbc-476d-aeb9-8ace9ec59d09"
+migrations_dir = "migrations"

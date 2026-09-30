@@ -233,6 +233,47 @@ function withSecurityHeaders(response) {
   });
 }
 
+/**
+ * Almacenamiento del snapshot. D1 si existe el binding `DB` (100.000 escrituras/día en el plan
+ * gratuito); KV (`SNAPSHOTS`) como respaldo. KV gratuito solo permite 1.000 escrituras/día para
+ * TODA la cuenta, y el publicador escribe cada minuto (1.440/día): por eso D1 es el principal.
+ *
+ * @param {object} env
+ * @returns {{get: (key: string) => Promise<string|null>, put: (key: string, value: string, ttlSeconds?: number) => Promise<void>}|null}
+ */
+export function snapshotStore(env) {
+  if (env && env.DB && typeof env.DB.prepare === 'function') {
+    const db = env.DB;
+    return {
+      async get(key) {
+        const row = await db
+          .prepare('SELECT value FROM snapshots WHERE key = ?1 AND (expires_at IS NULL OR expires_at > ?2)')
+          .bind(key, Math.floor(Date.now() / 1000))
+          .first();
+        return row ? row.value : null;
+      },
+      async put(key, value, ttlSeconds) {
+        const now = Math.floor(Date.now() / 1000);
+        await db
+          .prepare(
+            'INSERT INTO snapshots (key, value, updated_at, expires_at) VALUES (?1, ?2, ?3, ?4) ' +
+              'ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, expires_at = excluded.expires_at'
+          )
+          .bind(key, value, now, ttlSeconds ? now + ttlSeconds : null)
+          .run();
+      },
+    };
+  }
+  if (env && env.SNAPSHOTS) {
+    const kv = env.SNAPSHOTS;
+    return {
+      get: (key) => kv.get(key),
+      put: (key, value, ttlSeconds) => kv.put(key, value, ttlSeconds ? { expirationTtl: ttlSeconds } : undefined),
+    };
+  }
+  return null;
+}
+
 export default {
   /**
    * Cloudflare Worker fetch handler.
@@ -254,14 +295,15 @@ export default {
         }));
       }
 
-      if (!env || !env.SNAPSHOTS) {
+      const store = snapshotStore(env);
+      if (!store) {
         return withSecurityHeaders(new Response(JSON.stringify({ error: 'no_snapshot' }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
         }));
       }
 
-      const snapshotData = await env.SNAPSHOTS.get('latest');
+      const snapshotData = await store.get('latest');
       if (!snapshotData) {
         return withSecurityHeaders(new Response(JSON.stringify({ error: 'no_snapshot' }), {
           status: 503,
@@ -351,17 +393,16 @@ export default {
       const sanitizedJson = JSON.stringify(sanitized);
 
       // Store latest
-      if (env && env.SNAPSHOTS) {
-        await env.SNAPSHOTS.put('latest', sanitizedJson);
+      const store = snapshotStore(env);
+      if (store) {
+        await store.put('latest', sanitizedJson);
 
         // Daily history snapshot: history:<YYYY-MM-DD> (first snapshot of the day, 90-day TTL)
         const dateStr = sanitized.generated_at.slice(0, 10);
         const historyKey = `history:${dateStr}`;
-        const existingHistory = await env.SNAPSHOTS.get(historyKey);
+        const existingHistory = await store.get(historyKey);
         if (!existingHistory) {
-          await env.SNAPSHOTS.put(historyKey, sanitizedJson, {
-            expirationTtl: 90 * 86400
-          });
+          await store.put(historyKey, sanitizedJson, 90 * 86400);
         }
       }
 
