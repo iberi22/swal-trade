@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>SynapseTrader — Operativa en vivo</title>
+  <meta name="description" content="Dashboard público y de solo lectura de SynapseTrader: operativa algorítmica de futuros, métricas de rendimiento y ranking de bots en tiempo real.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-top">
+        <div class="brand">
+          <div class="brand-title-wrap">
+            <h1 class="brand-title">SynapseTrader — operativa en vivo</h1>
+            <span class="brand-subtitle">trade.swal.network</span>
+          </div>
+          <span id="mode-badge" class="badge badge-paper">PAPER</span>
+        </div>
+        <div id="demo-banner" class="demo-chip hidden">Modo Demostración (?demo=1)</div>
+      </div>
+
+      <!-- Honesty Disclaimer (visible when mode != live) -->
+      <div id="honesty-disclaimer" class="honesty-banner">
+        <span class="warning-icon" aria-hidden="true">⚠️</span>
+        <span id="disclaimer-text">Operativa en paper trading. Ninguna estrategia tiene todavía una ventaja estadística validada fuera de muestra. No es asesoría financiera.</span>
+      </div>
+
+      <!-- Engine Status Chips -->
+      <div class="chips-bar">
+        <div class="chip">
+          <span class="chip-label">Motor:</span>
+          <span id="chip-engine-status" class="chip-val">—</span>
+        </div>
+        <div class="chip">
+          <span class="chip-label">Feed de mercado:</span>
+          <span id="chip-feed-status" class="chip-val">—</span>
+        </div>
+        <div class="chip">
+          <span class="chip-label">Último tick:</span>
+          <span id="chip-last-price-update" class="chip-val">—</span>
+        </div>
+        <div class="chip">
+          <span class="chip-label">Antigüedad snapshot:</span>
+          <span id="chip-snapshot-age" class="chip-val">—</span>
+        </div>
+        <div id="stale-warning" class="chip chip-warning hidden">
+          ⚠️ Snapshot desactualizado (&gt; 5 min)
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Account KPI Tiles -->
+      <section class="section" aria-labelledby="kpi-heading">
+        <h2 id="kpi-heading" class="sr-only">Métricas de la cuenta</h2>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <span class="kpi-title">Rendimiento</span>
+            <span id="kpi-equity-pct" class="kpi-val">—</span>
+            <span id="kpi-capital-sub" class="kpi-sub">—</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">PnL Diario</span>
+            <span id="kpi-daily-pnl" class="kpi-val">—</span>
+            <span class="kpi-sub">Últimas 24h</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Drawdown Máx.</span>
+            <span id="kpi-max-dd" class="kpi-val">—</span>
+            <span class="kpi-sub">Pico a valle</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Posiciones Abiertas</span>
+            <span id="kpi-open-positions" class="kpi-val">—</span>
+            <span class="kpi-sub">En mercado</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Trades Totales</span>
+            <span id="kpi-total-trades" class="kpi-val">—</span>
+            <span class="kpi-sub">Cerrados</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-title">Win Rate</span>
+            <span id="kpi-win-rate" class="kpi-val">—</span>
+            <span class="kpi-sub">Acierto global</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Equity Curve Section -->
+      <section class="section" aria-labelledby="equity-curve-heading">
+        <div class="section-header">
+          <h2 id="equity-curve-heading" class="section-title">Curva de capital (% acum.)</h2>
+          <span id="equity-curve-range" class="section-meta">—</span>
+        </div>
+        <div class="card chart-card">
+          <div id="chart-container" class="chart-container">
+            <div id="chart-placeholder" class="chart-placeholder">Cargando curva de capital...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bots Ranking Table -->
+      <section class="section" aria-labelledby="ranking-heading">
+        <div class="section-header">
+          <h2 id="ranking-heading" class="section-title">Ranking de bots por puntos</h2>
+          <span id="bots-count" class="section-meta">0 bots</span>
+        </div>
+        <p id="points-formula-text" class="formula-caption">
+          1 punto = 1 pb (0,01 %) de rendimiento neto acumulado del bot tras comisiones y funding
+        </p>
+        <div class="card table-card">
+          <div class="table-wrapper">
+            <table class="data-table" id="bots-table">
+              <thead>
+                <tr>
+                  <th class="th-rank">#</th>
+                  <th>Bot</th>
+                  <th>Estado</th>
+                  <th>Fidelidad Sim.</th>
+                  <th>Veredicto Investigación</th>
+                  <th class="text-right">Puntos</th>
+                  <th class="text-right">Trades</th>
+                  <th class="text-right">WR</th>
+                  <th class="text-right">PF</th>
+                  <th class="text-right">PnL %</th>
+                  <th>Último Trade</th>
+                </tr>
+              </thead>
+              <tbody id="bots-table-body">
+                <tr><td colspan="11" class="text-center text-muted">Cargando ranking de bots...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Open Positions Table -->
+      <section class="section" aria-labelledby="positions-heading">
+        <div class="section-header">
+          <h2 id="positions-heading" class="section-title">Posiciones abiertas</h2>
+          <span id="positions-count" class="section-meta">0 abiertas</span>
+        </div>
+        <div class="card table-card">
+          <div class="table-wrapper">
+            <table class="data-table" id="positions-table">
+              <thead>
+                <tr>
+                  <th>Bot</th>
+                  <th>Símbolo</th>
+                  <th>Lado</th>
+                  <th class="text-right">Precio Entrada</th>
+                  <th class="text-right">uPnL %</th>
+                  <th>Apertura</th>
+                </tr>
+              </thead>
+              <tbody id="positions-table-body">
+                <tr><td colspan="6" class="text-center text-muted">No hay posiciones abiertas</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recent Trades Table -->
+      <section class="section" aria-labelledby="trades-heading">
+        <div class="section-header">
+          <h2 id="trades-heading" class="section-title">Últimos trades</h2>
+          <span id="trades-count" class="section-meta">0 registrados</span>
+        </div>
+        <div class="card table-card">
+          <div class="table-wrapper">
+            <table class="data-table" id="trades-table">
+              <thead>
+                <tr>
+                  <th>Bot</th>
+                  <th>Símbolo</th>
+                  <th>Lado</th>
+                  <th class="text-right">Entrada</th>
+                  <th class="text-right">Salida</th>
+                  <th class="text-right">PnL %</th>
+                  <th>Razón Salida</th>
+                  <th>Cierre</th>
+                </tr>
+              </thead>
+              <tbody id="trades-table-body">
+                <tr><td colspan="8" class="text-center text-muted">No hay trades recientes</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="footer-content">
+        <span id="footer-status">Sincronizando...</span>
+        <span>trade.swal.network • Synapse Hive</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

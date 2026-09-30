@@ -1,0 +1,16 @@
+[Unit]
+Description=SynapseTrader Public Snapshot Publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# PATH explícito: en NixOS el entorno de systemd --user no incluye curl/python3.
+Environment=PATH=/run/current-system/sw/bin:/etc/profiles/per-user/%u/bin:%h/.nix-profile/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/publish-public-snapshot.sh
+EnvironmentFile=-%h/.config/synapse/publisher.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

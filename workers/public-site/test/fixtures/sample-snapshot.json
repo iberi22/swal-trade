@@ -1,0 +1,176 @@
+{
+  "schema": "synapse.public.snapshot/v1",
+  "generated_at": "2026-09-29T16:30:00Z",
+  "mode": "paper",
+  "engine": {
+    "status": "running",
+    "feed_ok": true,
+    "last_price_update_at": "2026-09-29T16:29:58Z",
+    "uptime_s": 43200,
+    "strategies_registered": 5
+  },
+  "account": {
+    "initial_capital": 100.0,
+    "equity_pct": -0.77,
+    "daily_pnl_pct": -0.26,
+    "max_drawdown_pct": 0.95,
+    "open_positions": 1,
+    "total_trades": 23,
+    "win_rate": 30.4
+  },
+  "points_formula": "1 punto = 1 pb (0,01 %) de rendimiento neto acumulado del bot tras comisiones y funding",
+  "bots": [
+    {
+      "id": "DualThrust",
+      "name": "Dual Thrust",
+      "status": "disabled",
+      "allocation_pct": 0.0,
+      "fidelity": "unmeasured",
+      "research_verdict": "negativa en 48/48 combinaciones",
+      "points": -4,
+      "trades": 3,
+      "wins": 1,
+      "win_rate": 33.3,
+      "profit_factor": 0.52,
+      "pnl_pct": -0.04,
+      "last_trade_at": "2026-09-28T18:00:00Z"
+    },
+    {
+      "id": "RocBreakout",
+      "name": "ROC Breakout",
+      "status": "disabled",
+      "allocation_pct": 0.0,
+      "fidelity": "diverges",
+      "research_verdict": "refutado en holdout (PF 0.90)",
+      "points": -8,
+      "trades": 5,
+      "wins": 2,
+      "win_rate": 40.0,
+      "profit_factor": 0.90,
+      "pnl_pct": -0.08,
+      "last_trade_at": "2026-09-29T11:20:00Z"
+    },
+    {
+      "id": "LiquiditySweep",
+      "name": "Liquidity Sweep",
+      "status": "disabled",
+      "allocation_pct": 0.0,
+      "fidelity": "diverges",
+      "research_verdict": "sin edge (PF 0.61-0.72)",
+      "points": -12,
+      "trades": 4,
+      "wins": 1,
+      "win_rate": 25.0,
+      "profit_factor": 0.65,
+      "pnl_pct": -0.12,
+      "last_trade_at": "2026-09-28T22:00:00Z"
+    },
+    {
+      "id": "MomentumBreakout",
+      "name": "Momentum Breakout",
+      "status": "active",
+      "allocation_pct": 100.0,
+      "fidelity": "diverges",
+      "research_verdict": "sin edge (PF 0.78 OOS)",
+      "points": -18,
+      "trades": 8,
+      "wins": 3,
+      "win_rate": 37.5,
+      "profit_factor": 0.78,
+      "pnl_pct": -0.18,
+      "last_trade_at": "2026-09-29T15:10:00Z"
+    },
+    {
+      "id": "VolatilityExpansion",
+      "name": "Volatility Expansion",
+      "status": "disabled",
+      "allocation_pct": 0.0,
+      "fidelity": "diverges",
+      "research_verdict": "sobreajuste (PF 0.07 OOS)",
+      "points": -35,
+      "trades": 3,
+      "wins": 0,
+      "win_rate": 0.0,
+      "profit_factor": 0.07,
+      "pnl_pct": -0.35,
+      "last_trade_at": "2026-09-28T14:00:00Z"
+    }
+  ],
+  "open_positions": [
+    {
+      "bot": "MomentumBreakout",
+      "symbol": "SOLUSDT",
+      "side": "long",
+      "entry_price": 142.35,
+      "upnl_pct": -0.45,
+      "opened_at": "2026-09-29T15:45:00Z"
+    }
+  ],
+  "recent_trades": [
+    {
+      "bot": "MomentumBreakout",
+      "symbol": "SOLUSDT",
+      "side": "long",
+      "entry_price": 142.00,
+      "exit_price": 141.20,
+      "pnl_pct": -0.56,
+      "exit_reason": "SL",
+      "opened_at": "2026-09-29T13:10:00Z",
+      "closed_at": "2026-09-29T15:10:00Z"
+    },
+    {
+      "bot": "RocBreakout",
+      "symbol": "BTCUSDT",
+      "side": "long",
+      "entry_price": 63400.0,
+      "exit_price": 63150.0,
+      "pnl_pct": -0.39,
+      "exit_reason": "SL",
+      "opened_at": "2026-09-29T08:00:00Z",
+      "closed_at": "2026-09-29T11:20:00Z"
+    },
+    {
+      "bot": "MomentumBreakout",
+      "symbol": "ETHUSDT",
+      "side": "short",
+      "entry_price": 2650.0,
+      "exit_price": 2635.0,
+      "pnl_pct": 0.57,
+      "exit_reason": "TP",
+      "opened_at": "2026-09-29T04:15:00Z",
+      "closed_at": "2026-09-29T07:20:00Z"
+    },
+    {
+      "bot": "LiquiditySweep",
+      "symbol": "ETHUSDT",
+      "side": "long",
+      "entry_price": 2660.0,
+      "exit_price": 2640.0,
+      "pnl_pct": -0.75,
+      "exit_reason": "SL",
+      "opened_at": "2026-09-28T20:10:00Z",
+      "closed_at": "2026-09-28T22:00:00Z"
+    },
+    {
+      "bot": "DualThrust",
+      "symbol": "SOLUSDT",
+      "side": "short",
+      "entry_price": 141.50,
+      "exit_price": 141.80,
+      "pnl_pct": -0.21,
+      "exit_reason": "SL",
+      "opened_at": "2026-09-28T16:00:00Z",
+      "closed_at": "2026-09-28T18:00:00Z"
+    }
+  ],
+  "equity_curve": [
+    { "t": "2026-09-28T00:00:00Z", "equity_pct": 0.0 },
+    { "t": "2026-09-28T06:00:00Z", "equity_pct": -0.10 },
+    { "t": "2026-09-28T12:00:00Z", "equity_pct": -0.05 },
+    { "t": "2026-09-28T18:00:00Z", "equity_pct": -0.25 },
+    { "t": "2026-09-29T00:00:00Z", "equity_pct": -0.51 },
+    { "t": "2026-09-29T06:00:00Z", "equity_pct": -0.35 },
+    { "t": "2026-09-29T12:00:00Z", "equity_pct": -0.62 },
+    { "t": "2026-09-29T16:30:00Z", "equity_pct": -0.77 }
+  ]
+}

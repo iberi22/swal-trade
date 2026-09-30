@@ -1,0 +1,18 @@
+name = "swal-trade"
+main = "src/worker.js"
+compatibility_date = "2026-09-16"
+workers_dev = false
+routes = [
+  { pattern = "trade.swal.network", custom_domain = true }
+]
+
+[assets]
+directory = "./static"
+binding = "ASSETS"
+
+# KV namespace for public trading snapshots.
+# The orchestrator or deployer fills the namespace ID below after creating it via:
+# wrangler kv namespace create SNAPSHOTS
+[[kv_namespaces]]
+binding = "SNAPSHOTS"
+id = "03c8f6ddfa0f4498b952700977c781b4"
