@@ -29,7 +29,7 @@ const REC = {
 const el = (id) => document.getElementById(id);
 const ui = {
   banner: el('base-url'),
-  pem: el('out-pem'),
+  pem: el('out-pubpem'),
   status: el('out-status'),
   rest: el('out-rest'),
   ws: el('out-ws'),
@@ -365,7 +365,7 @@ async function wsTest() {
   const signature = await signEd25519Base64(state.ed.privateKey, payload);
   logonParams.push(['signature', signature]);
 
-  wsSend(socket, 1, 'session.logon', logonParams);
+  wsSend(socket, 1, 'session.logon', Object.fromEntries(logonParams));
 
   const method = ui.wsMethod.value.trim() || 'v2/account.balance';
   setTimeout(() => {
