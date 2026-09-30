@@ -1,0 +1,27 @@
+[package]
+name = "synapse-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Núcleo puro de riesgo, dimensionamiento de posición e indicadores para el asistente de trading no custodial de Binance Futures (PWA). Sin I/O: mismo código en el navegador (WASM) y en el backend nativo."
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/iberi22/swal-trade"
+readme = "README.md"
+keywords = ["trading", "risk", "indicators", "wasm", "binance"]
+categories = ["finance", "science", "web-programming"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Exports `wasm-bindgen` para compilar a `wasm32-unknown-unknown`.
+# Actívalo con `--features wasm` (o `wasm-pack build --target web --features wasm`).
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
