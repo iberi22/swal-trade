@@ -28,6 +28,26 @@ jobs:
           node --check workers/public-site/static/app.js
           bash -n scripts/publish-public-snapshot.sh
 
+  synapse-core:
+    name: synapse-core (Rust + WASM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rustup del runner, sin acciones de terceros)
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup target add wasm32-unknown-unknown
+      - name: Formato
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy -p synapse-core --all-targets -- -D warnings
+      - name: Tests (incluye doctests)
+        run: cargo test -p synapse-core
+      - name: Compilación a WebAssembly
+        run: cargo build -p synapse-core --target wasm32-unknown-unknown --features wasm --release
+
   security:
     name: security (gitleaks, historial completo)
     runs-on: ubuntu-latest
