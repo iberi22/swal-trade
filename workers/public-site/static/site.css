@@ -1,0 +1,26 @@
+/* SWAL Trade — sitio público (landing, precios, legales). Sin fuentes ni scripts externos. */
+:root{--bg:#0b0e14;--card:#131722;--border:#222938;--text:#f1f5f9;--muted:#94a3b8;--accent:#38bdf8;--warn:#f59e0b;--ok:#10b981}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Ubuntu,Arial,sans-serif}
+a{color:var(--accent)}
+.site-header{display:flex;flex-wrap:wrap;gap:.75rem 1.5rem;align-items:center;padding:.9rem 1.25rem;border-bottom:1px solid var(--border)}
+.site-brand{font-weight:700;color:var(--text);text-decoration:none;font-size:1.1rem}
+.site-nav{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:.92rem}
+.site-nav a{text-decoration:none;color:var(--muted)}
+.site-nav a:hover,.site-nav a[aria-current]{color:var(--text)}
+.site-main{max-width:60rem;margin:0 auto;padding:1.5rem 1.25rem 2.5rem}
+h1{font-size:1.9rem;line-height:1.25;margin:.5rem 0 1rem}
+h2{margin-top:2rem;font-size:1.3rem}
+.lead{font-size:1.1rem;color:var(--muted)}
+.muted{color:var(--muted);font-size:.9rem}
+.grid{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1rem 1.1rem}
+.card h3{margin:.1rem 0 .4rem}
+.price{font-size:2rem;font-weight:700;margin:.2rem 0}
+.price span{font-size:.95rem;font-weight:400;color:var(--muted)}
+.btn{display:inline-block;background:var(--accent);color:#04121c;font-weight:600;padding:.55rem 1rem;border-radius:6px;text-decoration:none;margin:.25rem .25rem .25rem 0}
+.btn-ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.warn,.draft-banner{border:1px solid var(--warn);background:rgba(245,158,11,.12);border-radius:6px;padding:.7rem 1rem}
+.site-footer{border-top:1px solid var(--border);padding:1.25rem;max-width:60rem;margin:0 auto;font-size:.9rem}
+.site-footer nav a{color:var(--muted)}
+.disclaimer{color:var(--warn)}
