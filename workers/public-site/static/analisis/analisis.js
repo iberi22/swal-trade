@@ -234,6 +234,87 @@ async function refreshTrends() {
   paintTrends();
 }
 
+function newsAsset(symbol) {
+  if (symbol.startsWith('BTC')) return 'BTC';
+  if (symbol.startsWith('ETH')) return 'ETH';
+  return null;
+}
+
+function relativeTime(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return 'fecha desconocida';
+  const mins = Math.round((Date.now() - t) / 60000);
+  if (mins < 1) return 'hace un momento';
+  if (mins < 60) return `hace ${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `hace ${hours} h`;
+  return `hace ${Math.round(hours / 24)} d`;
+}
+
+function sentimentText(label) {
+  if (label === 'positivo' || label === 'negativo' || label === 'neutral') return label;
+  return 'neutral';
+}
+
+function httpsUrl(raw) {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+async function loadNews() {
+  const ol = $('news');
+  if (!ol) return;
+  ol.replaceChildren();
+  const asset = newsAsset(state.symbol);
+  const note = document.createElement('li');
+  note.className = 'meta';
+  if (!asset) {
+    note.textContent = 'Sin titulares para este símbolo.';
+    ol.append(note);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/news?symbol=${asset}&limit=5`);
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json();
+    const items = Array.isArray(body.items) ? body.items.slice(0, 5) : [];
+    if (!items.length) {
+      note.textContent = 'Sin titulares recientes.';
+      ol.append(note);
+      return;
+    }
+    for (const item of items) {
+      const href = httpsUrl(item && item.url);
+      const title = item && typeof item.title === 'string' ? item.title : '';
+      if (!href || !title) continue;
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = title;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const source = item.source ? String(item.source) : 'fuente';
+      const tone = sentimentText(item.sentiment && item.sentiment.label);
+      meta.textContent = `${source} · ${relativeTime(item.publishedAt)} · ${tone}`;
+      li.append(a, meta);
+      ol.append(li);
+    }
+    if (!ol.childElementCount) {
+      note.textContent = 'Sin titulares recientes.';
+      ol.append(note);
+    }
+  } catch {
+    note.textContent = 'No se pudieron cargar las noticias.';
+    ol.append(note);
+  }
+}
+
 async function loadFng() {
   try {
     let cached = null; try { cached = JSON.parse(localStorage.getItem(FNG_KEY) || 'null'); } catch { /* ignore */ }
@@ -267,7 +348,8 @@ async function load() {
   }
 }
 $('controls').addEventListener('submit', (e) => e.preventDefault());
-$('symbol').addEventListener('change', (e) => { state.symbol = e.target.value; trendCache.clear(); load(); });
+$('symbol').addEventListener('change', (e) => { state.symbol = e.target.value; trendCache.clear(); load(); loadNews(); });
 $('timeframe').addEventListener('change', (e) => { state.timeframe = e.target.value; load(); });
 setInterval(refreshTrends, 60000);
-paintTrends(); loadFng(); load();
+setInterval(loadNews, 300000);
+paintTrends(); loadFng(); loadNews(); load();

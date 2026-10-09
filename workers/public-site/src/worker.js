@@ -3,6 +3,8 @@
  * Contract: synapse.public.snapshot/v1
  */
 
+import { handleNewsRequest, ingestNews } from './news.js';
+
 /**
  * Server-side privacy sanitizer.
  * Rebuilds the snapshot retaining ONLY contract-whitelisted fields.
@@ -376,7 +378,18 @@ export default {
    * @param {object} ctx
    */
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(checkDeadman(env));
+    // Dead-man en cada tick (5 min). Noticias como máximo cada 30 min (ingestNews).
+    const run = Promise.all([
+      checkDeadman(env).catch((err) => {
+        console.warn('deadman: cron fallo', err && err.message);
+        return null;
+      }),
+      ingestNews(env).catch((err) => {
+        console.warn('news: cron fallo', err && err.message);
+        return null;
+      }),
+    ]);
+    ctx.waitUntil(run);
   },
 
   /**
@@ -513,7 +526,12 @@ export default {
       return withSecurityHeaders(new Response(null, { status: 204 }));
     }
 
-    // 3. Static assets fallback
+    // 3. GET /api/news?symbol=BTC|ETH&limit=20 — misma origen, sin secretos.
+    if (url.pathname === '/api/news') {
+      return withSecurityHeaders(await handleNewsRequest(request, env));
+    }
+
+    // 4. Static assets fallback
     if (env && env.ASSETS && typeof env.ASSETS.fetch === 'function') {
       const assetResponse = await env.ASSETS.fetch(request);
       return withSecurityHeaders(assetResponse, url.pathname);

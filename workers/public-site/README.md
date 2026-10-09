@@ -75,6 +75,16 @@ npx wrangler secret put PUBLIC_INGEST_TOKEN
 # Pega el token generado cuando se te solicite
 ```
 
+Noticias (`GET /api/news`, cron de 5 min con puerta de 30 min). Un secreto por proveedor; cualquiera basta, rotan con respaldo. Solo el nombre, el valor no va en el repo:
+
+```bash
+npx wrangler secret put BRAVE_API_KEY
+npx wrangler secret put TAVILY_API_KEY
+npx wrangler secret put FIRECRAWL_API_KEY
+```
+
+Usan la D1 `DB` que ya está en `wrangler.toml` (migración `0002_news.sql`) y, si no hay D1, el KV `SNAPSHOTS`.
+
 ### 3. Desplegar el Worker y los Assets Estáticos
 ```bash
 cd workers/public-site

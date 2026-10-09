@@ -18,7 +18,6 @@ select:focus-visible, button:focus-visible { outline: 2px solid hsl(var(--ring))
 .overlay { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; }
 .side { display: flex; flex-direction: column; gap: .75rem; }
 .card { background: hsl(var(--surface)); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow-sm); }
-.muted-card { background: hsl(var(--surface-strong) / .5); }
 .findings { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
 .findings li { background: hsl(var(--background)); border-radius: calc(var(--radius) - .25rem); padding: .6rem .7rem; cursor: pointer; }
 .findings li:hover, .findings li.active { background: hsl(var(--surface-strong)); }
@@ -31,4 +30,8 @@ select:focus-visible, button:focus-visible { outline: 2px solid hsl(var(--ring))
 .kv li { display: flex; justify-content: space-between; }
 .kv .v { font-weight: 600; }
 .big { font-size: 2rem; font-weight: 600; margin: 0; }
+.news { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
+.news li { display: flex; flex-direction: column; gap: .2rem; }
+.news a { font-size: .85rem; font-weight: 600; }
+.news .meta { font-size: .7rem; color: hsl(var(--subtle-foreground)); }
 .foot { padding: .5rem 1.25rem 1.5rem; }

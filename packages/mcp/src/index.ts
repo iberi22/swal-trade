@@ -25,9 +25,13 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   main().catch((err: unknown) => {
-    const secrets = [process.env.BINANCE_API_KEY, process.env.BINANCE_API_SECRET].filter(
-      (value): value is string => Boolean(value),
-    );
+    const secrets = [
+      process.env.BINANCE_API_KEY,
+      process.env.BINANCE_API_SECRET,
+      process.env.BRAVE_API_KEY,
+      process.env.TAVILY_API_KEY,
+      process.env.FIRECRAWL_API_KEY,
+    ].filter((value): value is string => Boolean(value));
     process.stderr.write(`${redactSecrets(errorMessage(err), secrets)}\n`);
     process.exitCode = 1;
   });

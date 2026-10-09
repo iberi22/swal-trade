@@ -7,7 +7,10 @@ routes = [
 ]
 
 # Dead-man: avisa por Telegram si dejan de llegar snapshots (STALE_AFTER_S, defecto 300).
-# Secrets (wrangler secret put): TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+# El mismo cron (cada 5 min) recoge noticias, pero el worker solo llama a un proveedor
+# cada 30 min (rotación). Secrets (wrangler secret put):
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+#   BRAVE_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY
 [triggers]
 crons = ["*/5 * * * *"]
 
@@ -24,6 +27,8 @@ id = "03c8f6ddfa0f4498b952700977c781b4"
 
 # Snapshot público en D1 (100.000 escrituras/día gratis). KV queda como respaldo de lectura:
 # el plan gratuito solo permite 1.000 escrituras KV/día para toda la cuenta.
+# Noticias: la misma base D1 (tabla news, migración 0002) y el mismo KV SNAPSHOTS
+# como respaldo si no hay binding DB. No hay un namespace ni una base nuevos.
 [[d1_databases]]
 binding = "DB"
 database_name = "swal-trade-public"

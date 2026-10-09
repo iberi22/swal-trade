@@ -15,6 +15,7 @@ import {
   MAX_KLINE_LIMIT,
   NEWS_NOTE,
 } from "./market-data.js";
+import { loadHeadlines } from "./news.js";
 import { PLACEMENT_NOTE, proposeFromMark } from "./propose.js";
 import { dayStartMs, evaluateAccount } from "./risk.js";
 import type { AlgoOrder, IncomeRow, PositionRiskRow, RawPosition } from "./risk.js";
@@ -182,7 +183,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "market_context",
     {
       title: "Market context",
-      description: `Read-only multi-timeframe trend (1m, 5m, 1h, 4h) from the analysis core when it is available, plus the fear and greed index cached for 1 hour. The news field is null: it ${NEWS_NOTE}. ${STRENGTH_NOTE}`,
+      description: `Read-only multi-timeframe trend (1m, 5m, 1h, 4h) from the analysis core when it is available, plus the fear and greed index cached for 1 hour. News is fetched from a local provider key when one is set (Brave, then Tavily, then Firecrawl) and otherwise from the hosted feed. If none of that returns headlines, news is null: it ${NEWS_NOTE}. ${STRENGTH_NOTE}`,
       inputSchema: {
         symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
       },
@@ -194,7 +195,11 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       const base = futuresBase(env);
       if (!base.ok) return fail(base.error);
       try {
-        const [fearGreed, core] = await Promise.all([fearGreedCache.get(fetchFn, now), loadAnalysisCore(env)]);
+        const [fearGreed, core, headlines] = await Promise.all([
+          fearGreedCache.get(fetchFn, now),
+          loadAnalysisCore(env),
+          loadHeadlines({ env, symbol, fetchFn, nowMs: now() }),
+        ]);
         if (!core.ok) {
           return ok({
             symbol,
@@ -202,8 +207,8 @@ export function createServer(deps: ServerDeps = {}): McpServer {
             trends: null,
             analysisError: ANALYSIS_CORE_MISSING,
             fearGreed,
-            news: null,
-            note: NEWS_NOTE,
+            news: headlines.news,
+            note: headlines.note,
           });
         }
         const trends: Record<string, unknown> = {};
@@ -231,8 +236,8 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           trends,
           analysisError: null,
           fearGreed,
-          news: null,
-          note: NEWS_NOTE,
+          news: headlines.news,
+          note: headlines.note,
         });
       } catch (err) {
         return fail(errorMessage(err));

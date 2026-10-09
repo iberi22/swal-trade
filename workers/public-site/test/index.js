@@ -9,3 +9,4 @@ import './csp.test.mjs';
 import './license-contract.test.mjs';
 import './analisis-core.test.mjs';
 import './analisis-csp.test.mjs';
+import './news.test.mjs';
