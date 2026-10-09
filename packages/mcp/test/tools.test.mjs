@@ -89,7 +89,8 @@ test("analyze_chart reports a missing core without fetching", async () => {
     calls += 1;
     return jsonResponse([]);
   };
-  await withClient({ env: {}, fetchFn }, async (client) => {
+  // Explicit missing path: the default path resolves to the real core inside the repo.
+  await withClient({ env: { SWAL_ANALYSIS_CORE: fixture("does-not-exist.js") }, fetchFn }, async (client) => {
     const text = errorText(await client.callTool({ name: "analyze_chart", arguments: { symbol: "BTCUSDT", timeframe: "1h" } }));
     assert.equal(text, ANALYSIS_CORE_MISSING);
   });
@@ -125,7 +126,7 @@ test("market_context caches fear and greed and leaves news null when the core is
     }
     throw new Error(`unexpected ${new URL(href).pathname}`);
   };
-  await withClient({ env: {}, fetchFn, now: () => t }, async (client) => {
+  await withClient({ env: { SWAL_ANALYSIS_CORE: fixture("does-not-exist.js") }, fetchFn, now: () => t }, async (client) => {
     const first = JSON.parse(textOf(await client.callTool({ name: "market_context", arguments: { symbol: "ETHUSDT" } })));
     const second = JSON.parse(textOf(await client.callTool({ name: "market_context", arguments: { symbol: "ETHUSDT" } })));
     assert.equal(first.news, null);
