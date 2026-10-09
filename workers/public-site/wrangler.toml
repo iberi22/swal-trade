@@ -6,6 +6,11 @@ routes = [
   { pattern = "trade.swal.network", custom_domain = true }
 ]
 
+# Dead-man: avisa por Telegram si dejan de llegar snapshots (STALE_AFTER_S, defecto 300).
+# Secrets (wrangler secret put): TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+[triggers]
+crons = ["*/5 * * * *"]
+
 [assets]
 directory = "./static"
 binding = "ASSETS"

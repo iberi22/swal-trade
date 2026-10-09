@@ -274,7 +274,90 @@ export function snapshotStore(env) {
   return null;
 }
 
+
+const DEADMAN_KEY = 'deadman:state';
+const DEFAULT_STALE_AFTER_S = 300;
+
+/**
+ * Pure dead-man decision. Alerts once when the snapshot goes stale and once when it recovers.
+ *
+ * @param {number|null} ageS - Seconds since last snapshot (null/NaN = no snapshot at all).
+ * @param {string|null} prevState - 'ok' | 'stale' | null (never evaluated; treated as 'ok').
+ * @param {number} staleAfterS
+ * @returns {{state: 'ok'|'stale', alert: 'stale'|'recovered'|null}}
+ */
+export function decideDeadman(ageS, prevState, staleAfterS = DEFAULT_STALE_AFTER_S) {
+  const stale = typeof ageS !== 'number' || !Number.isFinite(ageS) || ageS > staleAfterS;
+  const prev = prevState === 'stale' ? 'stale' : 'ok';
+  if (stale) return { state: 'stale', alert: prev === 'ok' ? 'stale' : null };
+  return { state: 'ok', alert: prev === 'stale' ? 'recovered' : null };
+}
+
+/**
+ * Cron handler: checks snapshot freshness in D1/KV and notifies via Telegram (plain text).
+ * Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID. Optional var: STALE_AFTER_S.
+ *
+ * @param {object} env
+ * @param {number} [nowMs]
+ * @param {typeof fetch} [fetchImpl]
+ * @returns {Promise<{state: string, alert: string|null, sent: boolean}|null>}
+ */
+export async function checkDeadman(env, nowMs = Date.now(), fetchImpl = fetch) {
+  const store = snapshotStore(env);
+  if (!store) return null;
+  const parsedStale = Number(env.STALE_AFTER_S);
+  const staleAfterS = Number.isFinite(parsedStale) && parsedStale > 0 ? parsedStale : DEFAULT_STALE_AFTER_S;
+
+  let ageS = null;
+  try {
+    const latest = await store.get('latest');
+    const gen = latest ? new Date(JSON.parse(latest).generated_at).getTime() : NaN;
+    if (!isNaN(gen)) ageS = Math.max(0, Math.floor((nowMs - gen) / 1000));
+  } catch (_) {}
+
+  const prev = await store.get(DEADMAN_KEY);
+  const { state, alert } = decideDeadman(ageS, prev, staleAfterS);
+  if (!alert) {
+    if (state !== prev) await store.put(DEADMAN_KEY, state);
+    return { state, alert: null, sent: false };
+  }
+
+  const text = alert === 'stale'
+    ? `SYNAPSE SIN SNAPSHOT: ${ageS === null ? 'no hay snapshot' : `ultimo hace ${Math.round(ageS / 60)} min`} (umbral ${Math.round(staleAfterS / 60)} min). El bot o el host pueden estar caidos.`
+    : 'SYNAPSE recuperado: vuelven a llegar snapshots.';
+
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
+    console.warn('deadman: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID');
+    return { state, alert, sent: false };
+  }
+  try {
+    const res = await fetchImpl(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text })
+    });
+    if (!res.ok) throw new Error(`telegram http ${res.status}`);
+  } catch (err) {
+    console.warn('deadman: telegram fallo', err && err.message);
+    return { state, alert, sent: false };
+  }
+  await store.put(DEADMAN_KEY, state);
+  return { state, alert, sent: true };
+}
+
 export default {
+
+  /**
+   * Cron Trigger handler (dead-man switch for snapshot ingestion).
+   *
+   * @param {object} event
+   * @param {object} env
+   * @param {object} ctx
+   */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkDeadman(env));
+  },
+
   /**
    * Cloudflare Worker fetch handler.
    *

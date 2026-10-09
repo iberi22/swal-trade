@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import worker, { sanitizeSnapshot } from '../src/worker.js';
+import worker, { sanitizeSnapshot, decideDeadman, checkDeadman } from '../src/worker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -297,4 +297,49 @@ test('honest sample-snapshot fixture: passes sanitizeSnapshot and asserts no bot
   for (const bot of clean.bots) {
     assert.notEqual(bot.fidelity, 'verified', `Bot ${bot.id} must not have fidelity "verified"`);
   }
+});
+
+test('decideDeadman: alerts once on stale and once on recovery', () => {
+  assert.deepEqual(decideDeadman(10, null, 300), { state: 'ok', alert: null });
+  assert.deepEqual(decideDeadman(301, 'ok', 300), { state: 'stale', alert: 'stale' });
+  assert.deepEqual(decideDeadman(900, 'stale', 300), { state: 'stale', alert: null });
+  assert.deepEqual(decideDeadman(5, 'stale', 300), { state: 'ok', alert: 'recovered' });
+  assert.deepEqual(decideDeadman(null, 'ok', 300), { state: 'stale', alert: 'stale' });
+  assert.deepEqual(decideDeadman(300, 'ok', 300), { state: 'ok', alert: null });
+});
+
+test('checkDeadman: sends plain-text Telegram once per transition and stores state', async () => {
+  const store = new Map();
+  const kv = { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } };
+  const calls = [];
+  const fetchOk = async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200 }; };
+  const env = { SNAPSHOTS: kv, TELEGRAM_BOT_TOKEN: 'tok', TELEGRAM_CHAT_ID: '42' };
+  const now = Date.parse('2026-10-08T12:00:00Z');
+  await kv.put('latest', JSON.stringify({ generated_at: '2026-10-08T11:00:00Z' }));
+
+  let r = await checkDeadman(env, now, fetchOk);
+  assert.equal(r.alert, 'stale');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.text, /^SYNAPSE SIN SNAPSHOT/);
+  assert.equal(calls[0].body.parse_mode, undefined);
+  assert.equal(store.get('deadman:state'), 'stale');
+
+  r = await checkDeadman(env, now + 60000, fetchOk); // sigue stale: sin nuevo aviso
+  assert.equal(r.alert, null);
+  assert.equal(calls.length, 1);
+
+  await kv.put('latest', JSON.stringify({ generated_at: '2026-10-08T12:00:30Z' }));
+  r = await checkDeadman(env, now + 60000, fetchOk);
+  assert.equal(r.alert, 'recovered');
+  assert.equal(calls.length, 2);
+  assert.equal(store.get('deadman:state'), 'ok');
+});
+
+test('checkDeadman: Telegram failure keeps state so it retries', async () => {
+  const store = new Map();
+  const kv = { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } };
+  const env = { SNAPSHOTS: kv, TELEGRAM_BOT_TOKEN: 'tok', TELEGRAM_CHAT_ID: '42' };
+  const r = await checkDeadman(env, Date.now(), async () => ({ ok: false, status: 500 }));
+  assert.equal(r.sent, false);
+  assert.equal(store.has('deadman:state'), false);
 });
