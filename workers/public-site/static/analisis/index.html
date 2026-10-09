@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Análisis de patrones — SWAL Trade</title>
+  <meta name="description" content="Gráfico con patrones detectados de forma determinista (soportes, dobles techos, triángulos, divergencias) explicados en palabras simples, ordenados por fuerza del patrón.">
+  <link rel="canonical" href="https://trade.swal.network/analisis/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="analisis.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Análisis de patrones</h1>
+    <form class="controls" id="controls">
+      <label>Símbolo
+        <select id="symbol">
+          <option>BTCUSDT</option><option>ETHUSDT</option><option>BTCUSDC</option><option>ETHUSDC</option>
+        </select>
+      </label>
+      <label>Temporalidad
+        <select id="timeframe">
+          <option>1m</option><option>5m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option>
+        </select>
+      </label>
+      <span id="conn" class="muted" role="status">Conectando…</span>
+    </form>
+  </header>
+
+  <main class="layout">
+    <section class="chart-card">
+      <div id="chart" class="chart" aria-label="Gráfico de velas"></div>
+      <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <h2>Patrones por fuerza del patrón</h2>
+        <p class="muted small">La <strong>fuerza del patrón</strong> (0 a 100) es una puntuación geométrica y estadística: toques, simetría, volumen y cercanía a la ruptura. No es una probabilidad ni un % de acierto. Acierto histórico: <span id="hit-note">sin medición histórica todavía</span>.</p>
+        <ol id="findings" class="findings"></ol>
+      </section>
+
+      <section class="card">
+        <h2>Tendencia</h2>
+        <ul id="trends" class="kv"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Miedo y codicia</h2>
+        <p id="fng" class="big">—</p>
+        <p id="fng-label" class="muted small"></p>
+      </section>
+
+      <section class="card muted-card">
+        <h2>Noticias (Socio SWAL o backend local)</h2>
+        <p class="muted small">Próximamente. No se consulta ninguna fuente de noticias desde esta página.</p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot muted small">
+    Datos públicos de Binance USDⓈ-M Futures y alternative.me, consultados desde tu navegador. Gráfico: TradingView Lightweight Charts (Apache-2.0). Análisis informativo, no es asesoría financiera.
+    <a href="/">Inicio</a> · <a href="/risk/">Aviso de riesgo</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a>
+  </footer>
+
+  <script src="vendor/lightweight-charts.standalone.production.js"></script>
+  <script type="module" src="analisis.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+/* Una sola tonalidad: solo pasos de --foreground sobre el blanco hueso. Sin bordes. */
+* { box-sizing: border-box; }
+body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--font-sans); }
+a { color: hsl(var(--foreground)); text-underline-offset: 2px; }
+.muted { color: hsl(var(--muted-foreground)); }
+.small { font-size: .8rem; line-height: 1.4; }
+h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
+h2 { font-size: .85rem; margin: 0 0 .6rem; font-weight: 600; letter-spacing: .02em; }
+.top { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; }
+.controls { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.controls label { display: flex; gap: .4rem; align-items: center; font-size: .8rem; color: hsl(var(--muted-foreground)); }
+select { background: hsl(var(--surface)); color: hsl(var(--foreground)); border: 0; border-radius: var(--radius); padding: .45rem .7rem; font: inherit; }
+select:focus-visible, button:focus-visible { outline: 2px solid hsl(var(--ring)); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 1rem; padding: 0 1.25rem 1rem; }
+@media (max-width: 62rem) { .layout { grid-template-columns: 1fr; } }
+.chart-card { position: relative; background: hsl(var(--surface)); border-radius: var(--radius); height: min(70vh, 40rem); min-height: 22rem; overflow: hidden; }
+.chart { position: absolute; inset: 0; }
+.overlay { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; }
+.side { display: flex; flex-direction: column; gap: .75rem; }
+.card { background: hsl(var(--surface)); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow-sm); }
+.muted-card { background: hsl(var(--surface-strong) / .5); }
+.findings { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
+.findings li { background: hsl(var(--background)); border-radius: calc(var(--radius) - .25rem); padding: .6rem .7rem; cursor: pointer; }
+.findings li:hover, .findings li.active { background: hsl(var(--surface-strong)); }
+.findings .row { display: flex; justify-content: space-between; gap: .5rem; font-size: .85rem; font-weight: 600; }
+.findings .expl { margin: .3rem 0 .4rem; font-size: .78rem; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.meter { height: .3rem; border-radius: 1rem; background: hsl(var(--surface-strong)); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: hsl(var(--foreground)); }
+.findings .meta { font-size: .7rem; color: hsl(var(--subtle-foreground)); margin-top: .3rem; }
+.kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .85rem; }
+.kv li { display: flex; justify-content: space-between; }
+.kv .v { font-weight: 600; }
+.big { font-size: 2rem; font-weight: 600; margin: 0; }
+.foot { padding: .5rem 1.25rem 1.5rem; }

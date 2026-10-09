@@ -1,0 +1,7 @@
+TradingView Lightweight Charts(TM) v4.2.0
+Copyright (c) 2024 TradingView, Inc.
+Licensed under the Apache License, Version 2.0 (see LICENSE in this directory).
+Source: https://github.com/tradingview/lightweight-charts (npm: lightweight-charts@4.2.0)
+This file is redistributed unmodified (dist/lightweight-charts.standalone.production.js).
+Attribution requirement: this product includes software developed by TradingView, Inc.
+See https://www.tradingview.com/ and https://github.com/tradingview/lightweight-charts

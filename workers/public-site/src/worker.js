@@ -233,6 +233,9 @@ export function cspFor(pathname = '/') {
   } else if (pathname.startsWith('/guardian/')) {
     connect =
       "'self' https://fapi.binance.com https://api.binance.com https://api.telegram.org https://pay.swal.network";
+  } else if (pathname.startsWith('/analisis/')) {
+    // Datos publicos de mercado (REST + WebSocket) y fear & greed; sin claves ni cobrador.
+    connect = "'self' https://fapi.binance.com wss://fstream.binance.com https://api.alternative.me";
   }
   return `${CSP_BASE}; connect-src ${connect}`;
 }
