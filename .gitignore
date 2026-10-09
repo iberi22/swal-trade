@@ -6,3 +6,5 @@ target/
 .wrangler/
 *.local
 .dev.vars
+__pycache__/
+*.pyc

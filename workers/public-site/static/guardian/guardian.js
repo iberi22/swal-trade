@@ -1,6 +1,6 @@
 import { dayStartMs, realizedUsd, positionsFrom, breaches, unprotected, stopAlertsDue, newBreaches, parseConfig, tierFor, monitoredPositions } from './guardian-core.js';
 import { createClient, saveCredentials, loadCredentials, clearCredentials, importSecret } from './binance-ro.js';
-import { checkLicense, loadPubkey, ed25519Supported, LICENSE_KEY } from './guardian-license.js';
+import { checkLicense, loadPubkey, ed25519Supported, LICENSE_KEY, tokenFromStored } from './guardian-license.js';
 import { sendTelegram } from './telegram.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +25,7 @@ async function initLicense() {
     text(info, 'Navegador no compatible con Ed25519: se usa el plan gratuito.');
     return tierFor({ status: 'unsupported' });
   }
-  const token = localStorage.getItem(LICENSE_KEY);
+  const token = tokenFromStored(localStorage.getItem(LICENSE_KEY));
   if (!token) { text(info, 'Plan gratuito. La licencia Pro se obtiene en /checkout/.'); return tierFor(null); }
   const pubkeySpki = await loadPubkey({ fetchFn: fetch.bind(globalThis), storage: localStorage });
   if (!pubkeySpki) { text(info, 'No se pudo obtener la clave publica de licencias; plan gratuito.'); return tierFor(null); }

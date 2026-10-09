@@ -3,7 +3,12 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
 
-# Prueba de claves (solo testnet): sustituye la CSP general, que bloquearía las llamadas a testnet.
-/lab/keys/*
+# El worker impone la CSP final por ruta (src/worker.js cspFor). Se repite aqui para el caso de
+# assets servidos sin pasar por el worker.
+/checkout/*
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://testnet.binancefuture.com wss://testnet.binancefuture.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; connect-src 'self' https://pay.swal.network
+
+/guardian/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; connect-src 'self' https://fapi.binance.com https://api.binance.com https://api.telegram.org https://pay.swal.network

@@ -216,12 +216,30 @@ async function timingSafeEqualString(a, b) {
  * @param {Response} response
  * @returns {Response}
  */
-function withSecurityHeaders(response) {
+const CSP_BASE =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/**
+ * CSP por ruta: solo /checkout/ habla con el cobrador y solo /guardian/ con Binance (lectura),
+ * Telegram y el cobrador (clave pública de licencias). El resto del sitio, connect-src 'self'.
+ *
+ * @param {string} pathname
+ * @returns {string}
+ */
+export function cspFor(pathname = '/') {
+  let connect = "'self'";
+  if (pathname.startsWith('/checkout/')) {
+    connect = "'self' https://pay.swal.network";
+  } else if (pathname.startsWith('/guardian/')) {
+    connect =
+      "'self' https://fapi.binance.com https://api.binance.com https://api.telegram.org https://pay.swal.network";
+  }
+  return `${CSP_BASE}; connect-src ${connect}`;
+}
+
+function withSecurityHeaders(response, pathname = '/') {
   const headers = new Headers(response.headers);
-  headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
-  );
+  headers.set('Content-Security-Policy', cspFor(pathname));
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'no-referrer');
 
@@ -495,7 +513,7 @@ export default {
     // 3. Static assets fallback
     if (env && env.ASSETS && typeof env.ASSETS.fetch === 'function') {
       const assetResponse = await env.ASSETS.fetch(request);
-      return withSecurityHeaders(assetResponse);
+      return withSecurityHeaders(assetResponse, url.pathname);
     }
 
     return withSecurityHeaders(new Response('Not Found', { status: 404 }));

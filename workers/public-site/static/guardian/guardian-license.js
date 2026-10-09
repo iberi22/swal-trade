@@ -5,6 +5,25 @@
 export const PINNED_PUBKEY = '';
 export const PUBKEY_URL = 'https://pay.swal.network/v1/pubkey';
 export const LICENSE_KEY = 'swal.license';
+
+/**
+ * Token de licencia a partir de lo guardado por /checkout/ (JSON {token, ...}) o un token crudo.
+ * @param {string|null} raw
+ * @returns {string|null}
+ */
+export function tokenFromStored(raw) {
+  if (!raw) return null;
+  const t = String(raw).trim();
+  if (t.startsWith('{')) {
+    try {
+      const o = JSON.parse(t);
+      return typeof o.token === 'string' && o.token ? o.token : null;
+    } catch {
+      return null;
+    }
+  }
+  return t;
+}
 const PUBKEY_CACHE = 'swal.pubkey';
 
 export function b64ToBytes(b64) {
@@ -66,7 +85,7 @@ export async function loadPubkey({ fetchFn, storage }) {
     let v = t;
     try {
       const j = JSON.parse(t);
-      v = j.public_key || j.pubkey || j.spki || (typeof j === 'string' ? j : '');
+      v = j.spki_base64 || j.public_key || j.pubkey || j.spki || (typeof j === 'string' ? j : '');
     } catch { /* texto plano */ }
     if (!v) return null;
     storage.setItem(PUBKEY_CACHE, v);

@@ -1,0 +1,16 @@
+# Copiar a ~/.config/systemd/user/risk-guardian.service y ajustar rutas (chmod 600 del .env).
+# systemctl --user daemon-reload && systemctl --user enable --now risk-guardian
+[Unit]
+Description=Guardian de riesgo (Binance Futures)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/swal-trade
+EnvironmentFile=%h/.config/risk-guardian.env
+ExecStart=/usr/bin/env python3 scripts/guardian/risk_guardian.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
