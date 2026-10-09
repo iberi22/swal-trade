@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guardian 24/7 en tu servidor — swal-trade</title>
+  <link rel="stylesheet" href="../guardian.css">
+</head>
+<body>
+  <h1>Guardian 24/7 en tu servidor</h1>
+  <p>La version web solo vigila mientras tienes la pestana abierta. Para vigilar siempre, ejecuta el guardian en Python (solo libreria estandar) en un VPS o Raspberry Pi.</p>
+  <ol>
+    <li>Descarga <a href="https://github.com/iberi22/swal-trade/blob/main/scripts/risk_guardian.py"><code>scripts/risk_guardian.py</code></a> del repositorio swal-trade.</li>
+    <li>Crea una API key de Binance con SOLO <em>Enable Reading</em>.</li>
+    <li>Define las variables de entorno:
+<pre>export BINANCE_API_KEY=...
+export BINANCE_API_SECRET=...
+export GUARDIAN_DAILY_LOSS_USD=50
+export GUARDIAN_MAX_LEVERAGE=10
+export GUARDIAN_MAX_NOTIONAL_USD=2000
+export GUARDIAN_TZ_OFFSET_HOURS=-5
+export TELEGRAM_BOT_TOKEN=...
+export TELEGRAM_CHAT_ID=...</pre></li>
+    <li>Prueba una lectura: <code>python3 risk_guardian.py --once</code></li>
+    <li>Ejecutalo en continuo: <code>python3 risk_guardian.py</code> (o como servicio systemd con <code>Restart=always</code>).</li>
+  </ol>
+  <p class="warn-box">Por defecto solo avisa. <code>GUARDIAN_ENFORCE=true</code> cierra posiciones a mercado al llegar al limite y exige una clave con permiso de trading: no la actives sin entender el riesgo.</p>
+  <p><a href="/guardian/">Volver al guardian web</a></p>
+</body>
+</html>
