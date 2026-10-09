@@ -1,0 +1,48 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defineConfig, devices } from '@playwright/test';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '..');
+const port = process.env.E2E_PORT || '18787';
+const baseURL = `http://127.0.0.1:${port}`;
+
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+
+export default defineConfig({
+  testDir: './tests',
+  timeout: 90_000,
+  expect: { timeout: 20_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [['list']],
+  outputDir: path.join(here, 'test-results'),
+  use: {
+    baseURL,
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
+  },
+  projects: [
+    {
+      name: 'site',
+      testMatch: /tests\/(site|analisis|checkout|guardian)\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'extension',
+      testMatch: /tests\/extension\.spec\.ts/,
+    },
+  ],
+  webServer: {
+    // wrangler 4.118 (workerd to 2026-08-06) cannot start compatibility_date 2026-09-16.
+    command: `npx --yes wrangler@4.149.0 dev --local --port ${port} --ip 127.0.0.1`,
+    cwd: path.join(repoRoot, 'workers/public-site'),
+    url: `${baseURL}/`,
+    reuseExistingServer: process.env.E2E_REUSE === '1',
+    timeout: 180_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  },
+});

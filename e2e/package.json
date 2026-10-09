@@ -1,0 +1,20 @@
+{
+  "name": "swal-trade-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pruebas de extremo a extremo de swal-trade. Sin claves reales: el exchange y el cobro van mockeados.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:site": "playwright test --project=site",
+    "test:extension": "playwright test --project=extension",
+    "test:mcp": "node mcp/stdio.test.mjs",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.19.0"
+  }
+}
