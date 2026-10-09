@@ -85,7 +85,9 @@ function runAnalysis(refit) {
   if (refit) chart.timeScale().fitContent();
 }
 
-const top5 = (res) => res.findings.filter((f) => f.kind !== 'shock' || f.strength > 0.5).slice(0, 5);
+const top5 = (res) => (Array.isArray(res.top)
+  ? res.top.slice(0, 5)
+  : res.findings.filter((f) => f.kind !== 'shock' || f.strength > 0.5).slice(0, 5));
 
 function drawPriceLinesAndMarkers(res) {
   for (const l of state.priceLines) series.removePriceLine(l);

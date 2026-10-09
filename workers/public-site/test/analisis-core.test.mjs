@@ -179,4 +179,97 @@ test('TOOL_SPEC es una descripcion de herramienta utilizable', () => {
 test('entrada insuficiente no lanza', () => {
   const r = analyzeSync({ symbol: 'X', timeframe: '1m', candles: [] });
   assert.deepEqual(r.findings, []);
+  assert.deepEqual(r.top, []);
+});
+
+// Serie 1m determinista: muchos toques en dos bandas cercanas (se fusionan con k=0.5)
+// y un doble suelo limpio al final, cerca del cuello. Sin red.
+function clusteredDoubleBottom() {
+  const cs = [];
+  const pushBar = (close, opt = {}) => {
+    const i = cs.length;
+    const prev = cs[i - 1];
+    const open = prev ? prev.close : close;
+    const upW = opt.upW ?? 0.12;
+    const dnW = opt.dnW ?? 0.12;
+    cs.push({
+      time: 1_700_000_000 + i * 60,
+      open, high: Math.max(open, close) + upW, low: Math.min(open, close) - dnW, close,
+      volume: 120,
+    });
+  };
+  const moveTo = (target, steps, opt) => {
+    const start = cs.length ? cs[cs.length - 1].close : target;
+    for (let s = 1; s <= steps; s++) pushBar(start + ((target - start) * s) / steps, opt);
+  };
+  pushBar(106);
+  // Dos bandas separadas por mas de la tolerancia inicial de pivotes, pero con hueco < 0.5·ATR.
+  for (const p of [102.00, 102.28, 102.55, 103.05, 103.22, 103.40]) {
+    moveTo(p, 7, { dnW: 0.08, upW: 0.08 });
+    moveTo(106.5, 7, { dnW: 0.08, upW: 0.08 });
+  }
+  moveTo(96.0, 12, { dnW: 0.1, upW: 0.1 });
+  moveTo(100.4, 10, { dnW: 0.1, upW: 0.1 });
+  moveTo(96.15, 10, { dnW: 0.1, upW: 0.1 });
+  moveTo(99.15, 4, { dnW: 0.1, upW: 0.1 });
+  for (let i = 0; i < 16; i++) pushBar(99.15 + i * 0.04, { upW: 0.48, dnW: 0.48 });
+  return cs;
+}
+
+test('ranking: fusiona zonas cercanas y el doble suelo queda en top por encima', async () => {
+  const candles = clusteredDoubleBottom();
+  assert.ok(candles.every((c, i) => i === 0 || c.time - candles[i - 1].time === 60));
+  const out = analyzeSync({ symbol: 'BTCUSDT', timeframe: '1m', candles });
+  const split = analyzeSync({ symbol: 'BTCUSDT', timeframe: '1m', candles, options: { srMergeK: 0 } });
+  const zones = (r) => r.findings.filter((f) => f.kind === 'sr_zone');
+  assert.ok(zones(split).length > zones(out).length, `sin fusion ${zones(split).length} con fusion ${zones(out).length}`);
+  assert.ok(zones(split).every((z) => z.evidence.mergedFrom === 1));
+  const fused = zones(out).filter((z) => z.evidence.mergedFrom > 1);
+  assert.ok(fused.length >= 1);
+  for (const z of fused) {
+    const band = z.levels[0];
+    const gap = z.evidence.mergeGap;
+    const parts = zones(split).filter((s) => {
+      const b = s.levels[0];
+      if (band.low <= b.high && b.low <= band.high) return true;
+      const dist = band.low > b.high ? band.low - b.high : b.low - band.high;
+      return dist < gap + 1e-9;
+    });
+    assert.ok(parts.length >= 2);
+    const width = band.high - band.low;
+    const minW = Math.min(...parts.map((s) => s.levels[0].high - s.levels[0].low));
+    assert.ok(Math.abs(width - minW) < 1e-6, `rango ${width} no es el mas estrecho (${minW})`);
+    assert.equal(band.touches, parts.reduce((s, p) => s + p.levels[0].touches, 0));
+    assert.ok(band.touches >= 6);
+  }
+  assert.ok(out.top.length >= 1 && out.top.length <= 5);
+  const perKind = {};
+  for (const f of out.top) perKind[f.kind] = (perKind[f.kind] || 0) + 1;
+  for (const n of Object.values(perKind)) assert.ok(n <= 2);
+  assert.ok(zones(out).length > 2);
+  assert.equal(out.top.filter((f) => f.kind === 'sr_zone').length, 2);
+  const dbAt = out.top.findIndex((f) => f.kind === 'double_bottom');
+  const srAt = out.top.findIndex((f) => f.kind === 'sr_zone');
+  assert.ok(dbAt >= 0, `top: ${out.top.map((f) => f.kind).join(' ')}`);
+  assert.ok(srAt >= 0 && dbAt < srAt);
+  for (const f of out.top) assert.ok(out.findings.some((x) => x.id === f.id));
+  for (let i = 1; i < out.findings.length; i++) assert.ok(out.findings[i - 1].strength >= out.findings[i].strength);
+  // Regla de saturacion (analysis-core.js): strength >= 0.99 solo si evidence.exceptional.
+  // Eso exige, a la vez, un patron de grafico confirmado (nunca una zona S/R), cada componente
+  // acotado con 1-exp(-x) en >= 0.97, formacion hace <= 3 velas y distancia <= 0.25 ATR(14).
+  // Esta serie no llega: el doble suelo esta en formacion y las zonas tienen tope 0.74.
+  for (const f of out.findings) {
+    if (f.strength >= 0.99) assert.equal(f.evidence.exceptional, true, f.kind);
+    assert.ok(f.strength < 0.99, `${f.kind} ${f.strength}`);
+    assert.match(f.explanation, /Se invalida/);
+    assert.match(f.explanation, /Si cierra|Si sigue|Si se acerca|Si la vela|Si vuelve/);
+  }
+  for (const z of zones(out)) assert.ok(z.strength <= 0.74);
+  const db = out.findings.find((f) => f.kind === 'double_bottom');
+  assert.equal(db.hitRate, null);
+  assert.equal(db.evidence.exceptional, false);
+  assert.match(db.explanation, /Si cierra por encima de/);
+  const viaApi = await analyze({ symbol: 'BTCUSDT', timeframe: '1m', candles });
+  assert.equal(viaApi.top.length, out.top.length);
+  assert.equal(viaApi.top[0].kind, 'double_bottom');
 });

@@ -6,8 +6,21 @@
 //   (up|down|neutral), strength (0..1), status, evidence:{...numeros}}.
 //
 // IMPORTANTE: `strength` es la "fuerza del patron": una puntuacion geometrica/estadistica transparente
-// (toques, simetria, confirmacion por volumen, cercania a la ruptura). NO es una probabilidad ni una tasa
-// de acierto. La tasa de acierto solo vendra de backtests: ver historicalHitRate().
+// (toques, simetria, confirmacion por volumen, cercania a la ruptura, recencia, distancia al precio).
+// NO es una probabilidad ni una tasa de acierto. La tasa de acierto solo vendra de backtests: ver historicalHitRate().
+//
+// Regla de saturacion (strength >= 0.99 solo con evidencia excepcional):
+// Cada componente entra por una transformacion acotada 1-exp(-x), que se acerca a 1 sin alcanzarla.
+// Despues se aplica el peso de WEIGHTS. El valor publicado tiene un tope ordinario de 0.98.
+// strength >= 0.99 solo si evidence.exceptional === true. Eso exige las cuatro cosas a la vez:
+//   1) patron de grafico ya confirmado: doble techo/suelo, triangulo, ruptura de rango o divergencia RSI
+//      (una zona S/R, un choque, un pivote o el perfil de volumen nunca es excepcional);
+//   2) cada componente acotado >= 0.97;
+//   3) la formacion termina hace 3 velas o menos;
+//   4) el precio esta a 0.25 ATR(14) o menos del nivel de decision.
+// Las zonas S/R tienen ademas el tope srStrengthCap (0.74): con evidencia comparable quedan por debajo
+// de un doble techo/suelo, triangulo, ruptura o divergencia. La recencia decae con las velas desde el
+// ultimo toque o la formacion; la distancia al precio actual resta fuerza (mas en las zonas).
 
 export const DEFAULTS = {
   pivotWindow: 3,       // velas a cada lado para un pivote fractal
@@ -20,6 +33,10 @@ export const DEFAULTS = {
   lookbackPatterns: 120, // los patrones deben terminar dentro de las ultimas N velas
   rangeLookback: 30,
   rangeMaxAtr: 8,
+  srMergeK: 0.5,        // fusiona zonas S/R si sus rangos se solapan o distan menos de k·ATR(14)
+  srStrengthCap: 0.74,  // tope de una zona: por debajo de un patron de grafico con evidencia comparable
+  topLimit: 5,
+  topPerKind: 2,
 };
 
 // Pesos de cada componente de `strength` (cada conjunto suma 1). Visibles para que sean auditables.
@@ -94,6 +111,42 @@ function finding(f) {
   return { levels: [], direction: 'neutral', status: 'forming', evidence: {}, ...f, strength: r4(clamp01(f.strength)) };
 }
 
+/** 1-exp(-x): acota en [0, 1) y no se satura con un conteo grande. */
+const sat = (x) => 1 - Math.exp(-Math.max(0, Number.isFinite(x) ? x : 0));
+
+/** Recencia acotada: vela actual ≈ 0.98; decae con las velas transcurridas y nunca llega a 1. */
+const boundedRecency = (candlesSince, halfLife = 40) => sat(4 * Math.exp(-Math.max(0, candlesSince) / halfLife));
+
+const CHART_KINDS = new Set([
+  'double_top', 'double_bottom',
+  'ascending_triangle', 'descending_triangle', 'symmetric_triangle',
+  'range_breakout',
+  'rsi_divergence_bullish', 'rsi_divergence_bearish',
+]);
+
+/**
+ * Publica `strength` con tope ordinario 0.98.
+ * `components` (opcional) son las puntuaciones ya acotadas; sirven solo para la regla exceptional.
+ * La distancia al precio, si nearWeight > 0, reduce la fuerza: exp(-distAtr / nearScale).
+ */
+function scoreStrength(kind, raw, { status = 'forming', components = null, candlesSince = Infinity, distAtr = Infinity, nearWeight = 0, nearScale = 4, srCap = DEFAULTS.srStrengthCap } = {}) {
+  const near = Math.exp(-Math.max(0, Number.isFinite(distAtr) ? distAtr : 0) / nearScale);
+  let strength = clamp01(raw) * ((1 - nearWeight) + nearWeight * near);
+  const parts = Array.isArray(components) ? components : [];
+  const exceptional = CHART_KINDS.has(kind)
+    && status === 'confirmed'
+    && parts.length >= 3
+    && parts.every((c) => c >= 0.97)
+    && candlesSince <= 3
+    && distAtr <= 0.25;
+  if (kind === 'sr_zone') strength = Math.min(strength, srCap);
+  if (kind === 'shock') strength = Math.min(strength, 0.62);
+  if (kind === 'volume_profile') strength = Math.min(strength, 0.5);
+  if (!exceptional) strength = Math.min(strength, 0.98);
+  else strength = Math.min(strength, 0.999);
+  return { strength, exceptional };
+}
+
 // ---------- 1. pivotes ----------
 /** Pivotes fractales: maximo/minimo local con `w` velas a cada lado (confirmados: necesitan w velas despues). */
 export function findPivots(candles, w = DEFAULTS.pivotWindow) {
@@ -116,8 +169,8 @@ export function pivotFindings(candles, pivots) {
     kind: 'pivot',
     label: p.type === 'high' ? 'Máximo local' : 'Mínimo local',
     explanation: p.type === 'high'
-      ? `Máximo local en ${fmt(p.price)}: el precio subió hasta aquí y luego retrocedió.`
-      : `Mínimo local en ${fmt(p.price)}: el precio bajó hasta aquí y luego rebotó.`,
+      ? `Máximo local en ${fmt(p.price)}: el precio subió hasta aquí y luego retrocedió. Sigue vigente si las velas vecinas no lo superan. Se invalida si cierra por encima de ${fmt(p.price)}.`
+      : `Mínimo local en ${fmt(p.price)}: el precio bajó hasta aquí y luego rebotó. Sigue vigente si las velas vecinas no lo pierden. Se invalida si cierra por debajo de ${fmt(p.price)}.`,
     from: p.time, to: p.time,
     levels: [{ role: p.type === 'high' ? 'pivot_high' : 'pivot_low', price: p.price }],
     direction: 'neutral',
@@ -161,44 +214,112 @@ export function trendOf(candles, opts = {}) {
 }
 
 // ---------- 3. soportes / resistencias ----------
-/** Agrupa pivotes cercanos (tolerancia 0.6 ATR) en zonas; cada zona cuenta sus toques. */
+/** Dos zonas se fusionan si sus rangos se solapan o el hueco entre ellos es menor que `gap`. */
+function rangesClose(a, b, gap) {
+  if (a.low <= b.high && b.low <= a.high) return true;
+  const dist = a.low > b.high ? a.low - b.high : b.low - a.high;
+  return dist < gap;
+}
+
+/**
+ * Une zonas conectadas (solape o cercania). La zona resultante suma los toques y se queda
+ * con el rango mas estrecho del grupo (en empate, el de mas toques).
+ */
+function mergeSrClusters(zones, gap) {
+  const parent = zones.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const unite = (i, j) => {
+    const ri = find(i), rj = find(j);
+    if (ri !== rj) parent[ri] = rj;
+  };
+  for (let i = 0; i < zones.length; i++) {
+    for (let j = i + 1; j < zones.length; j++) {
+      if (rangesClose(zones[i], zones[j], gap)) unite(i, j);
+    }
+  }
+  const groups = new Map();
+  zones.forEach((z, i) => {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(z);
+  });
+  return [...groups.values()].map((g) => {
+    let tight = g[0];
+    for (const z of g.slice(1)) {
+      const w = z.high - z.low, tw = tight.high - tight.low;
+      if (w < tw - 1e-9 || (Math.abs(w - tw) <= 1e-9 && z.touches > tight.touches)) tight = z;
+    }
+    return {
+      low: tight.low,
+      high: tight.high,
+      price: (tight.low + tight.high) / 2,
+      touches: g.reduce((s, z) => s + z.touches, 0),
+      first: Math.min(...g.map((z) => z.first)),
+      lastIdx: Math.max(...g.map((z) => z.lastIdx)),
+      parts: g.length,
+    };
+  });
+}
+
+/** Agrupa pivotes cercanos (tolerancia 0.6 ATR) y fusiona zonas a menos de srMergeK·ATR. */
 export function srZones(candles, pivots, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const a = atr(candles, o.atrPeriod);
   if (!a || pivots.length < 2) return [];
   const tol = 0.6 * a;
+  const mergeGap = Math.max(0, o.srMergeK) * a;
   const sorted = [...pivots].sort((x, y) => x.price - y.price);
   const clusters = [];
   for (const p of sorted) {
     const c = clusters[clusters.length - 1];
     if (c && p.price - mean(c.map((q) => q.price)) <= tol) c.push(p); else clusters.push([p]);
   }
-  const n = candles.length - 1;
-  const last = candles[n].close;
-  const out = [];
+  const raw = [];
   for (const c of clusters) {
     if (c.length < 2) continue;
     const prices = c.map((p) => p.price);
-    const low = Math.min(...prices), high = Math.max(...prices), price = mean(prices);
-    const first = Math.min(...c.map((p) => p.index)), lastIdx = Math.max(...c.map((p) => p.index));
-    const w = WEIGHTS.sr;
-    const touches = c.length;
-    const strength = w.touches * clamp01(touches / 5) + w.recency * clamp01(1 - (n - lastIdx) / 200) + w.age * clamp01((lastIdx - first) / 100);
+    raw.push({
+      low: Math.min(...prices),
+      high: Math.max(...prices),
+      touches: c.length,
+      first: Math.min(...c.map((p) => p.index)),
+      lastIdx: Math.max(...c.map((p) => p.index)),
+    });
+  }
+  const n = candles.length - 1;
+  const last = candles[n].close;
+  const w = WEIGHTS.sr;
+  return mergeSrClusters(raw, mergeGap).map((z) => {
+    const { price, low, high, touches, first, lastIdx, parts } = z;
+    const candlesSince = n - lastIdx;
+    const distAtr = Math.abs(price - last) / a;
+    const touchS = sat(touches / 2.2);
+    const recS = boundedRecency(candlesSince, 45);
+    const ageS = sat((lastIdx - first) / 25);
+    const nearS = sat(4 * Math.exp(-distAtr / 2.5));
+    // nearS no esta en WEIGHTS: una zona lejos del precio pierde fuerza aunque sume muchos toques.
+    const rawScore = (w.touches * touchS + w.recency * recS + w.age * ageS) * (0.5 + 0.5 * nearS);
+    const scored = scoreStrength('sr_zone', rawScore, { status: 'confirmed', candlesSince, distAtr, srCap: o.srStrengthCap });
     const role = price < last ? 'support' : 'resistance';
-    out.push(finding({
+    const band = `${fmt(low)}–${fmt(high)}`;
+    const explanation = role === 'support'
+      ? `Zona de soporte en ${fmt(price)} (rango ${band}): el precio rebotó ${touches} veces aquí. Si cierra por encima de ${fmt(low)} al volver a la zona, el soporte se confirma. Se invalida si cierra por debajo de ${fmt(low)}.`
+      : `Zona de resistencia en ${fmt(price)} (rango ${band}): el precio fue frenado ${touches} veces aquí. Si cierra por debajo de ${fmt(high)} al volver a la zona, la resistencia se confirma. Se invalida si cierra por encima de ${fmt(high)}.`;
+    return finding({
       id: `sr:${role}:${Math.round(price * 100)}`,
       kind: 'sr_zone',
       label: role === 'support' ? 'Zona de soporte' : 'Zona de resistencia',
-      explanation: role === 'support'
-        ? `El precio rebotó ${touches} veces cerca de ${fmt(price)}. Si lo pierde, esa zona deja de sostenerlo.`
-        : `El precio fue frenado ${touches} veces cerca de ${fmt(price)}. Si lo supera, esa zona deja de frenarlo.`,
+      explanation,
       from: candles[first].time, to: candles[n].time,
       levels: [{ role, price: r4(price), low: r4(low), high: r4(high), touches }],
-      direction: 'neutral', strength, status: 'confirmed',
-      evidence: { touches, low: r4(low), high: r4(high), firstIndex: first, lastIndex: lastIdx, tolerance: r4(tol) },
-    }));
-  }
-  return out;
+      direction: 'neutral', strength: scored.strength, status: 'confirmed',
+      evidence: {
+        touches, low: r4(low), high: r4(high), firstIndex: first, lastIndex: lastIdx,
+        tolerance: r4(tol), mergeGap: r4(mergeGap), mergedFrom: parts,
+        candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      },
+    });
+  });
 }
 
 // ---------- 4. doble techo / doble suelo ----------
@@ -229,24 +350,46 @@ function doubleExtreme(candles, pivots, type, o) {
     const vol2 = mean(candles.slice(Math.max(0, p2.index - 1), p2.index + 2).map((x) => x.volume));
     const volRatio = vol1 ? vol2 / vol1 : 1;
     const w = WEIGHTS.double;
-    const strength = w.symmetry * clamp01(1 - diff / tol) + w.depth * clamp01(depth / 4)
-      + w.proximity * (broken ? clamp01(1 - (distNeck - 0) / 1.5) : clamp01(1 - distNeck))
-      + w.volume * (volRatio < 1 ? 1 : 0.4) + w.recency * clamp01(1 - (n - p2.index) / o.lookbackPatterns);
+    const candlesSince = n - p2.index;
+    const distAtr = Math.abs(last - neck) / a;
+    const proxRaw = broken ? clamp01(1.4 - distNeck) : clamp01(1 - distNeck * 0.85);
+    const components = [
+      sat((1 - diff / tol) * 4),
+      sat(depth / 2),
+      sat(proxRaw * 3.2),
+      sat(volRatio < 1 ? 3.5 : 1.4),
+      boundedRecency(candlesSince, 40),
+    ];
+    const rawScore = w.symmetry * components[0] + w.depth * components[1] + w.proximity * components[2]
+      + w.volume * components[3] + w.recency * components[4];
+    const kind = top ? 'double_top' : 'double_bottom';
+    const status = broken ? 'confirmed' : 'forming';
+    const scored = scoreStrength(kind, rawScore, { status, components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 6 });
+    const where = `${fmt(p1.price)} y ${fmt(p2.price)}`;
+    const explanation = top
+      ? (broken
+        ? `Doble techo en ${where}, con cuello en ${fmt(neck)}: dos máximos casi iguales. El precio ya cerró por debajo del cuello. Si cierra por debajo de ${fmt(neck)}, el giro a la baja sigue confirmado. Se invalida si cierra por encima de ${fmt(extreme)}.`
+        : `Doble techo en ${where}, con cuello en ${fmt(neck)}: dos máximos casi iguales. Si cierra por debajo de ${fmt(neck)}, el giro a la baja se confirma. Se invalida si cierra por encima de ${fmt(extreme)}.`)
+      : (broken
+        ? `Doble suelo en ${where}, con cuello en ${fmt(neck)}: dos mínimos casi iguales. El precio ya cerró por encima del cuello. Si cierra por encima de ${fmt(neck)}, el giro al alza sigue confirmado. Se invalida si cierra por debajo de ${fmt(extreme)}.`
+        : `Doble suelo en ${where}, con cuello en ${fmt(neck)}: dos mínimos casi iguales. Si cierra por encima de ${fmt(neck)}, el giro al alza se confirma. Se invalida si cierra por debajo de ${fmt(extreme)}.`);
     out.push(finding({
-      id: `${top ? 'double_top' : 'double_bottom'}:${p1.time}:${p2.time}`,
-      kind: top ? 'double_top' : 'double_bottom',
+      id: `${kind}:${p1.time}:${p2.time}`,
+      kind,
       label: top ? 'Doble techo' : 'Doble suelo',
-      explanation: top
-        ? `Dos máximos casi iguales (${fmt(p1.price)} y ${fmt(p2.price)}). ${broken ? 'El precio ya rompió la línea de cuello: señal de giro a la baja.' : `Si el precio rompe ${fmt(neck)} hacia abajo, el patrón se confirma.`}`
-        : `Dos mínimos casi iguales (${fmt(p1.price)} y ${fmt(p2.price)}). ${broken ? 'El precio ya rompió la línea de cuello: señal de giro al alza.' : `Si el precio rompe ${fmt(neck)} hacia arriba, el patrón se confirma.`}`,
+      explanation,
       from: p1.time, to: candles[n].time,
       levels: [
         { role: 'neckline', price: r4(neck) },
         { role: top ? 'peak' : 'trough', price: r4(p1.price), time: p1.time },
         { role: top ? 'peak' : 'trough', price: r4(p2.price), time: p2.time },
       ],
-      direction: top ? 'down' : 'up', strength, status: broken ? 'confirmed' : 'forming',
-      evidence: { peak1: p1.price, peak2: p2.price, diffAtr: r4(diff / a), depthAtr: r4(depth), neckline: r4(neck), distToNeckline: r4(distNeck), volumeRatio2vs1: r4(volRatio), broken },
+      direction: top ? 'down' : 'up', strength: scored.strength, status,
+      evidence: {
+        peak1: p1.price, peak2: p2.price, diffAtr: r4(diff / a), depthAtr: r4(depth), neckline: r4(neck),
+        distToNeckline: r4(distNeck), volumeRatio2vs1: r4(volRatio), broken,
+        candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      },
     }));
   }
   return out;
@@ -299,23 +442,35 @@ export function triangles(candles, pivots, opts = {}) {
   const dist = Math.abs(target - last) / w1;
   const proximity = bias === 'neutral' ? clamp01(1 - Math.min(Math.abs(upper - last), Math.abs(last - lower)) / w1 * 2) : clamp01(1 - dist);
   const w = WEIGHTS.triangle;
-  const strength = w.touches * clamp01(touches / 6) + w.fit * fit + w.convergence * convergence + w.proximity * proximity;
-  const names = {
-    ascending_triangle: ['Triángulo ascendente', 'Techo horizontal y mínimos cada vez más altos: los compradores presionan. Suele resolverse con ruptura al alza, aunque puede fallar.'],
-    descending_triangle: ['Triángulo descendente', 'Suelo horizontal y máximos cada vez más bajos: los vendedores presionan. Suele resolverse con ruptura a la baja, aunque puede fallar.'],
-    symmetric_triangle: ['Triángulo simétrico', 'El rango se estrecha por ambos lados: el mercado se comprime y se espera una ruptura, sin dirección definida de antemano.'],
+  const a = atr(candles, o.atrPeriod) || Math.abs(last) * 0.001 || 1;
+  const lastPivot = Math.max(hs[hs.length - 1].index, ls[ls.length - 1].index);
+  const candlesSince = n - lastPivot;
+  const distAtr = Math.min(Math.abs(upper - last), Math.abs(last - lower)) / a;
+  const components = [sat(touches / 2.5), sat(fit * 3.2), sat(convergence * 3.2), sat(proximity * 3.2)];
+  const rawScore = (w.touches * components[0] + w.fit * components[1] + w.convergence * components[2] + w.proximity * components[3])
+    * (0.72 + 0.28 * boundedRecency(candlesSince, 40));
+  const scored = scoreStrength(kind, rawScore, { status: 'forming', components, candlesSince, distAtr, nearWeight: 0.15, nearScale: 6 });
+  const upPx = fmt(upper), loPx = fmt(lower);
+  const copy = {
+    ascending_triangle: ['Triángulo ascendente', `Triángulo ascendente entre ${loPx} y ${upPx}: techo horizontal y mínimos cada vez más altos. Si cierra por encima de ${upPx}, la ruptura al alza se confirma. Se invalida si cierra por debajo de ${loPx}.`],
+    descending_triangle: ['Triángulo descendente', `Triángulo descendente entre ${loPx} y ${upPx}: suelo horizontal y máximos cada vez más bajos. Si cierra por debajo de ${loPx}, la ruptura a la baja se confirma. Se invalida si cierra por encima de ${upPx}.`],
+    symmetric_triangle: ['Triángulo simétrico', `Triángulo simétrico entre ${loPx} y ${upPx}: el rango se estrecha por ambos lados y el mercado se comprime. Si cierra por encima de ${upPx}, se confirma la ruptura al alza; si cierra por debajo de ${loPx}, a la baja. Se invalida ese intento si, después de salir, cierra de nuevo entre ${loPx} y ${upPx}.`],
   };
   return [finding({
     id: `${kind}:${candles[x0].time}`,
-    kind, label: names[kind][0],
-    explanation: names[kind][1],
+    kind, label: copy[kind][0],
+    explanation: copy[kind][1],
     from: candles[x0].time, to: candles[n].time,
     levels: [
       { role: 'triangle_upper', price: r4(upper), line: { from: { time: candles[x0].time, price: r4(hi(x0)) }, to: { time: candles[n].time, price: r4(upper) } } },
       { role: 'triangle_lower', price: r4(lower), line: { from: { time: candles[x0].time, price: r4(lo(x0)) }, to: { time: candles[n].time, price: r4(lower) } } },
     ],
-    direction: bias, strength, status: 'forming',
-    evidence: { touchesHigh: hs.length, touchesLow: ls.length, fit: r4(fit), convergence: r4(convergence), widthStart: r4(w0), widthNow: r4(w1), distToBreakout: r4(dist) },
+    direction: bias, strength: scored.strength, status: 'forming',
+    evidence: {
+      touchesHigh: hs.length, touchesLow: ls.length, fit: r4(fit), convergence: r4(convergence),
+      widthStart: r4(w0), widthNow: r4(w1), distToBreakout: r4(dist),
+      candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+    },
   })];
 }
 
@@ -345,22 +500,30 @@ export function rangeBreakout(candles, opts = {}) {
     dir = up ? 'up' : 'down'; status = 'confirmed';
     const excess = (up ? last.close - hi : lo - last.close) / a;
     distance = clamp01(1 - excess / 2); // muy extendido = persecucion tardia
-    expl = `El precio salió del rango ${fmt(lo)}–${fmt(hi)} hacia ${up ? 'arriba' : 'abajo'}${volRatio >= 1.5 ? ' con volumen alto, lo que refuerza la ruptura' : ' pero sin volumen especial, así que puede ser falsa'}.`;
+    const back = up ? `por debajo de ${fmt(hi)}` : `por encima de ${fmt(lo)}`;
+    const hold = up ? `por encima de ${fmt(hi)}` : `por debajo de ${fmt(lo)}`;
+    expl = `Ruptura de rango ${fmt(lo)}–${fmt(hi)}: el precio salió hacia ${up ? 'arriba' : 'abajo'}${volRatio >= 1.5 ? ' con volumen alto' : ' sin volumen especial'}. Si sigue y cierra ${hold}, la ruptura se mantiene. Se invalida si cierra de nuevo ${back}, de vuelta dentro del rango.`;
   } else {
     const dHi = hi - last.close, dLo = last.close - lo;
     if (Math.min(dHi, dLo) > 0.2 * width) return []; // lejos de los bordes: no hay nada que decir
     dir = dHi < dLo ? 'up' : 'down'; status = 'forming';
     distance = clamp01(1 - Math.min(dHi, dLo) / (0.2 * width));
-    expl = `El precio lleva ${L} velas en el rango ${fmt(lo)}–${fmt(hi)} y está pegado al borde ${dir === 'up' ? 'superior' : 'inferior'}: vigila una posible ruptura.`;
+    expl = `Rango comprimido ${fmt(lo)}–${fmt(hi)}: el precio lleva ${L} velas dentro y está pegado al borde ${dir === 'up' ? 'superior' : 'inferior'}. Si cierra por encima de ${fmt(hi)}, se confirma al alza; si cierra por debajo de ${fmt(lo)}, a la baja. Se invalida el intento si el precio se aleja del borde y cierra otra vez en el centro, sin salir del rango.`;
   }
-  const strength = w.tightness * tight + w.touches * clamp01(touches / 6) + w.volume * clamp01(volRatio / 2) + w.distance * distance;
+  const candlesSince = 0; // la senal es la ultima vela
+  const distAtr = status === 'confirmed'
+    ? Math.abs(last.close - (up ? hi : lo)) / a
+    : Math.min(Math.abs(hi - last.close), Math.abs(last.close - lo)) / a;
+  const components = [sat(tight * 3), sat(touches / 2.5), sat(volRatio / 1.2), sat(distance * 3)];
+  const rawScore = w.tightness * components[0] + w.touches * components[1] + w.volume * components[2] + w.distance * components[3];
+  const scored = scoreStrength('range_breakout', rawScore, { status, components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 4 });
   return [finding({
     id: `range_breakout:${box[0].time}:${status}`,
     kind: 'range_breakout', label: status === 'confirmed' ? 'Ruptura de rango' : 'Rango comprimido',
     explanation: expl, from: box[0].time, to: last.time,
     levels: [{ role: 'range_high', price: r4(hi) }, { role: 'range_low', price: r4(lo) }],
-    direction: dir, strength, status,
-    evidence: { widthAtr: r4(width / a), touches, volumeRatio: r4(volRatio), bars: L },
+    direction: dir, strength: scored.strength, status,
+    evidence: { widthAtr: r4(width / a), touches, volumeRatio: r4(volRatio), bars: L, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
   })];
 }
 
@@ -377,15 +540,24 @@ export function shocks(candles, opts = {}) {
     const ratio = Math.max(rTr, rV);
     if (ratio <= o.shockK) continue;
     const k = candles[i];
-    const strength = 0.25 + 0.5 * clamp01((ratio - o.shockK) / (2 * o.shockK));
+    const n = candles.length - 1;
     const up = k.close >= k.open;
+    const price = up ? k.high : k.low;
+    const a = atr(candles, o.atrPeriod) || Math.abs(candles[n].close) * 0.001 || 1;
+    const candlesSince = n - i;
+    const distAtr = Math.abs(price - candles[n].close) / a;
+    const mag = sat((ratio - o.shockK) / o.shockK);
+    const rawScore = 0.6 * mag + 0.4 * boundedRecency(candlesSince, 25);
+    const scored = scoreStrength('shock', rawScore, { status: 'confirmed', candlesSince, distAtr, nearWeight: 0.25, nearScale: 4 });
+    const extreme = fmt(price);
+    const openPx = fmt(k.open);
     out.push(finding({
       id: `shock:${k.time}`, kind: 'shock', label: 'Vela de choque',
-      explanation: `${rTr > o.shockK ? `Rango ${rTr.toFixed(1)} veces el normal` : ''}${rTr > o.shockK && rV > o.shockK ? ' y ' : ''}${rV > o.shockK ? `volumen ${rV.toFixed(1)} veces el normal` : ''}: movimiento anómalo, ${up ? 'empujado al alza' : 'empujado a la baja'}. Suele marcar noticias o liquidaciones.`,
+      explanation: `Vela de choque en ${extreme}: ${rTr > o.shockK ? `rango ${rTr.toFixed(1)} veces el normal` : ''}${rTr > o.shockK && rV > o.shockK ? ' y ' : ''}${rV > o.shockK ? `volumen ${rV.toFixed(1)} veces el normal` : ''}, movimiento anómalo ${up ? 'al alza' : 'a la baja'}. Si la vela siguiente cierra por ${up ? 'encima' : 'debajo'} de ${extreme}, el impulso se confirma. Se invalida si el precio devuelve el movimiento y cierra por ${up ? 'debajo' : 'encima'} de ${openPx}.`,
       from: k.time, to: k.time,
-      levels: [{ role: 'shock', price: up ? k.high : k.low }],
-      direction: up ? 'up' : 'down', strength, status: 'confirmed',
-      evidence: { rangeRatio: r4(rTr), volumeRatio: r4(rV), k: o.shockK, index: i },
+      levels: [{ role: 'shock', price }],
+      direction: up ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
+      evidence: { rangeRatio: r4(rTr), volumeRatio: r4(rV), k: o.shockK, index: i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
     }));
   }
   return out.sort((x, y) => y.evidence.index - x.evidence.index).slice(0, o.maxShocks);
@@ -415,14 +587,22 @@ export function volumeProfile(candles, opts = {}) {
   const price = (i) => lo + (i + 0.5) * step;
   const last = candles[candles.length - 1].close;
   const pocP = price(poc);
+  const val = lo + a * step, vah = lo + (b + 1) * step;
+  const atrNow = atr(candles, o.atrPeriod) || Math.abs(last) * 0.001 || 1;
+  const distAtr = Math.abs(pocP - last) / atrNow;
+  const rawScore = 0.2 + 0.45 * sat(((vol[poc] / total) * nb) / 2);
+  const scored = scoreStrength('volume_profile', rawScore, { status: 'confirmed', candlesSince: 0, distAtr, nearWeight: 0.35, nearScale: 4 });
   return [finding({
     id: `volume_profile:${candles[0].time}:${candles[candles.length - 1].time}`,
     kind: 'volume_profile', label: 'Perfil de volumen (POC)',
-    explanation: `El precio donde más se negoció es ${fmt(pocP)} (POC). El precio actual está ${last > pocP ? 'por encima' : 'por debajo'}: ese nivel suele actuar como imán o como soporte/resistencia.`,
+    explanation: `Perfil de volumen: el precio donde más se negoció es ${fmt(pocP)} (POC), dentro del área de valor ${fmt(val)}–${fmt(vah)}. El precio actual está ${last > pocP ? 'por encima' : 'por debajo'}. Si se acerca y cierra respetando ${fmt(pocP)} como ${last > pocP ? 'soporte' : 'resistencia'}, el nivel se confirma. Se invalida como imán si cierra fuera del área de valor y no regresa.`,
     from: candles[0].time, to: candles[candles.length - 1].time,
-    levels: [{ role: 'poc', price: r4(pocP) }, { role: 'vah', price: r4(lo + (b + 1) * step) }, { role: 'val', price: r4(lo + a * step) }],
-    direction: 'neutral', strength: 0.15 + 0.35 * clamp01((vol[poc] / total) * nb / 4), status: 'confirmed',
-    evidence: { pocShare: r4(vol[poc] / total), bins: vol.map((v, i) => ({ price: r4(price(i)), volume: r4(v) })), valueAreaLow: r4(lo + a * step), valueAreaHigh: r4(lo + (b + 1) * step) },
+    levels: [{ role: 'poc', price: r4(pocP) }, { role: 'vah', price: r4(vah) }, { role: 'val', price: r4(val) }],
+    direction: 'neutral', strength: scored.strength, status: 'confirmed',
+    evidence: {
+      pocShare: r4(vol[poc] / total), bins: vol.map((v, i) => ({ price: r4(price(i)), volume: r4(v) })),
+      valueAreaLow: r4(val), valueAreaHigh: r4(vah), candlesSince: 0, distAtr: r4(distAtr), exceptional: scored.exceptional,
+    },
   })];
 }
 
@@ -448,18 +628,30 @@ export function rsiDivergence(candles, pivots, opts = {}) {
       if (after.some((x) => (bull ? x.low < p2.price : x.high > p2.price))) continue; // invalidada
       const w = WEIGHTS.divergence;
       const extremity = bull ? clamp01((40 - r[p2.index]) / 20) : clamp01((r[p2.index] - 60) / 20);
-      const strength = w.rsiGap * clamp01(rsiDiff / 15) + w.priceGap * clamp01(priceDiff / a / 2) + w.extremity * extremity + w.recency * clamp01(1 - (n - p2.index) / 60);
+      const candlesSince = n - p2.index;
+      const between = candles.slice(p1.index, p2.index + 1);
+      const confirmPx = bull ? Math.max(...between.map((x) => x.high)) : Math.min(...between.map((x) => x.low));
+      const distAtr = Math.abs(candles[n].close - p2.price) / a;
+      const components = [sat(rsiDiff / 8), sat(priceDiff / a), sat(extremity * 3.2), boundedRecency(candlesSince, 30)];
+      const rawScore = w.rsiGap * components[0] + w.priceGap * components[1] + w.extremity * components[2] + w.recency * components[3];
+      const kind = bull ? 'rsi_divergence_bullish' : 'rsi_divergence_bearish';
+      const scored = scoreStrength(kind, rawScore, { status: 'confirmed', components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 5 });
+      const explanation = bull
+        ? `Divergencia alcista del RSI entre ${fmt(p1.price)} y ${fmt(p2.price)}: el precio hizo un mínimo más bajo, pero el RSI subió de ${r[p1.index].toFixed(0)} a ${r[p2.index].toFixed(0)}. Si cierra por encima de ${fmt(confirmPx)}, el rebote se confirma. Se invalida si cierra por debajo de ${fmt(p2.price)}.`
+        : `Divergencia bajista del RSI entre ${fmt(p1.price)} y ${fmt(p2.price)}: el precio hizo un máximo más alto, pero el RSI bajó de ${r[p1.index].toFixed(0)} a ${r[p2.index].toFixed(0)}. Si cierra por debajo de ${fmt(confirmPx)}, el retroceso se confirma. Se invalida si cierra por encima de ${fmt(p2.price)}.`;
       out.push(finding({
         id: `rsi_div:${bull ? 'bull' : 'bear'}:${p1.time}:${p2.time}`,
-        kind: bull ? 'rsi_divergence_bullish' : 'rsi_divergence_bearish',
+        kind,
         label: bull ? 'Divergencia alcista RSI' : 'Divergencia bajista RSI',
-        explanation: bull
-          ? `El precio hizo un mínimo más bajo, pero el RSI hizo uno más alto (${r[p1.index].toFixed(0)} a ${r[p2.index].toFixed(0)}): la presión vendedora se agota y podría haber un rebote.`
-          : `El precio hizo un máximo más alto, pero el RSI hizo uno más bajo (${r[p1.index].toFixed(0)} a ${r[p2.index].toFixed(0)}): la fuerza compradora se agota y podría haber un retroceso.`,
+        explanation,
         from: p1.time, to: p2.time,
         levels: [{ role: 'divergence_start', price: r4(p1.price), time: p1.time }, { role: 'divergence_end', price: r4(p2.price), time: p2.time }],
-        direction: bull ? 'up' : 'down', strength, status: 'confirmed',
-        evidence: { rsi1: r4(r[p1.index]), rsi2: r4(r[p2.index]), price1: p1.price, price2: p2.price, rsiGap: r4(rsiDiff), priceGapAtr: r4(priceDiff / a), barsBetween: gap },
+        direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
+        evidence: {
+          rsi1: r4(r[p1.index]), rsi2: r4(r[p2.index]), price1: p1.price, price2: p2.price,
+          rsiGap: r4(rsiDiff), priceGapAtr: r4(priceDiff / a), barsBetween: gap,
+          candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+        },
       }));
     }
   }
@@ -467,11 +659,40 @@ export function rsiDivergence(candles, pivots, opts = {}) {
 }
 
 // ---------- orquestacion ----------
-/** Sincrona y pura. Devuelve hallazgos ordenados por `strength` (desc), luego por recencia. */
+/**
+ * Hasta `limit` hallazgos, como mucho `perKind` de cada tipo.
+ * Primero los patrones de grafico con fuerza >= 0.4 (doble techo/suelo, triangulo,
+ * ruptura, divergencia): son los que pueden completarse. Dentro de ese grupo, y despues
+ * en el resto, se prefiere fuerza, cercania al precio y recencia.
+ * `findings` sigue siendo la lista completa ordenada solo por strength.
+ */
+function selectTop(findings, limit, perKind) {
+  const tendency = (f) => {
+    const since = Number.isFinite(f.evidence?.candlesSince) ? f.evidence.candlesSince : 0;
+    const dist = Number.isFinite(f.evidence?.distAtr) ? f.evidence.distAtr : 0;
+    const near = Math.exp(-Math.max(0, dist) / 4);
+    const recent = Math.exp(-Math.max(0, since) / 40);
+    return f.strength * (0.6 + 0.4 * near) * (0.6 + 0.4 * recent);
+  };
+  const chartLead = (f) => (CHART_KINDS.has(f.kind) && f.strength >= 0.4 ? 1 : 0);
+  const ranked = [...findings].sort((a, b) => chartLead(b) - chartLead(a) || tendency(b) - tendency(a) || b.strength - a.strength || b.to - a.to);
+  const top = [];
+  const counts = new Map();
+  for (const f of ranked) {
+    const n = counts.get(f.kind) || 0;
+    if (n >= perKind) continue;
+    top.push(f);
+    counts.set(f.kind, n + 1);
+    if (top.length >= limit) break;
+  }
+  return top;
+}
+
+/** Sincrona y pura. `findings` va ordenado por `strength` (desc), luego por recencia. `top` es el subconjunto diverso. */
 export function analyzeSync({ symbol = '', timeframe = '', candles = [], options = {} } = {}) {
   const o = { ...DEFAULTS, ...options };
   if (!Array.isArray(candles) || candles.length < 20) {
-    return { symbol, timeframe, findings: [], trend: trendOf(candles || [], o), levels: [], pivots: [], hitRate: null };
+    return { symbol, timeframe, findings: [], top: [], trend: trendOf(candles || [], o), levels: [], pivots: [], hitRate: null };
   }
   const pivots = findPivots(candles, o.pivotWindow);
   const trend = trendOf(candles, o);
@@ -485,14 +706,18 @@ export function analyzeSync({ symbol = '', timeframe = '', candles = [], options
     ...rsiDivergence(candles, pivots, o),
   ].map((f) => ({ ...f, hitRate: historicalHitRate(f.kind, timeframe, symbol), hitRateNote: NO_HISTORY_TEXT }));
   findings.sort((a, b) => b.strength - a.strength || b.to - a.to);
+  const top = selectTop(findings, o.topLimit, o.topPerKind);
   const levels = findings.flatMap((f) => f.levels.map((l) => ({ ...l, findingId: f.id, kind: f.kind })));
-  return { symbol, timeframe, findings, trend, levels, pivots };
+  return { symbol, timeframe, findings, top, trend, levels, pivots };
 }
 
 /** API tipo herramienta: la misma funcion puede envolverse en un servidor MCP. */
 export async function analyze(input) {
   const res = analyzeSync(input);
-  return { findings: res.findings, trend: res.trend, levels: res.levels, pivots: res.pivots, symbol: res.symbol, timeframe: res.timeframe, generatedAt: new Date().toISOString() };
+  return {
+    findings: res.findings, top: res.top, trend: res.trend, levels: res.levels, pivots: res.pivots,
+    symbol: res.symbol, timeframe: res.timeframe, generatedAt: new Date().toISOString(),
+  };
 }
 
 export const TOOL_SPEC = {
