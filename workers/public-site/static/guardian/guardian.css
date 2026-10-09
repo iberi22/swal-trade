@@ -1,18 +1,32 @@
-body{font-family:system-ui,sans-serif;max-width:60rem;margin:0 auto;padding:1rem;background:#0f1216;color:#e6e9ee}
-a{color:#7cb7ff}
-fieldset,section{border:1px solid #2a313b;border-radius:8px;padding:1rem;margin:1rem 0}
-label{display:block;margin:.5rem 0}
-input{background:#171c23;color:inherit;border:1px solid #2a313b;border-radius:4px;padding:.4rem;width:100%;max-width:24rem}
-button{background:#2b6cb0;color:#fff;border:0;border-radius:4px;padding:.5rem 1rem;cursor:pointer;margin:.25rem .25rem .25rem 0}
-button.secondary{background:#2a313b}
-table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:.35rem;border-bottom:1px solid #2a313b}
-.bar{height:1.2rem;background:#2a313b;border-radius:4px;overflow:hidden}
-.bar>div{height:100%;width:0;background:#38a169}
-.bar.warn>div{background:#d69e2e}
-.bar.hit>div{background:#e53e3e}
-.warn-box{border-left:4px solid #d69e2e;padding:.5rem 1rem;background:#2a2410}
-.err{color:#fc8181}
-.ok{color:#68d391}
+/* Guardián: un solo tono, sin bordes. Base: tokens.css. */
+@import url("/tokens.css");
+*,*::before,*::after{box-sizing:border-box}
+body{font:15px/1.65 var(--font-sans);max-width:720px;margin:0 auto;padding:2rem 1.25rem 3rem;background:hsl(var(--background));color:hsl(var(--foreground));-webkit-font-smoothing:antialiased}
+h1{font-size:1.8rem;letter-spacing:-.025em;margin:.5rem 0 .75rem}
+h2{font-size:1.15rem;margin:0 0 .75rem;font-weight:600}
+h3{font-size:.95rem;margin:1.25rem 0 .4rem}
+a{color:inherit;text-decoration-color:hsl(var(--subtle-foreground));text-underline-offset:3px}
+:focus-visible{outline:none;box-shadow:0 0 0 3px hsl(var(--ring))}
+fieldset,section{background:hsl(var(--surface));border:0;border-radius:var(--radius);padding:1.25rem 1.35rem;margin:1rem 0}
+label{display:block;margin:.75rem 0;font-size:.85rem;font-weight:500}
+input{display:block;background:hsl(var(--background));color:inherit;border:0;border-radius:calc(var(--radius) - .25rem);padding:.6rem .75rem;width:100%;max-width:24rem;margin-top:.3rem;font:inherit}
+button{background:hsl(var(--primary));color:hsl(var(--primary-foreground));border:0;border-radius:calc(var(--radius) - .125rem);padding:.6rem 1.15rem;cursor:pointer;margin:.25rem .25rem .25rem 0;font:inherit;font-size:.9rem;font-weight:500}
+button:hover{opacity:.9}
+button.secondary{background:hsl(var(--surface-strong));color:hsl(var(--foreground))}
+table{width:100%;border-collapse:separate;border-spacing:0 .25rem}
+th{text-align:left;font-size:.75rem;font-weight:500;color:hsl(var(--muted-foreground));padding:.35rem .6rem}
+td{text-align:left;padding:.5rem .6rem;background:hsl(var(--background))}
+td:first-child{border-radius:.5rem 0 0 .5rem}td:last-child{border-radius:0 .5rem .5rem 0}
+.bar{height:.6rem;background:hsl(var(--surface-strong));border-radius:999px;overflow:hidden}
+.bar>div{height:100%;width:0;background:hsl(var(--subtle-foreground))}
+.bar.warn>div{background:hsl(var(--muted-foreground))}
+.bar.hit>div{background:hsl(var(--foreground))}
+.warn-box{background:hsl(var(--surface-strong));border-radius:var(--radius);padding:.85rem 1.1rem;font-size:.9rem}
+.err{color:hsl(var(--foreground));font-weight:600}
+.err::before{content:"● "}
+.ok{color:hsl(var(--muted-foreground))}
+.ok::before{content:"○ "}
 .hidden{display:none}
-.muted{color:#8b95a3}
+.muted{color:hsl(var(--muted-foreground));font-size:.9rem}
+code,pre{font-family:var(--font-mono);font-size:.85em;background:hsl(var(--surface));border-radius:.4rem;padding:.1rem .35rem}
+pre{padding:.75rem 1rem;overflow:auto}

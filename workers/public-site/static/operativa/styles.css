@@ -1,86 +1,34 @@
 /* ==========================================================================
-   SynapseTrader Public Dashboard Styles
-   Dense, clean, trading-terminal aesthetics with CSS variables
+   SynapseTrader operativa: un solo tono, sin bordes, blanco hueso. Base: tokens.css.
+   Estado (activo/aviso/error) se expresa con peso, simbolos y escalones de tono.
    ========================================================================== */
+@import url("/tokens.css");
 
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-
-  /* Dark mode defaults */
-  --bg-app: #0b0e14;
-  --bg-card: #131722;
-  --bg-card-hover: #181d2a;
-  --bg-subtle: #1a2030;
-  --border-color: #222938;
-  --border-subtle: #19202f;
-
-  --text-main: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-
-  --color-pos: #10b981;
-  --color-pos-bg: rgba(16, 185, 129, 0.12);
-  --color-neg: #f43f5e;
-  --color-neg-bg: rgba(244, 63, 94, 0.12);
-  --color-neutral: #94a3b8;
-
-  --color-warning: #f59e0b;
-  --color-warning-bg: rgba(245, 158, 11, 0.14);
-  --color-info: #38bdf8;
-  --color-info-bg: rgba(56, 189, 248, 0.12);
-
-  --badge-paper: #818cf8;
-  --badge-paper-bg: rgba(99, 102, 241, 0.18);
-  --badge-testnet: #fbbf24;
-  --badge-testnet-bg: rgba(245, 158, 11, 0.18);
-  --badge-live: #34d399;
-  --badge-live-bg: rgba(16, 185, 129, 0.18);
-
-  --chart-line: #38bdf8;
-  --chart-gradient-top: rgba(56, 189, 248, 0.28);
-  --chart-gradient-bottom: rgba(56, 189, 248, 0.0);
-  --chart-zero-line: #334155;
-  --chart-grid: #1e293b;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg-app: #f8fafc;
-    --bg-card: #ffffff;
-    --bg-card-hover: #f1f5f9;
-    --bg-subtle: #f1f5f9;
-    --border-color: #e2e8f0;
-    --border-subtle: #f1f5f9;
-
-    --text-main: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-
-    --color-pos: #059669;
-    --color-pos-bg: rgba(5, 150, 105, 0.1);
-    --color-neg: #e11d48;
-    --color-neg-bg: rgba(225, 29, 72, 0.1);
-    --color-neutral: #64748b;
-
-    --color-warning: #d97706;
-    --color-warning-bg: rgba(217, 119, 6, 0.1);
-    --color-info: #0284c7;
-    --color-info-bg: rgba(2, 132, 199, 0.1);
-
-    --badge-paper: #4f46e5;
-    --badge-paper-bg: rgba(79, 70, 229, 0.1);
-    --badge-testnet: #d97706;
-    --badge-testnet-bg: rgba(217, 119, 6, 0.1);
-    --badge-live: #059669;
-    --badge-live-bg: rgba(5, 150, 105, 0.1);
-
-    --chart-line: #0284c7;
-    --chart-gradient-top: rgba(2, 132, 199, 0.22);
-    --chart-gradient-bottom: rgba(2, 132, 199, 0.0);
-    --chart-zero-line: #cbd5e1;
-    --chart-grid: #f1f5f9;
-  }
+  --bg-app: hsl(var(--background));
+  --bg-card: hsl(var(--surface));
+  --bg-card-hover: hsl(var(--surface-strong));
+  --bg-subtle: hsl(var(--surface-strong));
+  --border-color: hsl(var(--surface-strong));
+  --text-main: hsl(var(--foreground));
+  --text-secondary: hsl(var(--muted-foreground));
+  --text-muted: hsl(var(--subtle-foreground));
+  --chart-line: hsl(var(--foreground));
+  --chart-zero-line: hsl(var(--subtle-foreground));
+  --color-pos: hsl(var(--foreground));
+  --color-pos-bg: hsl(var(--surface-strong));
+  --color-neg: hsl(var(--foreground));
+  --color-neg-bg: hsl(var(--surface-strong));
+  --color-warning: hsl(var(--foreground));
+  --color-warning-bg: hsl(var(--surface-strong));
+  --color-info: hsl(var(--muted-foreground));
+  --color-info-bg: hsl(var(--surface-strong));
+  --badge-paper: hsl(var(--foreground));
+  --badge-paper-bg: hsl(var(--surface-strong));
+  --badge-testnet: hsl(var(--foreground));
+  --badge-testnet-bg: hsl(var(--surface-strong));
+  --badge-live: hsl(var(--primary-foreground));
+  --badge-live-bg: hsl(var(--primary));
 }
 
 /* Reset & Box Sizing */
@@ -95,7 +43,7 @@ body {
   background-color: var(--bg-app);
   color: var(--text-main);
   line-height: 1.45;
-  font-size: 14px;
+  font-size: 15px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-width: 320px;
@@ -173,19 +121,16 @@ body {
 .badge-paper {
   color: var(--badge-paper);
   background-color: var(--badge-paper-bg);
-  border: 1px solid var(--badge-paper);
 }
 
 .badge-testnet {
   color: var(--badge-testnet);
   background-color: var(--badge-testnet-bg);
-  border: 1px solid var(--badge-testnet);
 }
 
 .badge-live {
   color: var(--badge-live);
   background-color: var(--badge-live-bg);
-  border: 1px solid var(--badge-live);
 }
 
 .demo-chip {
@@ -195,7 +140,6 @@ body {
   color: var(--color-warning);
   padding: 4px 10px;
   border-radius: 4px;
-  border: 1px solid var(--color-warning);
 }
 
 /* Honesty Disclaimer Banner */
@@ -204,7 +148,6 @@ body {
   align-items: flex-start;
   gap: 10px;
   background-color: var(--color-warning-bg);
-  border: 1px solid var(--color-warning);
   color: var(--text-main);
   padding: 10px 14px;
   border-radius: 6px;
@@ -230,7 +173,6 @@ body {
   align-items: center;
   gap: 6px;
   background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 0.75rem;
@@ -248,7 +190,6 @@ body {
 
 .chip-warning {
   background-color: var(--color-warning-bg);
-  border-color: var(--color-warning);
   color: var(--color-warning);
   font-weight: 600;
 }
@@ -275,7 +216,6 @@ body {
 
 .kpi-card {
   background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 12px 14px;
   display: flex;
@@ -347,7 +287,6 @@ body {
 /* Cards */
 .card {
   background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -403,13 +342,15 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 9px 12px;
-  border-bottom: 1px solid var(--border-color);
 }
 
 .data-table td {
   padding: 9px 12px;
-  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-main);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background-color: var(--bg-subtle);
 }
 
 .data-table tbody tr:hover {
@@ -417,7 +358,6 @@ body {
 }
 
 .data-table tbody tr:last-child td {
-  border-bottom: none;
 }
 
 .th-rank {
@@ -453,8 +393,10 @@ body {
   color: var(--color-warning);
 }
 
+.tag-active::before { content: "● "; }
+.tag-gated::before { content: "◐ "; }
 .tag-disabled {
-  background-color: rgba(100, 116, 139, 0.15);
+  background-color: var(--bg-subtle);
   color: var(--text-muted);
 }
 
@@ -469,7 +411,7 @@ body {
 }
 
 .tag-unmeasured {
-  background-color: rgba(100, 116, 139, 0.15);
+  background-color: var(--bg-subtle);
   color: var(--text-muted);
 }
 
@@ -504,6 +446,9 @@ body {
   color: var(--color-neg) !important;
 }
 
+.text-pos::before { content: "▲ "; font-size: 0.7em; }
+.text-neg::before { content: "▼ "; font-size: 0.7em; }
+.text-pos, .text-neg { font-weight: 700; }
 .text-warning {
   color: var(--color-warning) !important;
 }
@@ -532,7 +477,6 @@ body {
 .footer {
   margin-top: 12px;
   padding-top: 16px;
-  border-top: 1px solid var(--border-color);
   font-size: 0.75rem;
   color: var(--text-muted);
 }

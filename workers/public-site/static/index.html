@@ -15,6 +15,7 @@
   <meta property="og:url" content="https://trade.swal.network/">
   <meta property="og:locale" content="es_CO">
   <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
@@ -24,6 +25,7 @@
       <a href="/" aria-current="page">Inicio</a>
       <a href="/pricing/">Precios</a>
       <a href="/operativa/">Operativa</a>
+      <a href="/analisis/">Análisis</a>
       <a href="/guardian/">Guardián</a>
       <a href="/terms/">Términos</a>
       <a href="/privacy/">Privacidad</a>
@@ -32,30 +34,23 @@
     </nav>
   </header>
   <main class="site-main">
-    <h1>Guardián de riesgo para traders de futuros</h1>
-    <p class="lead">SWAL Trade es una herramienta de gestión de riesgo para quien opera <strong>a mano</strong> en Binance USDⓈ-M Futures. No opera por ti y no promete resultados: te ayuda a respetar los límites que tú mismo defines.</p>
-    <p><a class="btn" href="/guardian/">Abrir el Guardián</a> <a class="btn btn-ghost" href="/pricing/">Ver precios</a></p>
-
-    <h2>Qué hace</h2>
-    <ul class="grid">
-      <li class="card"><h3>Límite de pérdida diaria</h3><p>Defines cuánto estás dispuesto a perder en el día y el Guardián te avisa al acercarte y al superarlo.</p></li>
-      <li class="card"><h3>Topes de apalancamiento y notional</h3><p>Controla el apalancamiento y el tamaño nominal máximo por posición y en total.</p></li>
-      <li class="card"><h3>Alertas de posiciones sin stop</h3><p>Detecta posiciones abiertas que no tienen orden de stop asociada.</p></li>
-      <li class="card"><h3>Claves de solo lectura</h3><p>Usas claves API de solo lectura. Permanecen en tu navegador y nunca se envían a SWAL.</p></li>
+    <section class="hero">
+      <p class="eyebrow">Gratis y de código abierto</p>
+      <h1>Gestiona tu riesgo en futuros, sin complicarte</h1>
+      <p class="lead">SWAL Trade vigila tu cuenta de Binance USDⓈ-M Futures y te avisa cuando te acercas a tus propios límites. No opera por ti y no promete resultados.</p>
+      <p><a class="btn" href="/guardian/">Abrir el Guardián</a> <a class="btn btn-ghost" href="/pricing/">Ver precios</a></p>
+    </section>
+    <ul class="bullets">
+      <li><h3>Todo es gratis</h3>El Guardián web, el asistente y las herramientas de análisis de gráficos son gratis. También el backend de código abierto, si prefieres correrlo tú con tus propias keys.</li>
+      <li><h3>Tus claves son tuyas</h3>Claves de solo lectura que se quedan en tu navegador y nunca se envían a SWAL.</li>
+      <li><h3>Socio SWAL, opcional</h3>Respaldo cifrado de extremo a extremo y servicio alojado (análisis con IA, noticias y alertas por Telegram). No desbloquea ganancias ni señales.</li>
     </ul>
-
-    <h2>Código abierto y transparente</h2>
-    <p>El código es abierto bajo licencia AGPL-3.0: <a href="https://github.com/iberi22/swal-trade" rel="noopener">github.com/iberi22/swal-trade</a>. Puedes auditarlo y ejecutarlo tú mismo.</p>
-    <p>Además publicamos el registro del bot de pruebas en <a href="/operativa/">/operativa/</a>. Lo decimos claramente: <strong>ninguna estrategia tiene todavía una ventaja estadística validada</strong>. Es un registro de experimentos, no una oferta ni una señal.</p>
-
-    <h2>Próximamente</h2>
-    <p>Extensión de navegador para análisis de gráficos (próximamente). Sin fecha comprometida.</p>
-
-    <div class="warn"><strong>Aviso:</strong> No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Lee el <a href="/risk/">aviso de riesgo</a>.</div>
+    <p class="muted">Ninguna estrategia tiene todavía una ventaja estadística validada. Código AGPL-3.0 en <a href="https://github.com/iberi22/swal-trade" rel="noopener">GitHub</a>; registro público de pruebas en <a href="/operativa/">/operativa/</a>.</p>
+    <div class="warn">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Lee el <a href="/risk/">aviso de riesgo</a>.</div>
   </main>
   <footer class="site-footer">
     <p id="disclaimer" class="disclaimer">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Ninguna estrategia del bot público tiene todavía una ventaja estadística validada. <a href="/risk/">Aviso de riesgo</a></p>
-    <nav aria-label="Pie"><a href="/" aria-current="page">Inicio</a> · <a href="/pricing/">Precios</a> · <a href="/operativa/">Operativa</a> · <a href="/guardian/">Guardián</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a> · <a href="/risk/">Riesgo</a> · <a href="/contact/">Contacto</a></nav>
+    <nav aria-label="Pie"><a href="/" aria-current="page">Inicio</a> · <a href="/pricing/">Precios</a> · <a href="/operativa/">Operativa</a> · <a href="/analisis/">Análisis</a> · <a href="/guardian/">Guardián</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a> · <a href="/risk/">Riesgo</a> · <a href="/contact/">Contacto</a></nav>
     <p class="muted">SWAL — Laboratorio de sistemas · Código abierto bajo AGPL-3.0 · <a href="https://github.com/iberi22/swal-trade" rel="noopener">github.com/iberi22/swal-trade</a></p>
   </footer>
 </body>
