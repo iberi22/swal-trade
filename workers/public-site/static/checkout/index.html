@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Hazte socio Pro — SWAL Trade</title>
+  <link rel="stylesheet" href="checkout.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Hazte socio Pro</h1>
+  <p class="muted">Pago en cripto a una wallet de autocustodia. Sin tarjeta, sin datos personales: tu cuenta es un secreto que solo guardas tú.</p>
+
+  <div id="error" class="alert bad hidden" role="alert"></div>
+
+  <!-- Paso 1: plan -->
+  <section id="step-plan" class="card">
+    <h2>1. Plan</h2>
+    <div id="plan-list" class="plans" role="radiogroup" aria-label="Plan"></div>
+    <p id="plan-loading" class="muted">Cargando precios…</p>
+  </section>
+
+  <!-- Paso 2: cuenta -->
+  <section id="step-account" class="card hidden">
+    <h2>2. Tu cuenta</h2>
+
+    <div id="account-choice">
+      <button id="btn-create" class="btn primary" type="button">Crear cuenta nueva</button>
+      <button id="btn-existing" class="btn" type="button">Ya soy socio</button>
+    </div>
+
+    <div id="existing-box" class="hidden">
+      <label for="existing-secret">Pega tu secreto de cuenta</label>
+      <input id="existing-secret" type="password" autocomplete="off" spellcheck="false">
+      <button id="btn-use-existing" class="btn primary" type="button">Usar este secreto</button>
+    </div>
+
+    <div id="secret-box" class="hidden">
+      <div class="alert warn">
+        <strong>Guárdalo ahora: sin él no puedes recuperar tu membresía.</strong>
+        Se muestra una sola vez. No lo guardamos en claro y no hay forma de pedirlo de nuevo.
+      </div>
+      <code id="secret-value" class="secret" aria-label="Secreto de cuenta"></code>
+      <div class="row">
+        <button id="btn-copy-secret" class="btn" type="button">Copiar</button>
+        <button id="btn-download-secret" class="btn" type="button">Descargar como archivo</button>
+      </div>
+      <p class="muted small">Se guardará también en este navegador (localStorage) para que no tengas que pegarlo cada vez. Solo existe aquí: si borras los datos del navegador o cambias de equipo, lo necesitas.</p>
+      <label class="check"><input id="saved-check" type="checkbox"> Lo guardé</label>
+      <button id="btn-continue" class="btn primary" type="button" disabled>Continuar</button>
+    </div>
+
+    <p id="account-ok" class="hidden ok-line"></p>
+  </section>
+
+  <!-- Paso 3: red y token -->
+  <section id="step-method" class="card hidden">
+    <h2>3. Red y token</h2>
+    <div id="method-list" class="plans"></div>
+    <p class="muted small">Elige la red donde tengas saldo. Las comisiones de red las pagas tú: Tron suele ser más caro si no tienes TRX para energía.</p>
+  </section>
+
+  <!-- Paso 4: factura -->
+  <section id="step-invoice" class="card hidden">
+    <h2>4. Paga exactamente esto</h2>
+    <div class="amount-box">
+      <div id="amount" class="amount" aria-live="polite"></div>
+      <div id="amount-token" class="muted"></div>
+      <p class="small">Los últimos decimales <strong id="amount-tag"></strong> son la <strong>etiqueta de tu pago</strong>: así reconocemos que es tuyo. No redondees ni cambies ningún decimal.</p>
+    </div>
+
+    <label>Dirección de pago (<span id="net-name"></span>)</label>
+    <code id="pay-address" class="secret"></code>
+    <div class="row">
+      <button id="btn-copy-amount" class="btn" type="button">Copiar importe</button>
+      <button id="btn-copy-address" class="btn" type="button">Copiar dirección</button>
+    </div>
+    <div id="qr" class="qr"></div>
+
+    <ul class="warnings">
+      <li>Envía <strong>exactamente</strong> ese importe, en <strong>esa red</strong> y ese token. Otra red o un importe distinto puede perderse o quedar en revisión manual.</li>
+      <li>Si pagas desde un exchange, descuenta la comisión de retiro para que llegue el importe exacto; los retiros pueden tardar más que la factura.</li>
+      <li>La factura vale 30 minutos. Los pagos son definitivos: no hay devoluciones automáticas.</li>
+    </ul>
+    <p class="small">Vence: <span id="expires"></span></p>
+
+    <div id="status" class="status wait" aria-live="polite">Esperando tu pago…</div>
+    <p id="tx-line" class="small hidden"></p>
+  </section>
+
+  <!-- Paso 5: licencia -->
+  <section id="step-done" class="card hidden">
+    <h2>Listo, eres socio Pro</h2>
+    <p id="license-line"></p>
+    <p><a class="btn primary" href="/guardian/">Ir al Guardián</a></p>
+    <p class="muted small">La licencia se guardó en este navegador (clave <code>swal.license</code>) y el Guardián la lee de ahí.</p>
+  </section>
+
+  <p class="muted small foot">SWAL Trade no es asesoría financiera. <a href="/">Volver al inicio</a></p>
+</main>
+<script type="module" src="checkout.js"></script>
+</body>
+</html>
