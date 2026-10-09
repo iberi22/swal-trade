@@ -13,11 +13,22 @@
 // Cada componente entra por una transformacion acotada 1-exp(-x), que se acerca a 1 sin alcanzarla.
 // Despues se aplica el peso de WEIGHTS. El valor publicado tiene un tope ordinario de 0.98.
 // strength >= 0.99 solo si evidence.exceptional === true. Eso exige las cuatro cosas a la vez:
-//   1) patron de grafico ya confirmado: doble techo/suelo, triangulo, ruptura de rango o divergencia RSI
-//      (una zona S/R, un choque, un pivote o el perfil de volumen nunca es excepcional);
+//   1) patron de grafico o de estructura ya confirmado (CHART_KINDS): doble techo/suelo, triangulo,
+//      ruptura de rango, divergencia RSI, hombro-cabeza-hombro, cuña, bandera, FVG, BOS/CHoCH,
+//      order block o barrido de liquidez
+//      (una zona S/R, un choque, un pivote, una vela suelta o el perfil de volumen nunca es excepcional);
 //   2) cada componente acotado >= 0.97;
 //   3) la formacion termina hace 3 velas o menos;
 //   4) el precio esta a 0.25 ATR(14) o menos del nivel de decision.
+//
+// Fuentes de las reglas (codigo propio; no se copia implementacion ajena). Ver docs/PATTERN_SOURCES.md.
+// - FVG, BOS/CHoCH, order block, liquidez: definiciones publicas de
+//   joshyattridge/smart-money-concepts (MIT) https://github.com/joshyattridge/smart-money-concepts
+// - Velas: definiciones CDL* de TA-Lib (BSD-3-Clause) https://github.com/TA-Lib/ta-lib
+//   CDLENGULFING, CDLHAMMER, CDLSHOOTINGSTAR, CDLMORNINGSTAR, CDLEVENINGSTAR, CDLDOJI.
+//   En cripto 24h no exigimos el hueco de apertura de la estrella de la mañana/tarde.
+// - Hombro-cabeza-hombro, cuñas y banderas: geometria clasica (Bulkowski, Encyclopedia of Chart
+//   Patterns). PatternPy y TradingPatternScanner son CC BY-NC-SA: no se copia su codigo.
 // Las zonas S/R tienen ademas el tope srStrengthCap (0.74): con evidencia comparable quedan por debajo
 // de un doble techo/suelo, triangulo, ruptura o divergencia. La recencia decae con las velas desde el
 // ultimo toque o la formacion; la distancia al precio actual resta fuerza (mas en las zonas).
@@ -46,6 +57,14 @@ export const WEIGHTS = {
   triangle: { touches: 0.3, fit: 0.25, convergence: 0.25, proximity: 0.2 },
   range: { tightness: 0.3, touches: 0.25, volume: 0.25, distance: 0.2 },
   divergence: { rsiGap: 0.35, priceGap: 0.2, extremity: 0.2, recency: 0.25 },
+  fvg: { displacement: 0.35, gap: 0.25, proximity: 0.25, recency: 0.15 },
+  structure: { breakSize: 0.4, clarity: 0.35, recency: 0.25 },
+  orderBlock: { impulse: 0.4, freshness: 0.3, proximity: 0.3 },
+  liquidity: { equality: 0.3, sweep: 0.4, recency: 0.3 },
+  hs: { symmetry: 0.35, prominence: 0.3, neck: 0.2, recency: 0.15 },
+  wedge: { fit: 0.3, convergence: 0.3, proximity: 0.25, recency: 0.15 },
+  flag: { pole: 0.4, retrace: 0.3, tightness: 0.2, recency: 0.1 },
+  candle: { shape: 0.55, context: 0.25, recency: 0.2 },
 };
 
 /**
@@ -111,17 +130,30 @@ function finding(f) {
   return { levels: [], direction: 'neutral', status: 'forming', evidence: {}, ...f, strength: r4(clamp01(f.strength)) };
 }
 
+/** Copia precios de decision del backtest en cada nivel: `confirm` e `invalidate`. */
+function stamp(levels, confirm, invalidate) {
+  const c = r4(confirm), inv = r4(invalidate);
+  return levels.map((l) => ({ ...l, confirm: c, invalidate: inv }));
+}
+
 /** 1-exp(-x): acota en [0, 1) y no se satura con un conteo grande. */
 const sat = (x) => 1 - Math.exp(-Math.max(0, Number.isFinite(x) ? x : 0));
 
 /** Recencia acotada: vela actual ≈ 0.98; decae con las velas transcurridas y nunca llega a 1. */
 const boundedRecency = (candlesSince, halfLife = 40) => sat(4 * Math.exp(-Math.max(0, candlesSince) / halfLife));
 
-const CHART_KINDS = new Set([
+export const CHART_KINDS = new Set([
   'double_top', 'double_bottom',
   'ascending_triangle', 'descending_triangle', 'symmetric_triangle',
   'range_breakout',
   'rsi_divergence_bullish', 'rsi_divergence_bearish',
+  'head_shoulders', 'inverse_head_shoulders',
+  'rising_wedge', 'falling_wedge',
+  'bull_flag', 'bear_flag',
+  'fvg_bullish', 'fvg_bearish',
+  'bos_bullish', 'bos_bearish', 'choch_bullish', 'choch_bearish',
+  'order_block_bullish', 'order_block_bearish',
+  'liquidity_sweep_bullish', 'liquidity_sweep_bearish',
 ]);
 
 /**
@@ -142,6 +174,7 @@ function scoreStrength(kind, raw, { status = 'forming', components = null, candl
   if (kind === 'sr_zone') strength = Math.min(strength, srCap);
   if (kind === 'shock') strength = Math.min(strength, 0.62);
   if (kind === 'volume_profile') strength = Math.min(strength, 0.5);
+  if (typeof kind === 'string' && kind.startsWith('candle_')) strength = Math.min(strength, 0.68);
   if (!exceptional) strength = Math.min(strength, 0.98);
   else strength = Math.min(strength, 0.999);
   return { strength, exceptional };
@@ -172,7 +205,11 @@ export function pivotFindings(candles, pivots) {
       ? `Máximo local en ${fmt(p.price)}: el precio subió hasta aquí y luego retrocedió. Sigue vigente si las velas vecinas no lo superan. Se invalida si cierra por encima de ${fmt(p.price)}.`
       : `Mínimo local en ${fmt(p.price)}: el precio bajó hasta aquí y luego rebotó. Sigue vigente si las velas vecinas no lo pierden. Se invalida si cierra por debajo de ${fmt(p.price)}.`,
     from: p.time, to: p.time,
-    levels: [{ role: p.type === 'high' ? 'pivot_high' : 'pivot_low', price: p.price }],
+    levels: stamp(
+      [{ role: p.type === 'high' ? 'pivot_high' : 'pivot_low', price: p.price }],
+      p.price,
+      p.price,
+    ),
     direction: 'neutral',
     strength: 0.05,
     status: 'confirmed',
@@ -311,7 +348,11 @@ export function srZones(candles, pivots, opts = {}) {
       label: role === 'support' ? 'Zona de soporte' : 'Zona de resistencia',
       explanation,
       from: candles[first].time, to: candles[n].time,
-      levels: [{ role, price: r4(price), low: r4(low), high: r4(high), touches }],
+      levels: stamp(
+        [{ role, price: r4(price), low: r4(low), high: r4(high), touches }],
+        role === 'support' ? high : low,
+        role === 'support' ? low : high,
+      ),
       direction: 'neutral', strength: scored.strength, status: 'confirmed',
       evidence: {
         touches, low: r4(low), high: r4(high), firstIndex: first, lastIndex: lastIdx,
@@ -379,11 +420,11 @@ function doubleExtreme(candles, pivots, type, o) {
       label: top ? 'Doble techo' : 'Doble suelo',
       explanation,
       from: p1.time, to: candles[n].time,
-      levels: [
+      levels: stamp([
         { role: 'neckline', price: r4(neck) },
         { role: top ? 'peak' : 'trough', price: r4(p1.price), time: p1.time },
         { role: top ? 'peak' : 'trough', price: r4(p2.price), time: p2.time },
-      ],
+      ], neck, extreme),
       direction: top ? 'down' : 'up', strength: scored.strength, status,
       evidence: {
         peak1: p1.price, peak2: p2.price, diffAtr: r4(diff / a), depthAtr: r4(depth), neckline: r4(neck),
@@ -451,6 +492,8 @@ export function triangles(candles, pivots, opts = {}) {
     * (0.72 + 0.28 * boundedRecency(candlesSince, 40));
   const scored = scoreStrength(kind, rawScore, { status: 'forming', components, candlesSince, distAtr, nearWeight: 0.15, nearScale: 6 });
   const upPx = fmt(upper), loPx = fmt(lower);
+  const confirmPx = kind === 'descending_triangle' ? lower : upper;
+  const invalidatePx = kind === 'descending_triangle' ? upper : lower;
   const copy = {
     ascending_triangle: ['Triángulo ascendente', `Triángulo ascendente entre ${loPx} y ${upPx}: techo horizontal y mínimos cada vez más altos. Si cierra por encima de ${upPx}, la ruptura al alza se confirma. Se invalida si cierra por debajo de ${loPx}.`],
     descending_triangle: ['Triángulo descendente', `Triángulo descendente entre ${loPx} y ${upPx}: suelo horizontal y máximos cada vez más bajos. Si cierra por debajo de ${loPx}, la ruptura a la baja se confirma. Se invalida si cierra por encima de ${upPx}.`],
@@ -461,10 +504,10 @@ export function triangles(candles, pivots, opts = {}) {
     kind, label: copy[kind][0],
     explanation: copy[kind][1],
     from: candles[x0].time, to: candles[n].time,
-    levels: [
+    levels: stamp([
       { role: 'triangle_upper', price: r4(upper), line: { from: { time: candles[x0].time, price: r4(hi(x0)) }, to: { time: candles[n].time, price: r4(upper) } } },
       { role: 'triangle_lower', price: r4(lower), line: { from: { time: candles[x0].time, price: r4(lo(x0)) }, to: { time: candles[n].time, price: r4(lower) } } },
-    ],
+    ], confirmPx, invalidatePx),
     direction: bias, strength: scored.strength, status: 'forming',
     evidence: {
       touchesHigh: hs.length, touchesLow: ls.length, fit: r4(fit), convergence: r4(convergence),
@@ -495,9 +538,11 @@ export function rangeBreakout(candles, opts = {}) {
   const up = last.close > hi, down = last.close < lo;
   const w = WEIGHTS.range;
   const tight = clamp01(1 - (width / a) / o.rangeMaxAtr);
-  let dir, status, distance, expl;
+  let dir, status, distance, expl, confirmPx, invalidatePx;
   if (up || down) {
     dir = up ? 'up' : 'down'; status = 'confirmed';
+    confirmPx = up ? hi + width : lo - width;
+    invalidatePx = up ? hi : lo;
     const excess = (up ? last.close - hi : lo - last.close) / a;
     distance = clamp01(1 - excess / 2); // muy extendido = persecucion tardia
     const back = up ? `por debajo de ${fmt(hi)}` : `por encima de ${fmt(lo)}`;
@@ -507,6 +552,8 @@ export function rangeBreakout(candles, opts = {}) {
     const dHi = hi - last.close, dLo = last.close - lo;
     if (Math.min(dHi, dLo) > 0.2 * width) return []; // lejos de los bordes: no hay nada que decir
     dir = dHi < dLo ? 'up' : 'down'; status = 'forming';
+    confirmPx = dir === 'up' ? hi : lo;
+    invalidatePx = dir === 'up' ? lo : hi;
     distance = clamp01(1 - Math.min(dHi, dLo) / (0.2 * width));
     expl = `Rango comprimido ${fmt(lo)}–${fmt(hi)}: el precio lleva ${L} velas dentro y está pegado al borde ${dir === 'up' ? 'superior' : 'inferior'}. Si cierra por encima de ${fmt(hi)}, se confirma al alza; si cierra por debajo de ${fmt(lo)}, a la baja. Se invalida el intento si el precio se aleja del borde y cierra otra vez en el centro, sin salir del rango.`;
   }
@@ -521,7 +568,7 @@ export function rangeBreakout(candles, opts = {}) {
     id: `range_breakout:${box[0].time}:${status}`,
     kind: 'range_breakout', label: status === 'confirmed' ? 'Ruptura de rango' : 'Rango comprimido',
     explanation: expl, from: box[0].time, to: last.time,
-    levels: [{ role: 'range_high', price: r4(hi) }, { role: 'range_low', price: r4(lo) }],
+    levels: stamp([{ role: 'range_high', price: r4(hi) }, { role: 'range_low', price: r4(lo) }], confirmPx, invalidatePx),
     direction: dir, strength: scored.strength, status,
     evidence: { widthAtr: r4(width / a), touches, volumeRatio: r4(volRatio), bars: L, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
   })];
@@ -555,7 +602,7 @@ export function shocks(candles, opts = {}) {
       id: `shock:${k.time}`, kind: 'shock', label: 'Vela de choque',
       explanation: `Vela de choque en ${extreme}: ${rTr > o.shockK ? `rango ${rTr.toFixed(1)} veces el normal` : ''}${rTr > o.shockK && rV > o.shockK ? ' y ' : ''}${rV > o.shockK ? `volumen ${rV.toFixed(1)} veces el normal` : ''}, movimiento anómalo ${up ? 'al alza' : 'a la baja'}. Si la vela siguiente cierra por ${up ? 'encima' : 'debajo'} de ${extreme}, el impulso se confirma. Se invalida si el precio devuelve el movimiento y cierra por ${up ? 'debajo' : 'encima'} de ${openPx}.`,
       from: k.time, to: k.time,
-      levels: [{ role: 'shock', price }],
+      levels: stamp([{ role: 'shock', price }], price, k.open),
       direction: up ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
       evidence: { rangeRatio: r4(rTr), volumeRatio: r4(rV), k: o.shockK, index: i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
     }));
@@ -597,7 +644,11 @@ export function volumeProfile(candles, opts = {}) {
     kind: 'volume_profile', label: 'Perfil de volumen (POC)',
     explanation: `Perfil de volumen: el precio donde más se negoció es ${fmt(pocP)} (POC), dentro del área de valor ${fmt(val)}–${fmt(vah)}. El precio actual está ${last > pocP ? 'por encima' : 'por debajo'}. Si se acerca y cierra respetando ${fmt(pocP)} como ${last > pocP ? 'soporte' : 'resistencia'}, el nivel se confirma. Se invalida como imán si cierra fuera del área de valor y no regresa.`,
     from: candles[0].time, to: candles[candles.length - 1].time,
-    levels: [{ role: 'poc', price: r4(pocP) }, { role: 'vah', price: r4(vah) }, { role: 'val', price: r4(val) }],
+    levels: stamp(
+      [{ role: 'poc', price: r4(pocP) }, { role: 'vah', price: r4(vah) }, { role: 'val', price: r4(val) }],
+      pocP,
+      last >= pocP ? val : vah,
+    ),
     direction: 'neutral', strength: scored.strength, status: 'confirmed',
     evidence: {
       pocShare: r4(vol[poc] / total), bins: vol.map((v, i) => ({ price: r4(price(i)), volume: r4(v) })),
@@ -645,7 +696,11 @@ export function rsiDivergence(candles, pivots, opts = {}) {
         label: bull ? 'Divergencia alcista RSI' : 'Divergencia bajista RSI',
         explanation,
         from: p1.time, to: p2.time,
-        levels: [{ role: 'divergence_start', price: r4(p1.price), time: p1.time }, { role: 'divergence_end', price: r4(p2.price), time: p2.time }],
+        levels: stamp(
+          [{ role: 'divergence_start', price: r4(p1.price), time: p1.time }, { role: 'divergence_end', price: r4(p2.price), time: p2.time }],
+          confirmPx,
+          p2.price,
+        ),
         direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
         evidence: {
           rsi1: r4(r[p1.index]), rsi2: r4(r[p2.index]), price1: p1.price, price2: p2.price,
@@ -658,12 +713,720 @@ export function rsiDivergence(candles, pivots, opts = {}) {
   return out;
 }
 
+// ---------- 10. Smart Money: FVG, BOS/CHoCH, order blocks, liquidez ----------
+// Reglas reimplementadas desde la descripcion publica de smartmoneyconcepts (MIT):
+// FVG = maximo de hace dos velas < minimo actual si la vela intermedia es alcista
+// (y el simetrico bajista). BOS continua la tendencia; CHoCH la gira. El order block
+// es la ultima vela de color opuesto antes del impulso que rompe estructura.
+// La liquidez son maximos o minimos iguales; aqui solo se publica si hubo barrido
+// (mecha mas alla del nivel y cierre de vuelta). La tolerancia de "iguales" es 0.25 ATR
+// (el 1% fijo de esa libreria mezcla swings distintos en cripto).
+
+function structureEvents(candles, pivots, o) {
+  const swings = [...pivots].sort((x, y) => x.index - y.index || (x.type === 'low' ? -1 : 1));
+  let trend = 0;
+  let lastHigh = null;
+  let lastLow = null;
+  let hiBroken = false;
+  let loBroken = false;
+  const events = [];
+  let sPtr = 0;
+  for (let i = 0; i < candles.length; i++) {
+    while (sPtr < swings.length && swings[sPtr].index + o.pivotWindow <= i) {
+      const s = swings[sPtr++];
+      if (s.type === 'high') { lastHigh = s; hiBroken = false; }
+      else { lastLow = s; loBroken = false; }
+    }
+    const c = candles[i].close;
+    if (lastHigh && !hiBroken && c > lastHigh.price) {
+      events.push({ i, dir: 'up', bos: trend >= 0, level: lastHigh.price, swing: lastHigh, opposite: lastLow });
+      hiBroken = true;
+      trend = 1;
+    }
+    if (lastLow && !loBroken && c < lastLow.price) {
+      events.push({ i, dir: 'down', bos: trend <= 0, level: lastLow.price, swing: lastLow, opposite: lastHigh });
+      loBroken = true;
+      trend = -1;
+    }
+  }
+  return events;
+}
+
+function latestLiveEvent(candles, events) {
+  const n = candles.length - 1;
+  for (let k = events.length - 1; k >= 0; k--) {
+    const e = events[k];
+    let reclaimed = false;
+    for (let j = e.i + 1; j <= n; j++) {
+      if (e.dir === 'up' && candles[j].close < e.level) { reclaimed = true; break; }
+      if (e.dir === 'down' && candles[j].close > e.level) { reclaimed = true; break; }
+    }
+    if (!reclaimed) return e;
+  }
+  return null;
+}
+
+/** Huecos de valor aun no rellenados del todo (el precio no ha cerrado el lado lejano). */
+export function fairValueGaps(candles, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a || n < 5) return [];
+  const out = [];
+  for (let i = 2; i <= n; i++) {
+    if (i < n - o.lookbackPatterns) continue;
+    const prev = candles[i - 2], mid = candles[i - 1], cur = candles[i];
+    let bottom, top, dir;
+    if (mid.close > mid.open && prev.high < cur.low) { bottom = prev.high; top = cur.low; dir = 'up'; }
+    else if (mid.close < mid.open && prev.low > cur.high) { bottom = cur.high; top = prev.low; dir = 'down'; }
+    else continue;
+    const height = top - bottom;
+    // Por debajo de 0.72 ATR el hueco es ruido de mecha (un zigzag de bandas lo fabrica).
+    if (height < 0.72 * a) continue;
+    let filled = false;
+    let touched = false;
+    for (let j = i + 1; j <= n; j++) {
+      if (dir === 'up') {
+        if (candles[j].low <= top) touched = true;
+        if (candles[j].low <= bottom) { filled = true; break; }
+      } else {
+        if (candles[j].high >= bottom) touched = true;
+        if (candles[j].high >= top) { filled = true; break; }
+      }
+    }
+    if (filled) continue;
+    const last = candles[n].close;
+    const distAtr = dir === 'up'
+      ? (last >= top ? (last - top) / a : last <= bottom ? (bottom - last) / a : 0)
+      : (last <= bottom ? (bottom - last) / a : last >= top ? (last - top) / a : 0);
+    if (distAtr > 6) continue;
+    const candlesSince = n - i;
+    const disp = Math.abs(mid.close - mid.open) / a;
+    const w = WEIGHTS.fvg;
+    const components = [sat(disp / 1.2), sat((height / a) / 0.6), sat(3 * Math.exp(-distAtr / 2)), boundedRecency(candlesSince, 40)];
+    const raw = w.displacement * components[0] + w.gap * components[1] + w.proximity * components[2] + w.recency * components[3];
+    const kind = dir === 'up' ? 'fvg_bullish' : 'fvg_bearish';
+    const scored = scoreStrength(kind, raw, { status: 'forming', components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 4 });
+    const confirmPx = dir === 'up' ? top : bottom;
+    const invalidatePx = dir === 'up' ? bottom : top;
+    const where = `${fmt(bottom)}–${fmt(top)}`;
+    const explanation = dir === 'up'
+      ? `Hueco de valor alcista (FVG) en ${where}: la vela impulsiva dejó sin negociar el tramo entre el máximo de hace dos velas y el mínimo siguiente. Sigue abierto${touched ? ' y el precio ya lo ha tocado' : ''}. Si cierra por encima de ${fmt(confirmPx)} tras visitar el hueco, el rebote se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+      : `Hueco de valor bajista (FVG) en ${where}: la vela impulsiva dejó sin negociar el tramo entre el mínimo de hace dos velas y el máximo siguiente. Sigue abierto${touched ? ' y el precio ya lo ha tocado' : ''}. Si cierra por debajo de ${fmt(confirmPx)} tras visitar el hueco, el rechazo se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+    out.push(finding({
+      id: `fvg:${dir}:${candles[i].time}`,
+      kind,
+      label: dir === 'up' ? 'Hueco de valor alcista' : 'Hueco de valor bajista',
+      explanation,
+      from: prev.time, to: candles[n].time,
+      levels: stamp([
+        { role: 'fvg_top', price: r4(top) },
+        { role: 'fvg_bottom', price: r4(bottom) },
+      ], confirmPx, invalidatePx),
+      direction: dir, strength: scored.strength, status: 'forming',
+      evidence: {
+        top: r4(top), bottom: r4(bottom), heightAtr: r4(height / a), displacementAtr: r4(disp),
+        touched, index: i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      },
+    }));
+  }
+  out.sort((x, y) => y.strength - x.strength);
+  const kept = [];
+  const cnt = {};
+  for (const f of out) {
+    cnt[f.kind] = (cnt[f.kind] || 0) + 1;
+    if (cnt[f.kind] <= 2) kept.push(f);
+  }
+  return kept;
+}
+
+/** Ultima ruptura de estructura (BOS) o cambio de caracter (CHoCH) aun no reclamada. El quiebre es por cierre. */
+export function marketStructure(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a || n < 20) return [];
+  const events = structureEvents(candles, pivots, o).filter((e) => e.i >= n - o.lookbackPatterns);
+  const e = latestLiveEvent(candles, events);
+  if (!e) return [];
+  const breakAtr = Math.abs(candles[e.i].close - e.level) / a;
+  if (breakAtr < 0.1) return [];
+  const candlesSince = n - e.i;
+  const last = candles[n].close;
+  const distAtr = Math.abs(last - e.level) / a;
+  const opp = e.opposite && (e.dir === 'up' ? e.opposite.price < e.level : e.opposite.price > e.level)
+    ? e.opposite.price
+    : (e.dir === 'up' ? e.level - a : e.level + a);
+  const w = WEIGHTS.structure;
+  const components = [sat(breakAtr / 0.6), sat(e.bos ? 2.2 : 2.6), boundedRecency(candlesSince, 35)];
+  const raw = w.breakSize * components[0] + w.clarity * components[1] + w.recency * components[2];
+  const kind = `${e.bos ? 'bos' : 'choch'}_${e.dir === 'up' ? 'bullish' : 'bearish'}`;
+  const scored = scoreStrength(kind, raw, { status: 'confirmed', components, candlesSince, distAtr, nearWeight: 0.25, nearScale: 4 });
+  const up = e.dir === 'up';
+  const label = e.bos
+    ? (up ? 'Ruptura de estructura alcista' : 'Ruptura de estructura bajista')
+    : (up ? 'Cambio de carácter alcista' : 'Cambio de carácter bajista');
+  const explanation = e.bos
+    ? (up
+      ? `Ruptura de estructura alcista (BOS) en ${fmt(e.level)}: el cierre superó el último máximo y la tendencia previa ya era alcista. Si cierra por encima de ${fmt(e.level)}, la continuidad se confirma. Se invalida si cierra por debajo de ${fmt(opp)}.`
+      : `Ruptura de estructura bajista (BOS) en ${fmt(e.level)}: el cierre perdió el último mínimo y la tendencia previa ya era bajista. Si cierra por debajo de ${fmt(e.level)}, la continuidad se confirma. Se invalida si cierra por encima de ${fmt(opp)}.`)
+    : (up
+      ? `Cambio de carácter alcista (CHoCH) en ${fmt(e.level)}: el cierre superó el último máximo en contra de la tendencia bajista previa. Si cierra por encima de ${fmt(e.level)}, el giro se confirma. Se invalida si cierra por debajo de ${fmt(opp)}.`
+      : `Cambio de carácter bajista (CHoCH) en ${fmt(e.level)}: el cierre perdió el último mínimo de la tendencia alcista previa. Si cierra por debajo de ${fmt(e.level)}, el giro se confirma. Se invalida si cierra por encima de ${fmt(opp)}.`);
+  return [finding({
+    id: `${kind}:${candles[e.swing.index].time}:${candles[e.i].time}`,
+    kind, label, explanation,
+    from: candles[e.swing.index].time, to: candles[n].time,
+    levels: stamp([{ role: 'structure_level', price: r4(e.level), time: e.swing.time }], e.level, opp),
+    direction: e.dir, strength: scored.strength, status: 'confirmed',
+    evidence: {
+      breakAtr: r4(breakAtr), bos: e.bos, level: r4(e.level), invalidate: r4(opp),
+      breakIndex: e.i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+    },
+  })];
+}
+
+/** Order block: ultima vela opuesta antes del quiebre, mientras el cierre no la atraviese. */
+export function orderBlocks(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const events = structureEvents(candles, pivots, o);
+  const out = [];
+  for (const dir of ['up', 'down']) {
+    const candidates = events.filter((e) => e.dir === dir && e.i >= n - o.lookbackPatterns).reverse();
+    for (const ev of candidates) {
+      let obI = -1;
+      for (let i = ev.i - 1; i >= Math.max(0, ev.i - 25); i--) {
+        const k = candles[i];
+        if (dir === 'up' ? k.close < k.open : k.close > k.open) { obI = i; break; }
+      }
+      if (obI < 0) continue;
+      const k = candles[obI];
+      const top = k.high, bottom = k.low;
+      if (!(top > bottom)) continue;
+      let broken = false;
+      let tested = false;
+      for (let j = ev.i + 1; j <= n; j++) {
+        if (dir === 'up') {
+          if (candles[j].low <= top) tested = true;
+          if (candles[j].close < bottom) { broken = true; break; }
+        } else {
+          if (candles[j].high >= bottom) tested = true;
+          if (candles[j].close > top) { broken = true; break; }
+        }
+      }
+      if (broken) continue;
+      const last = candles[n].close;
+      const distAtr = dir === 'up'
+        ? (last > top ? (last - top) / a : 0)
+        : (last < bottom ? (bottom - last) / a : 0);
+      // El impulso puede alejar el precio varios ATR y el bloque sigue siendo el nivel.
+      if (distAtr > 8) continue;
+      const impulse = Math.abs(candles[ev.i].close - k.close) / a;
+      const candlesSince = n - ev.i;
+      const w = WEIGHTS.orderBlock;
+      const components = [sat(impulse / 1.5), sat(tested ? 1.2 : 3), sat(3 * Math.exp(-distAtr / 2.5))];
+      const raw = w.impulse * components[0] + w.freshness * components[1] + w.proximity * components[2];
+      const kind = dir === 'up' ? 'order_block_bullish' : 'order_block_bearish';
+      const scored = scoreStrength(kind, raw, { status: tested ? 'forming' : 'confirmed', components, candlesSince, distAtr, nearWeight: 0.25, nearScale: 4 });
+      const confirmPx = dir === 'up' ? top : bottom;
+      const invalidatePx = dir === 'up' ? bottom : top;
+      const explanation = dir === 'up'
+        ? `Order block alcista en ${fmt(bottom)}–${fmt(top)}: última vela bajista antes del impulso que rompió estructura${tested ? ', ya retesteado' : ', todavía sin mitigar'}. Si cierra por encima de ${fmt(confirmPx)} al volver a la zona, la defensa se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+        : `Order block bajista en ${fmt(bottom)}–${fmt(top)}: última vela alcista antes del impulso que rompió estructura${tested ? ', ya retesteado' : ', todavía sin mitigar'}. Si cierra por debajo de ${fmt(confirmPx)} al volver a la zona, la defensa se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+      out.push(finding({
+        id: `ob:${dir}:${candles[obI].time}`,
+        kind,
+        label: dir === 'up' ? 'Order block alcista' : 'Order block bajista',
+        explanation,
+        from: candles[obI].time, to: candles[n].time,
+        levels: stamp([
+          { role: 'ob_high', price: r4(top) },
+          { role: 'ob_low', price: r4(bottom) },
+        ], confirmPx, invalidatePx),
+        direction: dir, strength: scored.strength, status: tested ? 'forming' : 'confirmed',
+        evidence: {
+          impulseAtr: r4(impulse), tested, obIndex: obI, breakIndex: ev.i,
+          candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+        },
+      }));
+      break;
+    }
+  }
+  return out;
+}
+
+/** Barrido de liquidez: dos swings casi iguales y una mecha que los perfora con cierre de vuelta. */
+export function liquiditySweeps(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const out = [];
+  for (const type of ['high', 'low']) {
+    const same = pivots.filter((p) => p.type === type && p.index >= n - o.lookbackPatterns);
+    let best = null;
+    for (let i = 0; i < same.length; i++) {
+      for (let j = i + 1; j < same.length; j++) {
+        const p1 = same[i], p2 = same[j];
+        if (p2.index - p1.index < 5) continue;
+        const tol = Math.max(0.25 * a, Math.abs(p2.price) * 0.001);
+        if (Math.abs(p1.price - p2.price) > tol) continue;
+        const level = (p1.price + p2.price) / 2;
+        const start = p2.index + o.pivotWindow;
+        for (let k = start; k <= n; k++) {
+          const bar = candles[k];
+          const swept = type === 'high'
+            ? bar.high > Math.max(p1.price, p2.price) && bar.close < level
+            : bar.low < Math.min(p1.price, p2.price) && bar.close > level;
+          if (!swept) continue;
+          const extreme = type === 'high' ? bar.high : bar.low;
+          let failed = false;
+          for (let q = k + 1; q <= n; q++) {
+            if (type === 'high' ? candles[q].close > extreme : candles[q].close < extreme) { failed = true; break; }
+          }
+          if (failed) continue;
+          const sweepAtr = Math.abs(extreme - level) / a;
+          if (sweepAtr < 0.08) continue;
+          const candlesSince = n - k;
+          if (!best || k > best.k) best = { p1, p2, level, k, extreme, sweepAtr, candlesSince, tol };
+          break;
+        }
+      }
+    }
+    if (!best) continue;
+    const bull = type === 'low';
+    const last = candles[n].close;
+    const distAtr = Math.abs(last - best.level) / a;
+    const w = WEIGHTS.liquidity;
+    const components = [sat((1 - Math.abs(best.p1.price - best.p2.price) / best.tol) * 3), sat(best.sweepAtr / 0.35), boundedRecency(best.candlesSince, 30)];
+    const raw = w.equality * components[0] + w.sweep * components[1] + w.recency * components[2];
+    const kind = bull ? 'liquidity_sweep_bullish' : 'liquidity_sweep_bearish';
+    const scored = scoreStrength(kind, raw, { status: 'confirmed', components, candlesSince: best.candlesSince, distAtr, nearWeight: 0.25, nearScale: 4 });
+    const confirmPx = best.level;
+    const invalidatePx = best.extreme;
+    const explanation = bull
+      ? `Barrido de liquidez alcista en ${fmt(best.level)}: había mínimos iguales y una mecha los perforó hasta ${fmt(best.extreme)}, pero el cierre volvió por encima. Si cierra por encima de ${fmt(confirmPx)}, el rechazo se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+      : `Barrido de liquidez bajista en ${fmt(best.level)}: había máximos iguales y una mecha los perforó hasta ${fmt(best.extreme)}, pero el cierre volvió por debajo. Si cierra por debajo de ${fmt(confirmPx)}, el rechazo se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+    out.push(finding({
+      id: `liq:${type}:${best.p2.time}:${candles[best.k].time}`,
+      kind,
+      label: bull ? 'Barrido de liquidez alcista' : 'Barrido de liquidez bajista',
+      explanation,
+      from: best.p1.time, to: candles[n].time,
+      levels: stamp([
+        { role: 'equal_level', price: r4(best.level) },
+        { role: 'sweep_extreme', price: r4(best.extreme), time: candles[best.k].time },
+      ], confirmPx, invalidatePx),
+      direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
+      evidence: {
+        level: r4(best.level), extreme: r4(best.extreme), sweepAtr: r4(best.sweepAtr),
+        left: r4(best.p1.price), right: r4(best.p2.price),
+        candlesSince: best.candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      },
+    }));
+  }
+  return out;
+}
+
+// ---------- 11. hombro-cabeza-hombro, cuñas, banderas ----------
+// Geometria clasica (tres swings, lineas convergentes, mastil + consolidacion).
+// No deriva de PatternPy ni de TradingPatternScanner (ambos CC BY-NC-SA 4.0).
+
+function neckAt(t1, t2, x) {
+  const span = t2.index - t1.index;
+  if (!span) return (t1.price + t2.price) / 2;
+  return t1.price + ((t2.price - t1.price) * (x - t1.index)) / span;
+}
+
+export function headAndShoulders(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const recent = pivots.filter((p) => p.index >= n - o.lookbackPatterns);
+  const highs = recent.filter((p) => p.type === 'high');
+  const lows = recent.filter((p) => p.type === 'low');
+  const out = [];
+  const consider = (peaks, troughs, inverse) => {
+    let best = null;
+    for (let i = 0; i + 2 < peaks.length; i++) {
+      const ls = peaks[i], head = peaks[i + 1], rs = peaks[i + 2];
+      if (n - rs.index > 35 || rs.index - ls.index < 8) continue;
+      const headBeyond = inverse ? Math.min(ls.price, rs.price) - head.price : head.price - Math.max(ls.price, rs.price);
+      if (headBeyond < 1 * a) continue;
+      const shoulderDiff = Math.abs(ls.price - rs.price);
+      if (shoulderDiff > Math.max(0.8 * a, 0.55 * headBeyond)) continue;
+      const between = (from, to) => troughs.filter((p) => p.index > from && p.index < to);
+      const t1s = between(ls.index, head.index);
+      const t2s = between(head.index, rs.index);
+      if (!t1s.length || !t2s.length) continue;
+      const t1 = inverse ? t1s.sort((x, y) => y.price - x.price)[0] : t1s.sort((x, y) => x.price - y.price)[0];
+      const t2 = inverse ? t2s.sort((x, y) => y.price - x.price)[0] : t2s.sort((x, y) => x.price - y.price)[0];
+      if (Math.abs(t1.price - t2.price) > 1.5 * a) continue;
+      const after = candles.slice(rs.index + 1);
+      if (after.some((k) => (inverse ? k.close < head.price : k.close > head.price))) continue;
+      const neck = neckAt(t1, t2, n);
+      const last = candles[n].close;
+      const broken = inverse ? last > neck : last < neck;
+      const candlesSince = n - rs.index;
+      const distAtr = Math.abs(last - neck) / a;
+      const symmetry = 1 - shoulderDiff / Math.max(0.8 * a, 0.55 * headBeyond);
+      const w = WEIGHTS.hs;
+      const components = [sat(symmetry * 3), sat(headBeyond / a / 1.2), sat((broken ? 1 : 0.7) * 3), boundedRecency(candlesSince, 30)];
+      const raw = w.symmetry * components[0] + w.prominence * components[1] + w.neck * components[2] + w.recency * components[3];
+      const kind = inverse ? 'inverse_head_shoulders' : 'head_shoulders';
+      const status = broken ? 'confirmed' : 'forming';
+      const scored = scoreStrength(kind, raw, { status, components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 5 });
+      const confirmPx = neck;
+      const invalidatePx = head.price;
+      const explanation = inverse
+        ? `Hombro-cabeza-hombro invertido con cabeza en ${fmt(head.price)} y cuello en ${fmt(neck)}: hombros en ${fmt(ls.price)} y ${fmt(rs.price)}. Si cierra por encima de ${fmt(confirmPx)}, el giro al alza se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+        : `Hombro-cabeza-hombro con cabeza en ${fmt(head.price)} y cuello en ${fmt(neck)}: hombros en ${fmt(ls.price)} y ${fmt(rs.price)}. Si cierra por debajo de ${fmt(confirmPx)}, el giro a la baja se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+      const item = finding({
+        id: `${kind}:${ls.time}:${head.time}:${rs.time}`,
+        kind,
+        label: inverse ? 'Hombro-cabeza-hombro invertido' : 'Hombro-cabeza-hombro',
+        explanation,
+        from: ls.time, to: candles[n].time,
+        levels: stamp([
+          { role: 'neckline', price: r4(neck) },
+          { role: 'head', price: r4(head.price), time: head.time },
+          { role: 'shoulder', price: r4(ls.price), time: ls.time },
+          { role: 'shoulder', price: r4(rs.price), time: rs.time },
+        ], confirmPx, invalidatePx),
+        direction: inverse ? 'up' : 'down', strength: scored.strength, status,
+        evidence: {
+          head: r4(head.price), left: r4(ls.price), right: r4(rs.price), neckline: r4(neck),
+          prominenceAtr: r4(headBeyond / a), shoulderDiffAtr: r4(shoulderDiff / a), broken,
+          candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+        },
+      });
+      if (!best || item.strength > best.strength) best = item;
+    }
+    if (best) out.push(best);
+  };
+  consider(highs, lows, false);
+  consider(lows, highs, true);
+  return out;
+}
+
+export function wedges(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const recent = pivots.filter((p) => p.index >= n - o.lookbackPatterns);
+  const hs = recent.filter((p) => p.type === 'high').slice(-3);
+  const ls = recent.filter((p) => p.type === 'low').slice(-3);
+  if (hs.length < 3 || ls.length < 3) return [];
+  const x0 = Math.min(hs[0].index, ls[0].index);
+  const x1 = n;
+  if (x1 - x0 < 12) return [];
+  const H = linreg(hs.map((p) => ({ x: p.index, y: p.price })));
+  const L = linreg(ls.map((p) => ({ x: p.index, y: p.price })));
+  const hi = (x) => H.slope * x + H.b;
+  const lo = (x) => L.slope * x + L.b;
+  const w0 = hi(x0) - lo(x0);
+  const w1 = hi(x1) - lo(x1);
+  if (!(w0 > 0) || !(w1 > 0) || w1 > 0.75 * w0) return [];
+  const moveH = (hi(x1) - hi(x0)) / w0;
+  const moveL = (lo(x1) - lo(x0)) / w0;
+  let kind = null;
+  if (H.slope > 0 && L.slope > H.slope && moveH > 0.12 && moveL > 0.28 && H.slope > 0.35 * L.slope) kind = 'rising_wedge';
+  else if (H.slope < 0 && L.slope < 0 && H.slope < L.slope && moveH < -0.28 && moveL < -0.12 && Math.abs(L.slope) > 0.35 * Math.abs(H.slope)) kind = 'falling_wedge';
+  if (!kind) return [];
+  const last = candles[n].close;
+  const upper = hi(n), lower = lo(n);
+  const rising = kind === 'rising_wedge';
+  if (rising ? last > upper + 0.4 * w1 : last < lower - 0.4 * w1) return [];
+  const broken = rising ? last < lower : last > upper;
+  const fit = 1 - clamp01(((H.res + L.res) / 2) / (0.18 * w0));
+  const convergence = clamp01(1 - w1 / w0);
+  const target = rising ? lower : upper;
+  const proximity = clamp01(1 - Math.abs(last - target) / Math.max(w1, 1e-9));
+  const lastPivot = Math.max(hs[hs.length - 1].index, ls[ls.length - 1].index);
+  const candlesSince = n - lastPivot;
+  const distAtr = Math.abs(last - target) / a;
+  const w = WEIGHTS.wedge;
+  const components = [sat(fit * 3), sat(convergence * 3.2), sat(proximity * 3), boundedRecency(candlesSince, 35)];
+  const raw = (w.fit * components[0] + w.convergence * components[1] + w.proximity * components[2] + w.recency * components[3]);
+  const status = broken ? 'confirmed' : 'forming';
+  const scored = scoreStrength(kind, raw, { status, components, candlesSince, distAtr, nearWeight: 0.15, nearScale: 5 });
+  const confirmPx = rising ? lower : upper;
+  const invalidatePx = rising ? upper : lower;
+  const explanation = rising
+    ? `Cuña ascendente entre ${fmt(lower)} y ${fmt(upper)}: máximos y mínimos suben, pero el rango se estrecha y el sesgo es bajista. Si cierra por debajo de ${fmt(confirmPx)}, la ruptura se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`
+    : `Cuña descendente entre ${fmt(lower)} y ${fmt(upper)}: máximos y mínimos bajan, pero el rango se estrecha y el sesgo es alcista. Si cierra por encima de ${fmt(confirmPx)}, la ruptura se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`;
+  return [finding({
+    id: `${kind}:${candles[x0].time}`,
+    kind,
+    label: rising ? 'Cuña ascendente' : 'Cuña descendente',
+    explanation,
+    from: candles[x0].time, to: candles[n].time,
+    levels: stamp([
+      { role: 'wedge_upper', price: r4(upper) },
+      { role: 'wedge_lower', price: r4(lower) },
+    ], confirmPx, invalidatePx),
+    direction: rising ? 'down' : 'up', strength: scored.strength, status,
+    evidence: {
+      fit: r4(fit), convergence: r4(convergence), widthStart: r4(w0), widthNow: r4(w1),
+      candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+    },
+  })];
+}
+
+function pathEfficiency(candles, i0, i1) {
+  let path = 0;
+  for (let i = i0 + 1; i <= i1; i++) path += Math.abs(candles[i].close - candles[i - 1].close);
+  const net = Math.abs(candles[i1].close - candles[i0].close);
+  return path > 0 ? net / path : 0;
+}
+
+export function flags(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const recent = pivots.filter((p) => p.index >= n - o.lookbackPatterns);
+  const out = [];
+  const tryFlag = (start, end, bull) => {
+    const pole = Math.abs(end.price - start.price);
+    const bars = end.index - start.index;
+    if (pole < 2.5 * a || bars < 4 || bars > 30) return;
+    if (bull ? end.price <= start.price : end.price >= start.price) return;
+    const eff = pathEfficiency(candles, start.index, end.index);
+    if (eff < 0.65) return;
+    const flagLen = n - end.index;
+    if (flagLen < 4 || flagLen > 28) return;
+    const flag = candles.slice(end.index, n + 1);
+    const flagLow = Math.min(...flag.map((k) => k.low));
+    const flagHigh = Math.max(...flag.map((k) => k.high));
+    const retrace = bull ? (end.price - flagLow) / pole : (flagHigh - end.price) / pole;
+    if (retrace < 0.15 || retrace > 0.62) return;
+    const broke = bull ? candles[n].close > end.price : candles[n].close < end.price;
+    if (!broke && (bull ? flagHigh > end.price + 0.2 * a : flagLow < end.price - 0.2 * a)) return;
+    const tightness = 1 - clamp01((flagHigh - flagLow) / pole);
+    const candlesSince = flagLen;
+    const confirmPx = end.price;
+    const invalidatePx = bull ? flagLow : flagHigh;
+    const distAtr = Math.abs(candles[n].close - confirmPx) / a;
+    const w = WEIGHTS.flag;
+    const components = [sat((eff * pole) / a / 2), sat(1.1 - Math.abs(retrace - 0.38) * 2), sat(tightness * 3), boundedRecency(candlesSince, 20)];
+    const raw = w.pole * components[0] + w.retrace * components[1] + w.tightness * components[2] + w.recency * components[3];
+    const kind = bull ? 'bull_flag' : 'bear_flag';
+    const status = broke ? 'confirmed' : 'forming';
+    const scored = scoreStrength(kind, raw, { status, components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 4 });
+    const explanation = bull
+      ? `Bandera alcista tras un impulso de ${fmt(start.price)} a ${fmt(end.price)}: la consolidación retrocede hasta ${fmt(flagLow)} sin deshacer el mástil. Si cierra por encima de ${fmt(confirmPx)}, la continuación se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+      : `Bandera bajista tras un impulso de ${fmt(start.price)} a ${fmt(end.price)}: la consolidación rebota hasta ${fmt(flagHigh)} sin deshacer el mástil. Si cierra por debajo de ${fmt(confirmPx)}, la continuación se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+    out.push(finding({
+      id: `${kind}:${start.time}:${end.time}`,
+      kind,
+      label: bull ? 'Bandera alcista' : 'Bandera bajista',
+      explanation,
+      from: start.time, to: candles[n].time,
+      levels: stamp([
+        { role: 'pole_end', price: r4(end.price), time: end.time },
+        { role: bull ? 'flag_low' : 'flag_high', price: r4(bull ? flagLow : flagHigh) },
+      ], confirmPx, invalidatePx),
+      direction: bull ? 'up' : 'down', strength: scored.strength, status,
+      evidence: {
+        poleAtr: r4(pole / a), efficiency: r4(eff), retrace: r4(retrace), tightness: r4(tightness),
+        flagLow: r4(flagLow), flagHigh: r4(flagHigh), broken: broke,
+        candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      },
+    }));
+  };
+  const highs = recent.filter((p) => p.type === 'high');
+  const lows = recent.filter((p) => p.type === 'low');
+  for (const h of highs) {
+    const prev = lows.filter((p) => p.index < h.index).at(-1);
+    if (prev) tryFlag(prev, h, true);
+  }
+  for (const l of lows) {
+    const prev = highs.filter((p) => p.index < l.index).at(-1);
+    if (prev) tryFlag(prev, l, false);
+  }
+  const pick = (kind) => {
+    const xs = out.filter((f) => f.kind === kind);
+    if (!xs.length) return [];
+    xs.sort((a, b) => b.strength - a.strength);
+    return [xs[0]];
+  };
+  return [...pick('bull_flag'), ...pick('bear_flag')];
+}
+
+// ---------- 12. velas de alta fiabilidad, solo en contexto ----------
+// Definiciones CDL* de TA-Lib (BSD-3-Clause), resumidas: envolvente de cuerpos
+// (el cuerpo que envuelve mide al menos 0.8 ATR),
+// martillo / estrella fugaz (sombra >= 2 cuerpos y sombra opuesta corta),
+// estrella de la mañana / tarde (sin exigir hueco: el mercado cripto no lo abre)
+// y doji (cuerpo <= 10% del rango). Solo cuentan junto a un swing o una zona S/R.
+
+function cBody(k) { return Math.abs(k.close - k.open); }
+function cUpper(k) { return k.high - Math.max(k.open, k.close); }
+function cLower(k) { return Math.min(k.open, k.close) - k.low; }
+function cBull(k) { return k.close > k.open; }
+function cBear(k) { return k.close < k.open; }
+
+function candleContext(candles, pivots, zones, i, side, a) {
+  const k = candles[i];
+  const swing = pivots.some((p) => {
+    if (side !== 'either' && p.type !== side) return false;
+    if (Math.abs(p.index - i) > 3) return false;
+    const ref = p.type === 'high' ? k.high : k.low;
+    return Math.abs(p.price - ref) <= 0.6 * a;
+  });
+  const zone = zones.some((z) => {
+    const lv = z.levels?.[0];
+    if (!lv || !Number.isFinite(lv.price)) return false;
+    const low = Number.isFinite(lv.low) ? lv.low : lv.price;
+    const high = Number.isFinite(lv.high) ? lv.high : lv.price;
+    return k.low <= high + 0.35 * a && k.high >= low - 0.35 * a;
+  });
+  return { swing, zone, ok: swing || zone };
+}
+
+function pushCandle(out, candles, spec) {
+  const { i, kind, label, direction, confirmPx, invalidatePx, shape, ctx, explanation, evidence } = spec;
+  const n = candles.length - 1;
+  const a = spec.atr;
+  const candlesSince = n - i;
+  const distAtr = Math.abs(candles[n].close - confirmPx) / a;
+  const contextScore = ctx.swing && ctx.zone ? 1 : ctx.swing ? 0.85 : 0.7;
+  const w = WEIGHTS.candle;
+  const components = [sat(shape * 2.4), sat(contextScore * 3), boundedRecency(candlesSince, 25)];
+  const raw = w.shape * components[0] + w.context * components[1] + w.recency * components[2];
+  const scored = scoreStrength(kind, raw, { status: 'confirmed', components, candlesSince, distAtr, nearWeight: 0.3, nearScale: 3 });
+  out.push(finding({
+    id: `${kind}:${candles[i].time}`,
+    kind, label, explanation,
+    from: candles[Math.max(0, i - 2)].time, to: candles[i].time,
+    levels: stamp([{ role: 'candle', price: r4(candles[i].close), time: candles[i].time }], confirmPx, invalidatePx),
+    direction, strength: scored.strength, status: 'confirmed',
+    evidence: {
+      ...evidence, shape: r4(shape), atSwing: ctx.swing, atZone: ctx.zone,
+      candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+    },
+  }));
+}
+
+export function candlestickPatterns(candles, pivots, zones = [], opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a || n < 5) return [];
+  const found = {};
+  const remember = (kind, item) => {
+    if (!found[kind] || item.i > found[kind].i) found[kind] = item;
+  };
+  for (let i = n; i >= Math.max(2, n - 40); i--) {
+    const k = candles[i];
+    const range = k.high - k.low;
+    if (!(range > 0)) continue;
+    const body = cBody(k);
+    const ctxLow = candleContext(candles, pivots, zones, i, 'low', a);
+    const ctxHigh = candleContext(candles, pivots, zones, i, 'high', a);
+    const ctxEither = candleContext(candles, pivots, zones, i, 'either', a);
+    const prev = candles[i - 1];
+    if (ctxLow.ok && cBear(prev) && cBull(k) && body >= 0.8 * a && cBody(prev) > 0
+      && k.open <= prev.close && k.close >= prev.open && body >= cBody(prev)) {
+      const shape = body / cBody(prev);
+      remember('candle_engulfing_bullish', {
+        i, kind: 'candle_engulfing_bullish', label: 'Envolvente alcista', direction: 'up', atr: a,
+        confirmPx: k.high, invalidatePx: Math.min(k.low, prev.low), shape, ctx: ctxLow,
+        explanation: `Envolvente alcista en ${fmt(k.close)}: el cuerpo verde cubre el cuerpo rojo anterior, en un mínimo o en soporte. Si cierra por encima de ${fmt(k.high)}, el giro se confirma. Se invalida si cierra por debajo de ${fmt(Math.min(k.low, prev.low))}.`,
+        evidence: { bodyRatio: r4(shape) },
+      });
+    }
+    if (ctxHigh.ok && cBull(prev) && cBear(k) && body >= 0.8 * a && cBody(prev) > 0
+      && k.open >= prev.close && k.close <= prev.open && body >= cBody(prev)) {
+      const shape = body / cBody(prev);
+      remember('candle_engulfing_bearish', {
+        i, kind: 'candle_engulfing_bearish', label: 'Envolvente bajista', direction: 'down', atr: a,
+        confirmPx: k.low, invalidatePx: Math.max(k.high, prev.high), shape, ctx: ctxHigh,
+        explanation: `Envolvente bajista en ${fmt(k.close)}: el cuerpo rojo cubre el cuerpo verde anterior, en un máximo o en resistencia. Si cierra por debajo de ${fmt(k.low)}, el giro se confirma. Se invalida si cierra por encima de ${fmt(Math.max(k.high, prev.high))}.`,
+        evidence: { bodyRatio: r4(shape) },
+      });
+    }
+    const lower = cLower(k), upper = cUpper(k);
+    if (ctxLow.ok && body >= 0.04 * range && lower >= 2 * body && lower >= 0.5 * range && upper <= Math.max(body, 0.15 * range)) {
+      remember('candle_hammer', {
+        i, kind: 'candle_hammer', label: 'Martillo', direction: 'up', atr: a,
+        confirmPx: k.high, invalidatePx: k.low, shape: lower / Math.max(body, 1e-9), ctx: ctxLow,
+        explanation: `Martillo en ${fmt(k.low)}: mecha inferior larga y cuerpo pequeño en la parte alta, tras un mínimo o en soporte. Si cierra por encima de ${fmt(k.high)}, el rechazo se confirma. Se invalida si cierra por debajo de ${fmt(k.low)}.`,
+        evidence: { lowerWickBody: r4(lower / Math.max(body, 1e-9)) },
+      });
+    }
+    if (ctxHigh.ok && body >= 0.04 * range && upper >= 2 * body && upper >= 0.5 * range && lower <= Math.max(body, 0.15 * range)) {
+      remember('candle_shooting_star', {
+        i, kind: 'candle_shooting_star', label: 'Estrella fugaz', direction: 'down', atr: a,
+        confirmPx: k.low, invalidatePx: k.high, shape: upper / Math.max(body, 1e-9), ctx: ctxHigh,
+        explanation: `Estrella fugaz en ${fmt(k.high)}: mecha superior larga y cuerpo pequeño en la parte baja, tras un máximo o en resistencia. Si cierra por debajo de ${fmt(k.low)}, el rechazo se confirma. Se invalida si cierra por encima de ${fmt(k.high)}.`,
+        evidence: { upperWickBody: r4(upper / Math.max(body, 1e-9)) },
+      });
+    }
+    if (body <= 0.1 * range && range >= 0.35 * a && ctxEither.ok) {
+      const atSupport = ctxLow.ok || zones.some((z) => z.levels?.[0]?.role === 'support' && k.low <= (z.levels[0].high ?? z.levels[0].price) + 0.35 * a && k.high >= (z.levels[0].low ?? z.levels[0].price) - 0.35 * a);
+      const atResist = ctxHigh.ok || zones.some((z) => z.levels?.[0]?.role === 'resistance' && k.low <= (z.levels[0].high ?? z.levels[0].price) + 0.35 * a && k.high >= (z.levels[0].low ?? z.levels[0].price) - 0.35 * a);
+      const direction = atSupport && !atResist ? 'up' : atResist && !atSupport ? 'down' : 'neutral';
+      const confirmPx = direction === 'down' ? k.low : k.high;
+      const invalidatePx = direction === 'down' ? k.high : k.low;
+      const ctx = direction === 'down' ? ctxHigh : direction === 'up' ? ctxLow : ctxEither;
+      if (ctx.ok || atSupport || atResist) {
+        remember('candle_doji', {
+          i, kind: 'candle_doji', label: 'Doji en nivel', direction, atr: a,
+          confirmPx, invalidatePx, shape: 1 - body / range, ctx: ctx.ok ? ctx : { swing: false, zone: true, ok: true },
+          explanation: direction === 'down'
+            ? `Doji en ${fmt(k.close)}: el cuerpo es mínimo y el precio está en resistencia o en un máximo. Si cierra por debajo de ${fmt(confirmPx)}, el sesgo bajista se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`
+            : direction === 'up'
+              ? `Doji en ${fmt(k.close)}: el cuerpo es mínimo y el precio está en soporte o en un mínimo. Si cierra por encima de ${fmt(confirmPx)}, el sesgo alcista se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+              : `Doji en ${fmt(k.close)}: el cuerpo es mínimo y el precio está en un swing o entre soporte y resistencia. Si cierra por encima de ${fmt(confirmPx)}, el empate se resuelve al alza. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`,
+          evidence: { bodyToRange: r4(body / range) },
+        });
+      }
+    }
+    if (i >= 2) {
+      const a1 = candles[i - 2], a2 = candles[i - 1], a3 = k;
+      const midBody = (a1.open + a1.close) / 2;
+      const starCtx = candleContext(candles, pivots, zones, i - 1, 'low', a);
+      if (starCtx.ok && cBear(a1) && cBull(a3) && cBody(a1) >= 0.45 * a && cBody(a2) <= 0.45 * cBody(a1) && a3.close > midBody) {
+        remember('candle_morning_star', {
+          i, kind: 'candle_morning_star', label: 'Estrella de la mañana', direction: 'up', atr: a,
+          confirmPx: a3.high, invalidatePx: Math.min(a1.low, a2.low, a3.low), shape: (a3.close - midBody) / Math.max(cBody(a1), 1e-9),
+          ctx: starCtx,
+          explanation: `Estrella de la mañana en ${fmt(Math.min(a2.low, a3.low))}: vela bajista, cuerpo pequeño y vela alcista que cierra por encima de la mitad de la primera, en un mínimo o en soporte. Si cierra por encima de ${fmt(a3.high)}, el giro se confirma. Se invalida si cierra por debajo de ${fmt(Math.min(a1.low, a2.low, a3.low))}.`,
+          evidence: { firstBodyAtr: r4(cBody(a1) / a) },
+        });
+      }
+      const starHigh = candleContext(candles, pivots, zones, i - 1, 'high', a);
+      if (starHigh.ok && cBull(a1) && cBear(a3) && cBody(a1) >= 0.45 * a && cBody(a2) <= 0.45 * cBody(a1) && a3.close < midBody) {
+        remember('candle_evening_star', {
+          i, kind: 'candle_evening_star', label: 'Estrella del anochecer', direction: 'down', atr: a,
+          confirmPx: a3.low, invalidatePx: Math.max(a1.high, a2.high, a3.high), shape: (midBody - a3.close) / Math.max(cBody(a1), 1e-9),
+          ctx: starHigh,
+          explanation: `Estrella del anochecer en ${fmt(Math.max(a2.high, a3.high))}: vela alcista, cuerpo pequeño y vela bajista que cierra por debajo de la mitad de la primera, en un máximo o en resistencia. Si cierra por debajo de ${fmt(a3.low)}, el giro se confirma. Se invalida si cierra por encima de ${fmt(Math.max(a1.high, a2.high, a3.high))}.`,
+          evidence: { firstBodyAtr: r4(cBody(a1) / a) },
+        });
+      }
+    }
+  }
+  const out = [];
+  for (const item of Object.values(found)) pushCandle(out, candles, item);
+  return out;
+}
+
 // ---------- orquestacion ----------
 /**
  * Hasta `limit` hallazgos, como mucho `perKind` de cada tipo.
- * Primero los patrones de grafico con fuerza >= 0.4 (doble techo/suelo, triangulo,
- * ruptura, divergencia): son los que pueden completarse. Dentro de ese grupo, y despues
- * en el resto, se prefiere fuerza, cercania al precio y recencia.
+ * Primero los patrones de grafico y de estructura con fuerza >= 0.4 (CHART_KINDS:
+ * doble techo/suelo, triangulo, hombro-cabeza-hombro, cuña, bandera, ruptura,
+ * divergencia, FVG, BOS/CHoCH, order block, barrido de liquidez). Una estructura
+ * con mas de 30 velas no lidera: sigue en findings y compite por cercania.
+ * Dentro del grupo, y despues en el resto, se prefiere fuerza, cercania y recencia.
  * `findings` sigue siendo la lista completa ordenada solo por strength.
  */
 function selectTop(findings, limit, perKind) {
@@ -674,7 +1437,14 @@ function selectTop(findings, limit, perKind) {
     const recent = Math.exp(-Math.max(0, since) / 40);
     return f.strength * (0.6 + 0.4 * near) * (0.6 + 0.4 * recent);
   };
-  const chartLead = (f) => (CHART_KINDS.has(f.kind) && f.strength >= 0.4 ? 1 : 0);
+  const chartLead = (f) => {
+    if (!CHART_KINDS.has(f.kind) || f.strength < 0.4) return 0;
+    if (/^(fvg|bos|choch|order_block|liquidity_sweep)_/.test(f.kind)) {
+      const since = Number.isFinite(f.evidence?.candlesSince) ? f.evidence.candlesSince : Infinity;
+      if (since > 30) return 0;
+    }
+    return 1;
+  };
   const ranked = [...findings].sort((a, b) => chartLead(b) - chartLead(a) || tendency(b) - tendency(a) || b.strength - a.strength || b.to - a.to);
   const top = [];
   const counts = new Map();
@@ -696,14 +1466,23 @@ export function analyzeSync({ symbol = '', timeframe = '', candles = [], options
   }
   const pivots = findPivots(candles, o.pivotWindow);
   const trend = trendOf(candles, o);
+  const zones = srZones(candles, pivots, o);
   const findings = [
-    ...srZones(candles, pivots, o),
+    ...zones,
     ...doubleTopBottom(candles, pivots, o),
     ...triangles(candles, pivots, o),
     ...rangeBreakout(candles, o),
     ...shocks(candles, o),
     ...volumeProfile(candles, o),
     ...rsiDivergence(candles, pivots, o),
+    ...fairValueGaps(candles, o),
+    ...marketStructure(candles, pivots, o),
+    ...orderBlocks(candles, pivots, o),
+    ...liquiditySweeps(candles, pivots, o),
+    ...headAndShoulders(candles, pivots, o),
+    ...wedges(candles, pivots, o),
+    ...flags(candles, pivots, o),
+    ...candlestickPatterns(candles, pivots, zones, o),
   ].map((f) => ({ ...f, hitRate: historicalHitRate(f.kind, timeframe, symbol), hitRateNote: NO_HISTORY_TEXT }));
   findings.sort((a, b) => b.strength - a.strength || b.to - a.to);
   const top = selectTop(findings, o.topLimit, o.topPerKind);
@@ -722,7 +1501,7 @@ export async function analyze(input) {
 
 export const TOOL_SPEC = {
   name: 'analyze_chart',
-  description: 'Detecta patrones de precio de forma determinista (pivotes, tendencia, soportes/resistencias, doble techo/suelo, triángulos, rupturas de rango, velas de choque, perfil de volumen, divergencias RSI) y los devuelve ordenados por "fuerza del patrón" (puntuación geométrica 0-1; no es una probabilidad ni una tasa de acierto). Cada hallazgo incluye explicación en español y la evidencia numérica.',
+  description: 'Detecta patrones de precio de forma determinista (pivotes, tendencia, soportes/resistencias, doble techo/suelo, hombro-cabeza-hombro, triángulos, cuñas, banderas, estructura: FVG, BOS/CHoCH, order blocks y barridos de liquidez, rupturas de rango, velas de choque, velas clásicas en contexto, perfil de volumen, divergencias RSI) y los devuelve ordenados por "fuerza del patrón" (puntuación geométrica 0-1; no es una probabilidad ni una tasa de acierto). Cada hallazgo incluye explicación en español, niveles con precios confirm e invalidate, y la evidencia numérica.',
   input_schema: {
     type: 'object',
     properties: {
