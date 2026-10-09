@@ -1,0 +1,4 @@
+.output/
+.wxt/
+web-ext-artifacts/
+*.log
