@@ -1,0 +1,334 @@
+{
+  "url": "https://www.binance.com/en/futures/BTCUSDT",
+  "mode": "both",
+  "investigatedAt": "2026-10-10T18:18:34.298Z",
+  "headless": true,
+  "title": "83,022.3 | BTCUSDT USDⓈ-Margined Perpetual Chart | Binance Futures",
+  "cookieBannerDismissed": null,
+  "tabSwitch": {
+    "found": true,
+    "clicked": {
+      "tag": "DIV",
+      "text": "Trading View"
+    }
+  },
+  "states": [
+    {
+      "label": "original-tab",
+      "url": "https://www.binance.com/en/futures/BTCUSDT",
+      "frames": [
+        {
+          "url": "https://www.binance.com/en/futures/BTCUSDT",
+          "name": null,
+          "origin": "https://www.binance.com"
+        },
+        {
+          "url": "about:blank",
+          "name": null,
+          "origin": "null"
+        },
+        {
+          "url": "page",
+          "name": null,
+          "origin": null
+        }
+      ],
+      "widgetScan": [],
+      "chartDom": {
+        "iframes": [
+          {
+            "src": "",
+            "id": "",
+            "className": "ot-text-resize",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          {
+            "src": "https://accounts.binance.com/en/login/switch/callback",
+            "id": "switch-account-iframe",
+            "className": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        ],
+        "canvases": [
+          {
+            "w": 1112,
+            "h": 463,
+            "parentClass": "kline-container",
+            "grandClass": "flex kline-wrap bg-BasicBg dark"
+          },
+          {
+            "w": 1112,
+            "h": 463,
+            "parentClass": "kline-container",
+            "grandClass": "flex kline-wrap bg-BasicBg dark"
+          },
+          {
+            "w": 1112,
+            "h": 463,
+            "parentClass": "kline-container",
+            "grandClass": "flex kline-wrap bg-BasicBg dark"
+          },
+          {
+            "w": 1112,
+            "h": 463,
+            "parentClass": "kline-container",
+            "grandClass": "flex kline-wrap bg-BasicBg dark"
+          },
+          {
+            "w": 1112,
+            "h": 463,
+            "parentClass": "kline-container",
+            "grandClass": "flex kline-wrap bg-BasicBg dark"
+          }
+        ],
+        "tvScripts": [],
+        "axisLikeTexts": [
+          "83,022.4",
+          "83,022.4",
+          "83,073.3",
+          "83,137.2",
+          "82,241.5",
+          "43,563.553",
+          "3,601,548,116.63",
+          "7,696,595,244.98",
+          "82,578.5",
+          "83,137.2",
+          "82,500.0",
+          "83,022.3",
+          "84,043.0",
+          "83,325.3",
+          "72,796.1",
+          "83,022.4",
+          "83,022.4",
+          "83,022.4",
+          "83,022.3",
+          "83,022.4",
+          "83,022.3",
+          "83,022.4",
+          "83,022.4",
+          "83,022.3",
+          "83,022.3"
+        ],
+        "bigCanvasCount": 5
+      }
+    },
+    {
+      "label": "tradingview-tab",
+      "url": "https://www.binance.com/en/futures/BTCUSDT",
+      "frames": [
+        {
+          "url": "https://www.binance.com/en/futures/BTCUSDT",
+          "name": null,
+          "origin": "https://www.binance.com"
+        },
+        {
+          "url": "about:blank",
+          "name": null,
+          "origin": "null"
+        },
+        {
+          "url": "https://accounts.binance.com/en/login/switch/callback",
+          "name": "switch-account-iframe",
+          "origin": "https://accounts.binance.com"
+        },
+        {
+          "url": "https://www.binance.com/static/chart/tradingview/en/trading-platform-30/sameorigin.html",
+          "name": "tradingview_5d33d",
+          "origin": "https://www.binance.com"
+        },
+        {
+          "url": "about:blank",
+          "name": null,
+          "origin": "null"
+        },
+        {
+          "url": "about:blank",
+          "name": null,
+          "origin": "null"
+        },
+        {
+          "url": "about:blank",
+          "name": null,
+          "origin": "null"
+        }
+      ],
+      "widgetScan": [
+        {
+          "frame": "https://www.binance.com/en/futures/BTCUSDT",
+          "error": "Error: frame.evaluate: SecurityError: Failed to read a named property 'activeChart' from 'Window': Blocked a frame with origin \"https://www.binance.com\" from ac"
+        },
+        {
+          "frame": "https://www.binance.com/static/chart/tradingview/en/trading-platform-30/sameorigin.html",
+          "key": "tradingViewApi",
+          "hasActiveChart": true,
+          "hasChart": true,
+          "ctor": "vv"
+        }
+      ],
+      "chartDom": {
+        "iframes": [
+          {
+            "src": "https://www.binance.com/static/chart/tradingview/en/trading-platform-30/sameorigin.html",
+            "id": "tradingview_5d33d",
+            "className": "",
+            "rect": {
+              "x": 0,
+              "y": 251,
+              "width": 1112,
+              "height": 463.203125,
+              "top": 251,
+              "right": 1112,
+              "bottom": 714.203125,
+              "left": 0
+            }
+          },
+          {
+            "src": "",
+            "id": "",
+            "className": "ot-text-resize",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          {
+            "src": "https://accounts.binance.com/en/login/switch/callback",
+            "id": "switch-account-iframe",
+            "className": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 0,
+              "height": 0,
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          {
+            "src": "",
+            "id": "",
+            "className": "",
+            "rect": {
+              "x": -1,
+              "y": -1,
+              "width": 304,
+              "height": 154,
+              "top": -1,
+              "right": 303,
+              "bottom": 153,
+              "left": -1
+            }
+          }
+        ],
+        "canvases": [],
+        "tvScripts": [
+          "https://www.binance.com/static/chart/tradingview/en/trading-platform-30/sameorigin.html"
+        ],
+        "axisLikeTexts": [
+          "83,022.3",
+          "83,022.3",
+          "83,073.3",
+          "83,137.2",
+          "82,241.5",
+          "43,563.916",
+          "3,601,578,253.73",
+          "7,696,590,504.26",
+          "83,023.2",
+          "83,023.1",
+          "83,022.6",
+          "83,022.5",
+          "83,022.4",
+          "83,022.3",
+          "83,022.3",
+          "83,022.3",
+          "83,022.2",
+          "83,022.1",
+          "83,021.8",
+          "83,021.6",
+          "83,022.3",
+          "83,022.3",
+          "83,022.3",
+          "83,022.4",
+          "83,022.3",
+          "83,022.4",
+          "83,022.3",
+          "83,022.3"
+        ],
+        "bigCanvasCount": 0
+      },
+      "apiProbe": {
+        "key": "tradingViewApi",
+        "accessor": "activeChart",
+        "methods": {
+          "createShape": true,
+          "createMultipointShape": true,
+          "removeEntity": true,
+          "removeAllShapes": true,
+          "getAllShapes": true,
+          "getShapeById": true,
+          "setSymbol": true,
+          "setResolution": true,
+          "symbol": true,
+          "getVisibleRange": true,
+          "visibleTimeRange": false,
+          "getAllSeries": false
+        },
+        "visibleRange": {
+          "from": 1778371200,
+          "to": 1792454400
+        },
+        "seriesFound": false
+      },
+      "drawTest": {
+        "params": {
+          "midTime": 1785412800,
+          "price": 0,
+          "range": {
+            "from": 1778371200,
+            "to": 1792454400
+          }
+        },
+        "horizontalLine": {},
+        "entitiesAfterLine": 0,
+        "entitiesAfterRemove": 0,
+        "trendLine": {}
+      },
+      "crossWorldProbe": {
+        "reachable": true,
+        "hasCreateShape": true,
+        "hasCreateMultipointShape": true,
+        "hasRemoveEntity": true,
+        "visibleRange": {
+          "from": 1778371200,
+          "to": 1792454400
+        }
+      }
+    }
+  ]
+}

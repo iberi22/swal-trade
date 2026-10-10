@@ -1,0 +1,52 @@
+{
+  "title": "AAPL 336.64 ▼ −1.11%",
+  "url": "https://www.tradingview.com/chart/",
+  "widgetKeys": {
+    "TradingViewApi": [
+      "linking",
+      "_lockDrawingsWatchedValue",
+      "_hideDrawingsWatchedValue",
+      "_hideIndicatorsWatchedValue",
+      "_studyTemplatesDrawer",
+      "_fontIconsSettingsDrawer",
+      "_favoriteDrawingsToolbar",
+      "_webview",
+      "_activeChartWidgetWV",
+      "_activeChartRangeState"
+    ],
+    "TradingView": [
+      "onChartPage",
+      "FeatureToggle",
+      "isFeatureEnabled",
+      "changeLoginState",
+      "signOut",
+      "setTrialAvailiable",
+      "saveDefaults",
+      "factoryDefaults",
+      "defaultProperties",
+      "rightWidgetBarSettled"
+    ],
+    "_exposed_chartWidgetCollection": [
+      "activeChartStyle",
+      "activeChartWidget",
+      "onAboutToBeDestroyed",
+      "clientId",
+      "_destroyed",
+      "_chartWidgetsDefs",
+      "_activeIndex",
+      "_globalDetachable",
+      "_layoutTemplate",
+      "_layoutType"
+    ]
+  },
+  "scan": [
+    "TradingViewApi"
+  ],
+  "frames": [
+    {
+      "name": "",
+      "url": "https://www.tradingview.com/chart/"
+    }
+  ],
+  "origin": "https://www.tradingview.com"
+}

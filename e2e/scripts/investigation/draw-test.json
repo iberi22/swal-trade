@@ -1,0 +1,29 @@
+{
+  "title": "83,010.0 | BTCUSDT USDⓈ-Margined Perpetual Chart | Binance Futures",
+  "result": {
+    "reachable": true,
+    "iframeUrl": "https://www.binance.com/static/chart/tradingview/en/trading-platform-30/sameorigin.html",
+    "visibleRange": {
+      "from": 1778371200,
+      "to": 1792454400
+    },
+    "symbol": "BTCUSDT@PRICETYPE=LAST",
+    "resolution": "1D",
+    "listenerMethods": {
+      "onSymbolChanged": "function",
+      "onIntervalChanged": "function",
+      "onDataLoaded": "function",
+      "onVisibleRangeChanged": "function"
+    },
+    "price": 83010,
+    "lineIdType": "object",
+    "lineId": {},
+    "trendIdType": "object",
+    "trendId": {},
+    "entitiesAfterDraw": 2,
+    "entitiesAfterDrawError": "Error: There is no such shape",
+    "removeOk": true,
+    "entitiesAfterRemove": 2,
+    "symbolAfterDraw": "BTCUSDT@PRICETYPE=LAST"
+  }
+}
