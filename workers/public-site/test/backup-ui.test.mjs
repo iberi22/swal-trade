@@ -165,3 +165,56 @@ test('interfaz: licencia válida (status pro) respalda de extremo a extremo', as
   assert.equal(saved.length, 1);
   assert.equal(saved[0].note, 'nota privada');
 });
+
+test('interfaz: restaurar conserva el token del bot si el respaldo no lo trae', async () => {
+  const core = await import('../static/backup/backup-core.js');
+  // Respaldo hecho SIN el token del bot (opt-in desmarcado).
+  const data = core.buildBackupData({
+    guardian: { cfg: { limit: 50 }, telegram: { chat: '99', token: 'TOKEN-DEL-RESPALDO' } },
+    journal: [{ note: 'hola' }],
+    includeBotToken: false,
+  });
+  const envelope = await core.encryptBackup(data, PASS);
+
+  const signer = await makeSigner();
+  pubkeyB64 = signer.pubkeyB64;
+  resetPage({
+    pass: PASS,
+    license: await signer.token({ sub: 'ui_restore', exp: Math.floor(Date.now() / 1000) + 3600 }),
+    telegram: { chat: '1', token: 'TOKEN-LOCAL-EXISTENTE' },
+  });
+  await loadUi(async () => ({ ok: true, status: 200, json: async () => ({ envelope }) }));
+  await waitFor(() => els.get('lic-info').textContent.length > 0);
+
+  await els.get('restore').click();
+  await waitFor(() => els.get('out').textContent.startsWith('Respaldo restaurado'));
+  const restored = JSON.parse(store.get(TG_KEY));
+  assert.equal(restored.chat, '99');
+  // El token local NO se sobrescribe con uno vacío.
+  assert.equal(restored.token, 'TOKEN-LOCAL-EXISTENTE');
+  // El resto sí se restaura.
+  assert.deepEqual(JSON.parse(store.get('swal.guardian.cfg')), { limit: 50 });
+  assert.equal(els.get('journal').value, 'hola');
+});
+
+test('interfaz: restaurar sí sustituye el token cuando el respaldo lo incluye', async () => {
+  const core = await import('../static/backup/backup-core.js');
+  const data = core.buildBackupData({
+    guardian: { telegram: { chat: '7', token: 'TOKEN-NUEVO' } },
+    includeBotToken: true,
+  });
+  const envelope = await core.encryptBackup(data, PASS);
+  const signer = await makeSigner();
+  pubkeyB64 = signer.pubkeyB64;
+  resetPage({
+    pass: PASS,
+    license: await signer.token({ sub: 'ui_restore2', exp: Math.floor(Date.now() / 1000) + 3600 }),
+    telegram: { chat: '1', token: 'TOKEN-VIEJO' },
+  });
+  await loadUi(async () => ({ ok: true, status: 200, json: async () => ({ envelope }) }));
+  await waitFor(() => els.get('lic-info').textContent.length > 0);
+
+  await els.get('restore').click();
+  await waitFor(() => els.get('out').textContent.startsWith('Respaldo restaurado'));
+  assert.deepEqual(JSON.parse(store.get(TG_KEY)), { chat: '7', token: 'TOKEN-NUEVO' });
+});

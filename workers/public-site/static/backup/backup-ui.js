@@ -74,6 +74,19 @@ function loadJournalIntoTextarea() {
   $('journal').value = readJournal().map((n) => n.note ?? n).join('\n');
 }
 
+/** Fusión de los ajustes de Telegram restaurados sobre los que hay en local. */
+export function mergeTelegram(existing, restored) {
+  const ex = existing && typeof existing === 'object' ? existing : {};
+  const rs = restored && typeof restored === 'object' ? restored : {};
+  const chat = (typeof rs.chat === 'string' && rs.chat) || (typeof ex.chat === 'string' && ex.chat) || '';
+  // El token del bot NO se sobrescribe con uno vacío: si el respaldo no lo trae (fue sin
+  // opt-in) se conserva el que ya funciona en este navegador.
+  const token = (typeof rs.botToken === 'string' && rs.botToken.trim())
+    ? rs.botToken
+    : ((typeof ex.token === 'string' && ex.token) || '');
+  return { chat, token };
+}
+
 async function backupNow() {
   const pass = $('pass').value;
   const problem = passphraseProblem(pass);
@@ -117,7 +130,7 @@ async function restore() {
     const data = await decryptBackup(body.envelope, pass);
     if (data.guardian && data.guardian.cfg) localStorage.setItem(CFG_KEY, JSON.stringify(data.guardian.cfg));
     if (data.guardian && data.guardian.telegram && (data.guardian.telegram.chat || data.guardian.telegram.botToken)) {
-      localStorage.setItem(TG_KEY, JSON.stringify({ chat: data.guardian.telegram.chat || '', token: data.guardian.telegram.botToken || '' }));
+      localStorage.setItem(TG_KEY, JSON.stringify(mergeTelegram(readJson(TG_KEY), data.guardian.telegram)));
     }
     if (data.analysis && Object.keys(data.analysis).length) localStorage.setItem(ANALYSIS_KEY, JSON.stringify(data.analysis));
     if (Array.isArray(data.journal)) {
