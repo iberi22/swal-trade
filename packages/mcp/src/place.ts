@@ -21,7 +21,7 @@ import { ceilToStep, decimalNumber, floorToStep, shiftStep } from "./decimal.js"
 import { parseAccountRiskConfig, readCredentials } from "./config.js";
 import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
-import { loadAccountRiskView, netPosition } from "./account.js";
+import { loadAccountRiskView, netPosition, readExposure } from "./account.js";
 import { checkOrder } from "./order-guard.js";
 import type { GuardDecision } from "./order-guard.js";
 import { normalizeSide } from "./propose.js";
@@ -44,11 +44,11 @@ import {
   ok,
   orderStatusOf,
   placeProtectiveAlgoOrder,
-  ensureStartupSweep,
-  sweepWarnings,
   refused,
   requireJournal,
+  ensureStartupSweep,
   stopPriceTowardEntry,
+  sweepWarnings,
   takeProfitAwayFromEntry,
   withJournal,
   withWriteLock,
@@ -351,7 +351,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     leverage: args.leverage ?? 1,
     type: args.type ?? "market",
   };
-  return withJournal(deps, "place_order", request, async (journal) => {
+  return withWriteLock(deps, () => withJournal(deps, "place_order", request, async (journal) => {
     const cfg = parseTradingConfig(deps.env);
     if (!cfg.ok) return refused(cfg.error);
     journal.network = cfg.value.network;
@@ -389,30 +389,70 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
 
     const riskCfg = parseAccountRiskConfig(deps.env);
     if (!riskCfg.ok) return refused(riskCfg.error);
-    const view = await loadAccountRiskView({ client, cfg: riskCfg.value, now: deps.now });
+    const snapshot = await loadAccountRiskView({ client, cfg: riskCfg.value, now: deps.now });
+    const view = snapshot.view;
+    const viewAccount = snapshot.account;
+    const viewPositionRisk = snapshot.positionRisk;
+    const viewAlgoOrders = snapshot.algoOrders;
     logStep(journal, "account_risk", {
       dayPnl: view.dayPnl,
       openPositions: view.positions.length,
       unprotected: view.unprotected.map((position) => position.symbol),
     });
 
-    const guard: GuardDecision = checkOrder(
-      { symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType },
-      guardLimitsFrom(cfg.value),
-      {
-        dayPnl: view.dayPnl,
-        openPositions: view.positions.length,
-        unprotectedSymbols: view.unprotected.map((position) => position.symbol),
-      },
-    );
-    journal.guard = guard;
-    if (!guard.allow) return refused(`the order guard rejected this order: ${guard.reasons.join(" ")}`);
+    // The whitelist, the notional, the leverage and the stop are all checks that
+    // need no exchange call: doing them first means a symbol the user has not
+    // whitelisted never reaches exchangeInfo at all.
+    const preGuard = checkOrder({ symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType }, guardLimitsFrom(cfg.value), {
+      dayPnl: view.dayPnl,
+      openPositions: 0,
+      unprotectedSymbols: [],
+      openNotionalUsd: 0,
+      pendingSymbols: [],
+    });
+    journal.guard = preGuard;
+    if (!preGuard.allow) {
+      const offline = preGuard.reasons.filter((reason) => !/daily-loss lock|max open positions|exposure|has no STOP_MARKET|already committed/.test(reason));
+      if (offline.length === preGuard.reasons.length) {
+        return refused(`the order guard rejected this order: ${preGuard.reasons.join(" ")}`);
+      }
+    }
 
     const filters = await fetchSymbolFilters(cfg.value.base, symbol, deps.fetchFn);
     if (!filters.ok) return refused(`exchangeInfo: ${filters.error}`);
     logStep(journal, "exchangeInfo", filters.value);
     const markPrice = await fetchMarkPrice(cfg.value.base, symbol, deps.fetchFn);
     logStep(journal, "markPrice", { markPrice });
+
+    // The cap is on exposure, not on this one order: a resting entry is money the
+    // account has already committed, and so is a pending stop-entry.
+    const exposure = await readExposure({
+      client,
+      symbol,
+      markPrice,
+      prefetched: { account: viewAccount, positionRisk: viewPositionRisk, algoOrders: viewAlgoOrders },
+    });
+    logStep(journal, "exposure", {
+      openNotionalUsd: exposure.symbolNotionalUsd,
+      accountOpenNotionalUsd: exposure.openNotionalUsd,
+      openPositions: exposure.openPositions,
+      pendingSymbols: exposure.pendingSymbols,
+      restingOrders: exposure.restingOrders.length,
+      errors: exposure.errors,
+    });
+    const guard: GuardDecision = checkOrder(
+      { symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType },
+      guardLimitsFrom(cfg.value),
+      {
+        dayPnl: view.dayPnl,
+        openPositions: exposure.openPositions,
+        unprotectedSymbols: view.unprotected.map((position) => position.symbol),
+        openNotionalUsd: exposure.symbolNotionalUsd,
+        pendingSymbols: exposure.pendingSymbols,
+      },
+    );
+    journal.guard = guard;
+    if (!guard.allow) return refused(`the order guard rejected this order: ${guard.reasons.join(" ")}`);
 
     let entryPrice = markPrice;
     let bookPrice = String(markPrice);
@@ -662,7 +702,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
       }),
     );
-  });
+  }));
 }
 
 /**

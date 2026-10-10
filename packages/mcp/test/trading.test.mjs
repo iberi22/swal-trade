@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { callOrCatch, errorText, jsonResponse, textOf, withClient } from "./helpers.mjs";
 import { makeExchange, tradeEnv, TRADE_KEY, TRADE_SECRET } from "./trading-fixtures.mjs";
+import { placeOrder } from "../dist/place.js";
 
 const NOW = Date.UTC(2026, 9, 9, 3, 0);
 
@@ -338,6 +339,67 @@ for (const testCase of guardCases) {
     assert.ok(lines[0].guard.reasons.some((reason) => testCase.expect.test(reason)), JSON.stringify(lines[0].guard));
   });
 }
+
+test("the notional cap counts resting open orders of the symbol, not only this order", async () => {
+  // A resting BUY for 900 USD plus a new 200 USD order is 1100 USD of exposure.
+  // Checking only the new order's notional passes both and doubles the cap.
+  const exchange = makeExchange({
+    openOrders: [
+      { symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.01", clientOrderId: "resting-1" },
+      { symbol: "ETHUSDT", side: "BUY", type: "LIMIT", price: "2000", quantity: "0.5", clientOrderId: "other-symbol" },
+      { symbol: "BTCUSDT", side: "SELL", type: "STOP_MARKET", stopPrice: "90000", quantity: "0.01", reduceOnly: true },
+    ],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /already has 900 USD committed/);
+    assert.match(text, /order guard rejected/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.calls.some((call) => call.path === "/fapi/v1/openOrders"), true);
+});
+
+test("resting protective algo orders never count as exposure", async () => {
+  // A resting STOP_MARKET with closePosition closes exposure, it does not create
+  // it: counting it would refuse a legitimate entry.
+  const exchange = makeExchange({
+    openOrders: [],
+    algoOrders: [{ symbol: "BTCUSDT", side: "SELL", type: "STOP_MARKET", algoId: 9, closePosition: true, quantity: "1" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});
+
+test("a resting entry order on the symbol counts as an open position slot", async () => {
+  const exchange = makeExchange({
+    openOrders: [{ symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.001", clientOrderId: "resting-1" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /max open positions reached: 1 open including resting open orders on BTCUSDT/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+});
+
+test("two write tools cannot interleave their reads and their orders", async () => {
+  // The guard is not atomic: two tools reading the account at the same time both
+  // see "no position" and both place. The write lock serializes them, so the
+  // second one sees the position the first one opened.
+  const exchange = makeExchange({
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  const deps = { env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW };
+  const first = placeOrder(deps, { ...placeArgs });
+  const second = placeOrder(deps, { ...placeArgs });
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.ok, true);
+  assert.equal(secondResult.ok, false);
+  // Only one entry reached the exchange: the second tool refused before sending.
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});
 
 test("place_order refuses to send when the journal cannot be written", async () => {
   const exchange = makeExchange();

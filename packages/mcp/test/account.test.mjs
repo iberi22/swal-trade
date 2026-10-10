@@ -102,7 +102,7 @@ test("readExposure counts resting open orders and protective orders separately",
       account: { positions: [{ symbol: "BTCUSDT", positionAmt: "0.01", notional: "-500", unrealizedProfit: "0", positionSide: "BOTH" }] },
       positionRisk: [row("BTCUSDT", "-0.01")],
       openOrders: [
-        { symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "40000", quantity: "0.05", clientOrderId: "x-1" },
+        { symbol: "ETHUSDT", side: "BUY", type: "LIMIT", price: "2000", quantity: "0.5", clientOrderId: "x-1" },
         { symbol: "BTCUSDT", side: "SELL", type: "STOP_MARKET", stopPrice: "38000", quantity: "0.01", reduceOnly: true },
       ],
       algoOrders: [{ symbol: "BTCUSDT", side: "SELL", type: "STOP_MARKET", algoId: 7, closePosition: true }],
@@ -112,11 +112,14 @@ test("readExposure counts resting open orders and protective orders separately",
   });
   assert.deepEqual(exposure.errors, []);
   assert.deepEqual(exposure.positionSymbols, ["BTCUSDT"]);
-  assert.deepEqual(exposure.pendingSymbols, ["BTCUSDT"]);
-  // The position's 500 USD plus the 2000 USD of the resting entry.
-  assert.equal(exposure.openNotionalUsd, 2500);
+  assert.deepEqual(exposure.pendingSymbols, ["ETHUSDT"]);
+  // The BTCUSDT position's 500 USD plus the 1000 USD of the ETHUSDT resting entry.
+  assert.equal(exposure.openNotionalUsd, 1500);
+  // The notional cap is per position, so the guard uses the symbol's own number:
+  // the resting ETHUSDT entry is not this position's exposure.
+  assert.equal(exposure.symbolNotionalUsd, 500);
   assert.equal(exposure.restingOrders.length, 1, "a reduceOnly stop never counts as exposure");
-  assert.equal(exposure.openPositions, 1);
+  assert.equal(exposure.openPositions, 2);
 });
 
 test("readExposure fails closed when a source cannot be read", async () => {

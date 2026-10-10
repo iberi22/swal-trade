@@ -91,9 +91,19 @@ export function sweepWarnings(report: SweepReport): string[] {
   return warnings;
 }
 
+/**
+ * The lock every write tool falls back to when the caller did not inject one.
+ *
+ * It is a module-level singleton on purpose: a fresh mutex per call would
+ * serialize nothing, which is worse than no lock because it looks like one.
+ * Every write tool in this process shares it, so the reads, the guard decision,
+ * the entry and the stop of one tool finish before the next one starts.
+ */
+const DEFAULT_WRITE_LOCK: WriteMutex = createWriteMutex();
+
 /** Runs one write tool with the shared write lock held. */
 export async function withWriteLock<T>(deps: WriteDeps, fn: () => Promise<T>): Promise<T> {
-  return (deps.writeLock ?? createWriteMutex()).run(fn);
+  return (deps.writeLock ?? DEFAULT_WRITE_LOCK).run(fn);
 }
 
 export interface JournalRecord {

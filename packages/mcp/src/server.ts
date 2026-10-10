@@ -226,7 +226,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         });
         const snapshot = await loadAccountRiskView({ client, cfg: cfg.value, now });
         return ok({
-          ...snapshot,
+          ...snapshot.view,
           limits: {
             dailyLossUsd: cfg.value.limit,
             warnFraction: cfg.value.warn ?? 0.7,

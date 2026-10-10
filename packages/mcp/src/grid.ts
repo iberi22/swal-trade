@@ -34,7 +34,7 @@ import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
 import { isAmbiguousError, isRepriceable, newClientOrderId } from "./trade-client.js";
 import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
-import { loadAccountRiskView } from "./account.js";
+import { loadAccountRiskView, readExposure } from "./account.js";
 import { parseAccountRiskConfig } from "./config.js";
 import {
   applyLeverageAndMargin,
@@ -48,6 +48,7 @@ import {
   orderStatusOf,
   placeProtectiveAlgoOrder,
   refused,
+  withWriteLock,
   requireJournal,
   withJournal,
 } from "./write.js";
@@ -445,7 +446,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     total_notional_usd: args.total_notional_usd ?? null,
     stop_loss_price: args.stop_loss_price ?? null,
   };
-  return withJournal(deps, "grid_place", request, async (record) => {
+  return withWriteLock(deps, () => withJournal(deps, "grid_place", request, async (record) => {
     const cfg = parseTradingConfig(deps.env);
     if (!cfg.ok) return refused(cfg.error);
     record.network = cfg.value.network;
@@ -519,17 +520,38 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
 
     const riskCfg = parseAccountRiskConfig(deps.env);
     if (!riskCfg.ok) return refused(riskCfg.error);
-    const view = await loadAccountRiskView({ client, cfg: riskCfg.value, now: deps.now });
+    const snapshot = await loadAccountRiskView({ client, cfg: riskCfg.value, now: deps.now });
+    const view = snapshot.view;
     record.exchange.push({
       step: "account_risk",
       dayPnl: view.dayPnl,
       openPositions: view.positions.length,
       unprotected: view.unprotected.map((position) => position.symbol),
     });
+
+    // The cap is on exposure, not on this one order: a resting entry is money the
+    // account has already committed, and so is a pending stop-entry.
+    const exposure = await readExposure({
+      client,
+      symbol,
+      markPrice,
+      prefetched: { account: snapshot.account, positionRisk: snapshot.positionRisk, algoOrders: snapshot.algoOrders },
+    });
+    record.exchange.push({
+      step: "exposure",
+      openNotionalUsd: exposure.symbolNotionalUsd,
+      accountOpenNotionalUsd: exposure.openNotionalUsd,
+      openPositions: exposure.openPositions,
+      pendingSymbols: exposure.pendingSymbols,
+      restingOrders: exposure.restingOrders.length,
+      errors: exposure.errors,
+    });
     const guard = checkGridPlan(plan, guardLimitsFrom(cfg.value), {
       dayPnl: view.dayPnl,
-      openPositions: view.positions.length,
+      openPositions: exposure.openPositions,
       unprotectedSymbols: view.unprotected.map((position) => position.symbol),
+      openNotionalUsd: exposure.symbolNotionalUsd,
+      pendingSymbols: exposure.pendingSymbols,
     }, cfg.value.maxLeverage, decimalNumber(filters.value.minNotional));
     record.guard = guard;
     if (!guard.allow) return refused(`the order guard rejected this grid: ${guard.reasons.join(" ")}`);
@@ -634,7 +656,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
       sent: true,
       note: `The grid was sent to ${cfg.value.network} as ${placed.length} post-only limit orders plus one STOP_MARKET. Nothing else was sent.`,
     });
-  });
+  }));
 }
 
 /**

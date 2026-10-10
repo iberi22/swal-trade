@@ -77,6 +77,14 @@ export function parseAlgo(value: unknown): AlgoOrder[] {
 
 export interface AccountRiskView extends AccountSnapshot {}
 
+/** The snapshot plus the raw answers it was computed from, so a caller that needs the exposure does not fetch twice. */
+export interface LoadAccountResult {
+  view: AccountSnapshot;
+  account: unknown;
+  positionRisk: unknown;
+  algoOrders: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // Positions, netted.
 // ---------------------------------------------------------------------------
@@ -156,8 +164,14 @@ export interface Exposure {
   openPositions: number;
   positionSymbols: string[];
   pendingSymbols: string[];
-  /** USD already committed: positions plus resting entry orders. */
+  /** USD already committed: positions plus resting entry orders, every symbol. */
   openNotionalUsd: number;
+  /**
+   * USD already committed on the symbol being traded. The notional cap is per
+   * position, so this is the number the guard compares against: summing every
+   * symbol would refuse a second, independent position that the cap allows.
+   */
+  symbolNotionalUsd: number;
   restingOrders: RestingOrder[];
   /** Sources that could not be read: exposure is unknown, so it must fail closed. */
   errors: string[];
@@ -180,11 +194,19 @@ export async function readExposure(input: {
   symbol: string;
   markPrice: number;
   symbols?: readonly string[] | null;
+  /** Already-read answers, so a caller that has them does not fetch twice. */
+  prefetched?: {
+    account?: unknown;
+    positionRisk?: unknown;
+    algoOrders?: unknown;
+  };
 }): Promise<Exposure> {
   const errors: string[] = [];
   const resting: RestingOrder[] = [];
   const positionSymbols: string[] = [];
   let openNotionalUsd = 0;
+  let symbolPositionUsd = 0;
+  let symbolRestingUsd = 0;
 
   const collect = (rows: unknown, source: RestingOrder["source"]): void => {
     if (!Array.isArray(rows)) {
@@ -218,11 +240,13 @@ export async function readExposure(input: {
   };
 
   try {
-    const account = await input.client.account();
+    const account = input.prefetched?.account ?? (await input.client.account());
     const positions = parseAccountPositions(account);
     for (const position of positions) {
       if (!positionSymbols.includes(position.symbol)) positionSymbols.push(position.symbol);
-      openNotionalUsd += Math.abs(Number.parseFloat(position.notional) || 0);
+      const notional = Math.abs(Number.parseFloat(position.notional) || 0);
+      openNotionalUsd += notional;
+      if (position.symbol === input.symbol) symbolPositionUsd += notional;
     }
   } catch (err) {
     errors.push(`account: ${errorMessage(err)}`);
@@ -231,7 +255,7 @@ export async function readExposure(input: {
   // One-way and hedge rows for the symbol are netted, so a leg is never read as
   // the whole position.
   try {
-    const risk = await input.client.positionRisk();
+    const risk = input.prefetched?.positionRisk ?? (await input.client.positionRisk());
     const net = netPosition(risk, input.symbol);
     if (net.error) errors.push(net.error);
     if (net.amount != null && net.amount !== 0 && !positionSymbols.includes(input.symbol)) positionSymbols.push(input.symbol);
@@ -247,7 +271,7 @@ export async function readExposure(input: {
     errors.push(`openOrders: ${errorMessage(err)}`);
   }
   try {
-    const rows = await input.client.openAlgoOrders();
+    const rows = input.prefetched?.algoOrders ?? (await input.client.openAlgoOrders());
     collect(rows, "/fapi/v1/openAlgoOrders");
   } catch (err) {
     errors.push(`openAlgoOrders: ${errorMessage(err)}`);
@@ -258,14 +282,17 @@ export async function readExposure(input: {
     if (seen.has(`${order.source}:${order.id ?? ""}:${order.symbol}:${order.price}`)) continue;
     seen.add(`${order.source}:${order.id ?? ""}:${order.symbol}:${order.price}`);
     openNotionalUsd += order.notionalUsd;
+    if (order.symbol === input.symbol) symbolRestingUsd += order.notionalUsd;
     if (!pendingSymbols.includes(order.symbol)) pendingSymbols.push(order.symbol);
   }
 
+  const symbolNotionalUsd = Number((symbolPositionUsd + symbolRestingUsd).toFixed(6));
   return {
     openPositions: new Set([...positionSymbols, ...pendingSymbols]).size,
     positionSymbols,
     pendingSymbols,
     openNotionalUsd: Number(openNotionalUsd.toFixed(6)),
+    symbolNotionalUsd,
     restingOrders: resting,
     errors,
   };
@@ -279,8 +306,15 @@ export interface LoadAccountInput {
   now: () => number;
 }
 
-/** Synchronizes the clock and reads the four signed GETs the guardian needs. */
-export async function loadAccountRiskView(input: LoadAccountInput): Promise<AccountRiskView> {
+/**
+ * Synchronizes the clock and reads the four signed GETs the guardian needs.
+ *
+ * The raw answers are returned alongside the snapshot: the write path needs the
+ * exposure (positions plus resting orders) as well, and re-reading the same
+ * endpoints a moment later is how a decision ends up made against a different
+ * account state than the one it was explained with.
+ */
+export async function loadAccountRiskView(input: LoadAccountInput): Promise<LoadAccountResult> {
   await input.client.syncTime();
   const start = dayStartMs(input.now(), input.cfg.tz);
   const [account, positionRisk, algoOrders, income] = await Promise.all([
@@ -289,11 +323,16 @@ export async function loadAccountRiskView(input: LoadAccountInput): Promise<Acco
     input.client.openAlgoOrders(),
     input.client.incomeSince(start),
   ]);
-  return evaluateAccount({
-    account: { positions: parseAccountPositions(account) },
-    positionRisk: parsePositionRisk(positionRisk),
-    income: parseIncome(income),
-    algoOrders: parseAlgo(algoOrders),
-    cfg: input.cfg,
-  });
+  return {
+    view: evaluateAccount({
+      account: { positions: parseAccountPositions(account) },
+      positionRisk: parsePositionRisk(positionRisk),
+      income: parseIncome(income),
+      algoOrders: parseAlgo(algoOrders),
+      cfg: input.cfg,
+    }),
+    account,
+    positionRisk,
+    algoOrders,
+  };
 }
