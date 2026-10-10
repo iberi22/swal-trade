@@ -51,7 +51,10 @@ test("buildGridPlan prices a long grid, sizes every level and computes the worst
   assert.equal(plan.averageEntryUsd, 98000);
   assert.equal(plan.worstCaseLossUsd, 900);
   assert.equal(plan.stopPrice, "95000");
-  assert.equal(plan.stopDistancePct, 3.061224);
+  // Measured from the WORST level (97000), not from the average entry (98000):
+  // the closest level is the one that loses the most when price runs to the stop.
+  assert.equal(plan.stopDistancePct, 2.061856);
+  assert.equal(plan.worstLevel.price, "97000");
   assert.deepEqual(plan.warnings, []);
   assert.equal(plan.planId.startsWith("g"), true);
   assert.equal(plan.planId.length, 13);
@@ -72,6 +75,46 @@ test("buildGridPlan reads the direction from the stop and prices a short grid", 
   assert.deepEqual(built.value.levels.map((level) => level.quantity), ["0.09", "0.09"]);
   assert.equal(built.value.worstCaseLossUsd, 540);
   assert.equal(built.value.stopPrice, "105000");
+});
+
+test("the stop distance comes from the worst level, never from the average entry", () => {
+  // Three levels 1000 apart, stop 5000 below the lowest. From the average entry
+  // the distance is 3.06%; from the worst level it is 2.06%. The level closest
+  // to the stop is the one that is still open when price gets there, so the
+  // average is the number that hides the risk.
+  const built = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 97000, upper: 104000, levels: 8, total_notional_usd: 80000, stop_loss_price: 92000 },
+    filters: FILTERS,
+  });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const plan = built.value;
+  assert.equal(plan.worstLevel.price, "97000");
+  assert.equal(plan.stopPrice, "92000");
+  assert.equal(plan.stopDistancePct, 5.154639);
+  // The same distance measured from the average entry, for contrast: it is the
+  // larger, more comfortable number, which is exactly why it must not be used.
+  const fromAverage = (Math.abs(plan.averageEntryUsd - 92000) / plan.averageEntryUsd) * 100;
+  assert.ok(fromAverage > plan.stopDistancePct);
+  assert.equal(plan.averageEntryUsd, 101733.333333);
+  assert.equal(plan.worstCaseLossUsd, 6380);
+});
+
+test("a grid whose levels collapse on one tick is refused, not merged", () => {
+  // 20 levels across a 10-point range at tickSize 1: several of them round to the
+  // same integer, which silently becomes one order for double the size.
+  const collapse = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 97000, upper: 97010, levels: 20, total_notional_usd: 100000, stop_loss_price: 96000 },
+    filters: { ...FILTERS, tickSize: "1" },
+  });
+  assert.equal(collapse.ok, false);
+  if (!collapse.ok) assert.match(collapse.error, /both round to .* at tickSize 1/);
+  // A range that survives the rounding is still fine.
+  const fine = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 97000, upper: 99000, levels: 3, total_notional_usd: 3000, stop_loss_price: 96000 },
+    filters: FILTERS,
+  });
+  assert.equal(fine.ok, true);
 });
 
 test("buildGridPlan rejects a stop inside the range and unusable parameters", () => {
@@ -229,7 +272,13 @@ test("grid_place places the plan as post-only limits with one protective stop", 
   assert.equal(algo.params.side, "SELL");
   assert.equal(algo.params.closePosition, "true");
   assert.equal(algo.params.workingType, "MARK_PRICE");
-  assert.equal(algo.params.price, "95000");
+  // triggerPrice, never price: the algo service ignores a price on a STOP_MARKET,
+  // which either 400s or rests an order with no trigger at all.
+  assert.equal(algo.params.price, undefined);
+  assert.equal(algo.params.triggerPrice, "95000");
+  assert.equal(algo.params.algoType, "CONDITIONAL");
+  assert.equal(algo.params.priceProtect, "TRUE");
+  assert.equal(algo.params.timeInForce, "GTC");
   assert.ok(steps.indexOf("POST /fapi/v1/leverage") < levels[0][0]);
   assert.ok(steps.indexOf("POST /fapi/v1/marginType") < levels[0][0]);
 
@@ -316,6 +365,80 @@ test("grid_place refuses the daily loss lock, an open position and a notional ov
     }
     fs.rmSync(JOURNAL, { force: true });
   }
+});
+
+test("grid_place treats an EXPIRED answer with a fill as a fill, not as a reprice", async () => {
+  // A GTX level can be rejected with EXPIRED in the same instant it fills. The
+  // executedQty in that answer is the only evidence of the exposure, so repricing
+  // it away reports a grid that never happened while the account holds a position.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    orderStatus: "EXPIRED",
+    orderExecutedQty: "0.1",
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.1", notional: "9700", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } })));
+    assert.equal(body.levelCount, 3);
+    assert.equal(body.filledQuantity, 0.3);
+  });
+  // One attempt per level: a fill is not retried.
+  assert.equal(exchange.post("/fapi/v1/order").length, 3);
+  const orders = exchange.post("/fapi/v1/order");
+  assert.deepEqual(orders.map((order) => order.params.price), ["97000", "98000", "99000"]);
+  assert.equal(orders.every((order) => String(order.params.clientOrderId).startsWith("swal")), true);
+});
+
+test("grid_place does not reprice across the protective stop", async () => {
+  // Level 1 sits one tick above the stop at 95000 with tickSize 1: repricing down
+  // would move the entry to 94999, on the far side of the exit.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: { BTCUSDT: { stepSize: "0.01", minQty: "0.01", tickSize: "1", minNotional: "5" } },
+    orderFailures: [
+      { code: -5022, msg: "Order would immediately match." },
+      { code: -5022, msg: "Order would immediately match." },
+      { code: -5022, msg: "Order would immediately match." },
+    ],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(
+      await client.callTool({
+        name: "grid_place",
+        arguments: { symbol: "BTCUSDT", lower: 95001, upper: 96002, levels: 2, total_notional_usd: 19000, stop_loss_price: 95000 },
+      }),
+    );
+    assert.match(text, /would cross the protective stop/);
+  });
+  for (const order of exchange.post("/fapi/v1/order")) {
+    assert.ok(Number(order.params.price) > 95000, `${order.params.price} must stay above the stop`);
+  }
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+});
+
+test("grid_place only reprices on a repriceable answer, and resolves a timeout first", async () => {
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    orderFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /could not be rested as a post-only order/);
+    assert.match(text, /insufficient balance/);
+  });
+  // A balance error is not a reprice: one attempt, then the fail-closed exit.
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+
+  fs.rmSync(JOURNAL, { force: true });
+  const timedOut = makeExchange({ symbols: GRID_SYMBOLS, networkErrorOnOrder: [1] });
+  await withClient({ env: gridPlaceEnv(), fetchFn: timedOut.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /the lookup by clientOrderId did not settle/);
+  });
+  assert.equal(timedOut.post("/fapi/v1/order").length, 1, "a timeout is never retried blind");
+  assert.ok(timedOut.calls.some((call) => call.method === "GET" && call.path === "/fapi/v1/order"));
 });
 
 test("grid_place is fail-closed: a stop that fails twice cancels the grid and closes the position", async () => {

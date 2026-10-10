@@ -32,14 +32,21 @@ import { parseTradingConfig, readGridLimits, TESTNET_BASE, MAINNET_BASE } from "
 import type { GridLimits } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
+import { isAmbiguousError, isRepriceable, newClientOrderId } from "./trade-client.js";
+import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
 import { loadAccountRiskView } from "./account.js";
 import { parseAccountRiskConfig } from "./config.js";
 import {
   applyLeverageAndMargin,
   describeFlatten,
   emergencyClose,
+  filledQuantityOf,
   guardLimitsFrom,
+  isFinalStatus,
+  logStep,
   ok,
+  orderStatusOf,
+  placeProtectiveAlgoOrder,
   refused,
   requireJournal,
   withJournal,
@@ -81,7 +88,10 @@ export interface GridPlan {
   entrySide: GuardSide;
   stopSide: GuardSide;
   stopPrice: string;
+  /** Distance from the worst (closest to the stop) level, in percent. */
   stopDistancePct: number;
+  /** The level the stop distance and the liquidation check are measured from. */
+  worstLevel: GridLevel;
   levels: GridLevel[];
   totalQuantity: string;
   totalNotionalUsd: number;
@@ -156,10 +166,16 @@ export function buildGridPlan(input: {
       warnings.push(`level ${index + 1} at ${price} was dropped: its quantity rounds to zero at stepSize ${input.filters.stepSize}.`);
       continue;
     }
+    // Two levels on the same tick are not a grid: they are one order for double
+    // the size, which quietly doubles the exposure of that price.
     const previous = seen.get(price);
     if (previous) {
-      warnings.push(`level ${index + 1} rounds to the same price ${price} as level ${previous.index}: it was merged, so the grid has fewer orders than levels.`);
-      continue;
+      return {
+        ok: false,
+        error:
+          `levels ${previous.index} and ${index + 1} both round to ${price} at tickSize ${input.filters.tickSize}: the grid would place one order of double the size instead of two levels. ` +
+          `Widen the range, lower the level count, or raise total_notional_usd.`,
+      };
     }
     seen.set(price, {
       index: index + 1,
@@ -177,6 +193,22 @@ export function buildGridPlan(input: {
   const lowest = Math.min(...planLevels.map((level) => decimalNumber(level.price)));
   const highest = Math.max(...planLevels.map((level) => decimalNumber(level.price)));
   const stopNumber = decimalNumber(stopPrice);
+  // The WORST level is the one the stop distance has to be measured from: the
+  // level closest to the stop loses the most when price runs through it, and an
+  // average of the levels understates every one of them.
+  const worstLevel = direction === "long"
+    ? planLevels.reduce((worst, level) => (decimalNumber(level.price) < decimalNumber(worst.price) ? level : worst))
+    : planLevels.reduce((worst, level) => (decimalNumber(level.price) > decimalNumber(worst.price) ? level : worst));
+  const worstLevelPrice = decimalNumber(worstLevel.price);
+  const worstCaseLossUsd = Number(
+    planLevels
+      .reduce((sum, level) => {
+        const distance = direction === "long" ? decimalNumber(level.price) - stopNumber : stopNumber - decimalNumber(level.price);
+        return sum + distance * decimalNumber(level.quantity);
+      }, 0)
+      .toFixed(2),
+  );
+  const worstLevelDistancePct = worstLevelPrice > 0 ? (Math.abs(worstLevelPrice - stopNumber) / worstLevelPrice) * 100 : 0;
   if (direction === "long" && !(stopNumber < lowest)) {
     return { ok: false, error: `stop ${stopPrice} is not below the lowest level ${lowest}: rounding to tickSize moved it inside the grid.` };
   }
@@ -189,15 +221,7 @@ export function buildGridPlan(input: {
   const totalNotionalUsd = Number(planLevels.reduce((sum, level) => sum + level.notionalUsd, 0).toFixed(2));
   const quantityNumber = decimalNumber(totalQuantity);
   const averageEntryUsd = quantityNumber > 0 ? Number((planLevels.reduce((sum, level) => sum + decimalNumber(level.quantity) * decimalNumber(level.price), 0) / quantityNumber).toFixed(6)) : 0;
-  const worstCaseLossUsd = Number(
-    planLevels
-      .reduce((sum, level) => {
-        const distance = direction === "long" ? decimalNumber(level.price) - stopNumber : stopNumber - decimalNumber(level.price);
-        return sum + distance * decimalNumber(level.quantity);
-      }, 0)
-      .toFixed(2),
-  );
-  const stopDistancePct = averageEntryUsd > 0 ? Number((((Math.abs(averageEntryUsd - stopNumber) / averageEntryUsd) * 100).toFixed(6))) : 0;
+  const stopDistancePct = Number(worstLevelDistancePct.toFixed(6));
 
   if (input.markPrice != null) {
     const mark = input.markPrice;
@@ -226,6 +250,7 @@ export function buildGridPlan(input: {
       stopSide,
       stopPrice,
       stopDistancePct,
+      worstLevel,
       levels: planLevels,
       totalQuantity,
       totalNotionalUsd,
@@ -512,15 +537,55 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     const prelude = await applyLeverageAndMargin(client, symbol, cfg.value.maxLeverage);
     record.exchange.push({ step: "leverage", response: prelude.leverage }, { step: "marginType", response: prelude.margin });
 
+    // The exchange's own liquidation estimate, read from the worst level the
+    // stop is measured from: a grid stop closer than the liquidation price never
+    // fires, because the position is liquidated first.
+    const liquidation = await fetchLiquidationInputs(client, {
+      symbol,
+      side: plan.direction === "long" ? "BUY" : "SELL",
+      referencePrice: decimalNumber(plan.worstLevel.price),
+      leverage: cfg.value.maxLeverage,
+    });
+    const estimate = readLiquidationEstimate({
+      positionRisk: liquidation.positionRisk,
+      leverageBracket: liquidation.leverageBracket,
+      symbol,
+      side: plan.direction === "long" ? "BUY" : "SELL",
+      referencePrice: decimalNumber(plan.worstLevel.price),
+      leverage: cfg.value.maxLeverage,
+    });
+    record.exchange.push({ step: "liquidation", ...estimate });
+    const insideLiquidation = stopInsideLiquidation({
+      side: plan.direction === "long" ? "BUY" : "SELL",
+      entryPrice: decimalNumber(plan.worstLevel.price),
+      stopPrice: decimalNumber(plan.stopPrice),
+      estimate,
+    });
+    if (!insideLiquidation.ok) {
+      return refused(`the grid was not placed: ${insideLiquidation.reason ?? "the stop is not inside the liquidation estimate"}`);
+    }
+
     const placed: unknown[] = [];
+    let filledQuantity = 0;
+
     const rejected: { level: number; price: string; error: string }[] = [];
     for (const level of plan.levels) {
-      const outcome = await postOnlyLevel(client, symbol, level, filters.value, record);
+      const outcome = await postOnlyLevel(client, {
+        symbol,
+        level,
+        filters: filters.value,
+        stopPrice: plan.stopPrice,
+        direction: plan.direction,
+        record,
+      });
       if (!outcome.ok) {
-        rejected.push({ level: level.index, price: level.price, error: outcome.error });
+        rejected.push({ level: level.index, price: level.price, error: outcome.error ?? "unknown" });
         break;
       }
       placed.push(outcome.order);
+      // A level that filled is already exposure: the grid is not finished, but
+      // the account is on the hook, and the report has to say so.
+      if (outcome.filled && outcome.filledQty != null) filledQuantity = Number((filledQuantity + outcome.filledQty).toFixed(12));
     }
     const failure = rejected[0];
     if (failure) {
@@ -547,6 +612,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
       marginMode: "ISOLATED",
       orders: placed,
       levelCount: placed.length,
+      filledQuantity,
       totalQuantity: plan.totalQuantity,
       totalNotionalUsd: plan.totalNotionalUsd,
       worstCaseLossUsd: plan.worstCaseLossUsd,
@@ -558,6 +624,9 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
         workingType: "MARK_PRICE",
         closePosition: true,
         algoService: "/fapi/v1/algoOrder",
+        algoId: stop.algoId ?? null,
+        priceProtect: true,
+        triggerPrice: plan.stopPrice,
         response: stop.response,
       },
       warnings: plan.warnings,
@@ -568,68 +637,128 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
   });
 }
 
+/**
+ * The grid's protective stop: one STOP_MARKET through the Algo Service, accepted
+ * only when the exchange echoes an algoId and a trigger on the loss side of the
+ * WORST level, which is the level the stop is measured from.
+ */
+async function placeProtectiveStop(client: TradingClient, plan: GridPlan, record: JournalRecord): Promise<StopOutcome> {
+  const outcome = await placeProtectiveAlgoOrder(client, {
+    symbol: plan.symbol,
+    side: plan.stopSide,
+    kind: "STOP_MARKET",
+    triggerPrice: plan.stopPrice,
+    referencePrice: decimalNumber(plan.worstLevel.price),
+    attempts: STOP_ATTEMPTS,
+    journal: record,
+    label: "protective_stop",
+  });
+  return outcome.ok ? { ok: true, response: outcome.response, algoId: outcome.algoId } : { ok: false, error: outcome.error };
+}
+
 interface StopOutcome {
   ok: boolean;
   response?: unknown;
+  algoId?: number;
   error?: string;
 }
 
-async function placeProtectiveStop(client: TradingClient, plan: GridPlan, record: JournalRecord): Promise<StopOutcome> {
-  let lastError = "unknown error";
-  for (let attempt = 1; attempt <= STOP_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await client.placeAlgoOrder({
-        symbol: plan.symbol,
-        side: plan.stopSide,
-        type: "STOP_MARKET",
-        algoType: "CONDITIONAL",
-        workingType: "MARK_PRICE",
-        closePosition: "true",
-        price: plan.stopPrice,
-        timeInForce: "GTC",
-      });
-      record.exchange.push({ step: `protective_stop_${attempt}`, response });
-      return { ok: true, response };
-    } catch (err) {
-      lastError = redactSecrets(errorMessage(err), []);
-      record.exchange.push({ step: `protective_stop_${attempt}`, error: lastError });
-    }
-  }
-  return { ok: false, error: lastError };
+interface LevelOutcome {
+  ok: boolean;
+  order?: unknown;
+  /** The clientOrderId of the order that is actually resting, when it failed. */
+  clientOrderId?: string;
+  /** True when the level filled: the grid already has exposure. */
+  filled?: boolean;
+  filledQty?: number;
+  error?: string;
 }
 
-async function postOnlyLevel(
+/**
+ * Places one grid level as a post-only LIMIT.
+ *
+ * Three rules, in order of how much damage breaking them does:
+ *
+ *  1. the level counts as placed only when the exchange answers NEW. An EXPIRED
+ *     or REJECTED answer with an executedQty means it filled in the same instant
+ *     it was rejected, and that quantity has to be reported, not repriced away;
+ *  2. a reprice only happens when the answer is actually repriceable (-5022, an
+ *     EXPIRED post-only, "would immediately match"), never on a balance error,
+ *     a filter error or a timeout;
+ *  3. a reprice never crosses the protective stop. Repricing a BUY below the
+ *     stop puts an entry order on the far side of the exit: it would be filled
+ *     only after the position was already stopped out.
+ *
+ * A timeout is resolved by querying the order by clientOrderId before anything
+ * is retried, because retrying blind doubles the level.
+ */async function postOnlyLevel(
   client: TradingClient,
-  symbol: string,
-  level: GridLevel,
-  filters: SymbolFilters,
-  record: JournalRecord,
-): Promise<{ ok: true; order: unknown } | { ok: false; error: string }> {
+  input: { symbol: string; level: GridLevel; filters: SymbolFilters; stopPrice: string; direction: "long" | "short"; record: JournalRecord },
+): Promise<LevelOutcome> {
+  const level = input.level;
+  const stopNumber = decimalNumber(input.stopPrice);
+  const beyondStop = (price: string): boolean =>
+    input.direction === "long" ? decimalNumber(price) <= stopNumber : decimalNumber(price) >= stopNumber;
   let price = level.price;
+  let clientOrderId = newClientOrderId();
+  let lastSent = clientOrderId;
   for (let attempt = 1; attempt <= POST_ONLY_ATTEMPTS; attempt += 1) {
+    lastSent = clientOrderId;
+    if (beyondStop(price)) {
+      return {
+        ok: false,
+        error: `the reprice ${price} would cross the protective stop ${input.stopPrice}: the level cannot be rested closer to the stop.`,
+      };
+    }
     try {
       const order = await client.placeOrder({
-        symbol,
+        symbol: input.symbol,
         side: level.side,
         type: "LIMIT",
         timeInForce: "GTX",
         quantity: level.quantity,
         price,
+        clientOrderId,
       });
-      record.exchange.push({ step: `level_${level.index}_${attempt}`, response: order });
-      return { ok: true, order };
+      input.record.exchange.push({ step: `level_${level.index}_${attempt}`, response: order });
+      const filled = filledQuantityOf(order);
+      if (filled > 0) return { ok: true, order, filled: true, filledQty: filled };
+      if (orderStatusOf(order) === "NEW") return { ok: true, order, filled: false };
+      // EXPIRED, REJECTED or an unlabelled status with no fill: reprice only if
+      // the exchange actually said so.
     } catch (err) {
       const message = redactSecrets(errorMessage(err), []);
-      record.exchange.push({ step: `level_${level.index}_${attempt}`, error: message });
-      const next = repriceAway(price, filters.tickSize, level.side);
-      if (attempt < POST_ONLY_ATTEMPTS && next) {
-        price = next;
-        continue;
+      input.record.exchange.push({ step: `level_${level.index}_${attempt}`, error: message });
+      if (isAmbiguousError(err)) {
+        // A timeout: resolve it before anything is retried.
+        try {
+          const found = await client.queryOrder(input.symbol, clientOrderId);
+          input.record.exchange.push({ step: `level_${level.index}_query`, response: found });
+          const filled = filledQuantityOf(found);
+          if (filled > 0) return { ok: true, order: found, filled: true, filledQty: filled };
+          if (isFinalStatus(orderStatusOf(found))) return { ok: false, error: message };
+        } catch (queryError) {
+          input.record.exchange.push({ step: `level_${level.index}_query`, error: redactSecrets(errorMessage(queryError), []) });
+        }
+        return { ok: false, error: `${message}; the lookup by clientOrderId did not settle it, so the level was not retried.` };
       }
-      return { ok: false, error: message };
+      if (!isRepriceable(err)) return { ok: false, error: message };
     }
+    const next = repriceAway(price, input.filters.tickSize, level.side);
+    if (next == null) {
+      return {
+        ok: false,
+        error: `level ${level.index} at ${price} could not be rested and cannot be repriced further (tickSize ${input.filters.tickSize}).`,
+      };
+    }
+    price = next;
+    clientOrderId = newClientOrderId();
   }
-  return { ok: false, error: "post-only level could not be rested" };
+  return {
+    ok: false,
+    error: `level ${level.index} could not be rested after ${POST_ONLY_ATTEMPTS} attempts.`,
+    clientOrderId: lastSent,
+  };
 }
 
 /** Moves a post-only price one tick away from the book so the next attempt rests. */
