@@ -43,3 +43,12 @@ binding = "DB"
 database_name = "swal-trade-public"
 database_id = "02b5d8ec-cfbc-476d-aeb9-8ace9ec59d09"
 migrations_dir = "migrations"
+
+# Respaldo cifrado de extremo a extremo (PUT/GET/DELETE /api/backup; migración 0004_backup.sql).
+# El servidor solo guarda el sobre {v,kdf,iter,salt,iv,ct}: nunca la frase ni el texto en claro.
+# Vars (todas opcionales):
+#   BACKUP_LICENSE_PUBKEY  clave SPKI base64 de licencias. Si se fija aquí no se consulta la red.
+#                           Si falta, se lee de https://pay.swal.network/v1/pubkey (campo spki_base64).
+#   BACKUP_RATE_LIMIT      peticiones por hora por cuenta (defecto 60), para cuidar las escrituras de D1.
+#   BACKUP_DEV_OPEN        "gratis durante desarrollo": en true acepta cualquier token como cuenta
+#                           de desarrollo (prefijo "dev:"), sin licencia real. NUNCA en producción.

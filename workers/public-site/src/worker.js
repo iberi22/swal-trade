@@ -5,6 +5,7 @@
 
 import { handleExplainRequest } from './explain.js';
 import { handleNewsRequest, ingestNews } from './news.js';
+import { handleBackupRequest } from './backup.js';
 
 /**
  * Server-side privacy sanitizer.
@@ -239,6 +240,9 @@ export function cspFor(pathname = '/') {
   } else if (pathname.startsWith('/analisis/')) {
     // Datos publicos de mercado (REST + WebSocket) y fear & greed; sin claves ni cobrador.
     connect = "'self' https://fapi.binance.com wss://fstream.binance.com https://api.alternative.me";
+  } else if (pathname.startsWith('/backup/')) {
+    // Respaldo E2EE: solo habla con el cobrador (clave publica de licencias), igual que /checkout/.
+    connect = "'self' https://pay.swal.network";
   }
   return `${CSP_BASE}; connect-src ${connect}`;
 }
@@ -535,6 +539,11 @@ export default {
     // 4. POST /api/explain — explicador IA (Workers AI) con respaldo determinista.
     if (url.pathname === '/api/explain') {
       return withSecurityHeaders(await handleExplainRequest(request, env));
+    }
+
+    // 5. PUT/GET/DELETE /api/backup — respaldo E2EE autenticado por licencia.
+    if (url.pathname === '/api/backup') {
+      return withSecurityHeaders(await handleBackupRequest(request, env), url.pathname);
     }
 
     // 5. Static assets fallback
