@@ -1,8 +1,8 @@
 {
   "name": "swal-trade-extension",
   "private": true,
-  "version": "0.0.0",
-  "description": "Panel lateral de swal-trade para Binance Futures y TradingView. Sin claves.",
+  "version": "0.1.0",
+  "description": "Explica patrones sobre el gráfico de Binance o TradingView. No es un servicio de señales. Medimos: ningún patrón superó al azar.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -11,6 +11,9 @@
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
     "test": "wxt prepare && vitest run",
+    "icons": "node scripts/generate-icons.mjs",
+    "zip": "node scripts/stage-analysis-core.mjs && wxt zip",
+    "zip:firefox": "node scripts/stage-analysis-core.mjs && wxt zip -b firefox",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

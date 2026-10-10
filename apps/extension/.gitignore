@@ -2,3 +2,5 @@
 .wxt/
 web-ext-artifacts/
 *.log
+# Copia de build para el zip de fuentes de AMO. La genera scripts/stage-analysis-core.mjs.
+vendor/
