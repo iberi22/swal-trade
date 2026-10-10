@@ -27,15 +27,21 @@ test("default analysis core path is relative to the package", () => {
   assert.ok(resolved.endsWith(`${path.sep}workers${path.sep}public-site${path.sep}static${path.sep}analisis${path.sep}analysis-core.js`));
 });
 
-test("lists only the four read-only tools", async () => {
+test("lists only the five read-only tools", async () => {
   await withClient({ env: {}, fetchFn: async () => jsonResponse({}) }, async (client) => {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name).sort();
-    assert.deepEqual(names, ["account_risk", "analyze_chart", "market_context", "propose_order"]);
+    assert.deepEqual(names, ["account_risk", "analyze_chart", "explain_analysis", "market_context", "propose_order"]);
     const byName = Object.fromEntries(listed.tools.map((tool) => [tool.name, tool.description]));
     assert.match(byName.analyze_chart, /Strength is pattern quality, not probability/);
+    assert.match(byName.explain_analysis, /Strength is pattern quality, not probability/);
+    assert.match(byName.explain_analysis, /not financial advice/);
     assert.match(byName.market_context, /Strength is pattern quality, not probability/);
     assert.match(byName.propose_order, /Order placement tools are disabled in this build/);
+    for (const tool of listed.tools) {
+      assert.notEqual(tool.annotations?.destructiveHint, true, tool.name);
+      assert.equal(tool.annotations?.readOnlyHint, true, tool.name);
+    }
     for (const name of names) assert.doesNotMatch(name, /place_order|grid_plan|grid_place|withdraw|cancel/);
   });
 });

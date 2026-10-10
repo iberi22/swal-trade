@@ -10,3 +10,4 @@ import './license-contract.test.mjs';
 import './analisis-core.test.mjs';
 import './analisis-csp.test.mjs';
 import './news.test.mjs';
+import './explain.test.mjs';

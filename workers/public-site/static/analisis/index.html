@@ -39,6 +39,17 @@
         <h2>Patrones por fuerza del patrón</h2>
         <p class="muted small">La <strong>fuerza del patrón</strong> (0 a 100) es una puntuación geométrica y estadística: toques, simetría, volumen y cercanía a la ruptura. No es una probabilidad ni un % de acierto. Acierto histórico: <span id="hit-note">sin medición histórica todavía</span>.</p>
         <ol id="findings" class="findings"></ol>
+        <div class="explain-cta">
+          <button id="explain" type="button">Explicar con IA</button>
+          <p class="muted small">Convierte estos patrones en palabras llanas: qué significan, qué los confirmaría o invalidaría y qué riesgo manejar.</p>
+        </div>
+      </section>
+
+      <section class="card" id="explain-card" hidden>
+        <h2>Explicación</h2>
+        <p id="explain-status" class="muted small" role="status" aria-live="polite"></p>
+        <div id="explain-out" class="explain"></div>
+        <p class="muted small">Análisis informativo, no es asesoría financiera. La fuerza del patrón no es una probabilidad. La respuesta la escribe un modelo de lenguaje y puede equivocarse o inventar: compárala siempre con los niveles del gráfico.</p>
       </section>
 
       <section class="card">

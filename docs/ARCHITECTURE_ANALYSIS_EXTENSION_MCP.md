@@ -53,9 +53,18 @@ Usa TypeScript con `@modelcontextprotocol/sdk` y transporte **stdio** (local). S
 |---|---|---|
 | `analyze_chart(symbol, timeframe)` | lectura | Hallazgos del núcleo, ordenados por fuerza, con explicación |
 | `market_context(symbol)` | lectura | Tendencia multi-timeframe, miedo/codicia, liquidaciones recientes, noticias (si hay backend o Socio) |
+| `explain_analysis(symbol, timeframe)` | lectura | Ejecuta el mismo análisis que `analyze_chart` y pide al endpoint alojado `POST /api/explain` (Workers AI) una explicación en palabras llanas de los patrones principales: qué significan, qué los confirmaría o invalidaría y qué riesgo manejar. Sin `SWAL_EXPLAIN_URL` o si el hosting falla, devuelve el respaldo determinista. El modelo no da órdenes ni promete resultados |
 | `account_risk()` | lectura | Lo mismo que el guardián: PnL del día contra el límite, apalancamiento, nocional, posiciones sin stop |
 | `propose_order(...)` | lectura | Devuelve la orden con stop obligatorio, tamaño y la validación del `order_guard`, **sin enviarla** |
 | `place_order(...)`, `grid_plan(...)`, `grid_place(...)` | escritura | **Desactivadas por defecto.** Solo con `SWAL_MCP_TRADING=enabled` y límites del usuario en su config local: nocional máximo, apalancamiento máximo, stop obligatorio, bloqueo por pérdida diaria, lista de símbolos. Toda orden pasa por `order_guard` (synapse-core) y queda en un journal local. |
+
+**Reglas no negociables del explicador (`explain_analysis`, endpoint alojado en `workers/public-site`):**
+
+- el sistema es determinista y manda; el modelo solo explica. Ninguna decisión de entrada, tamaño o stop sale del modelo;
+- el prompt es público (AGPL) y está fijado en `workers/public-site/src/explain-prompt.js`: español sencillo, nada de promesas de rentabilidad, nada de órdenes de compra/venta, y decir cuándo los patrones se contradicen;
+- la salida se valida y se repara (`{summary, scenarios[], caution}`); si el JSON no se puede reparar o aparece una frase prohibida, se devuelve la explicación determinista construida desde los hallazgos;
+- abusos: 10 peticiones/hora por IP (IP hasheada), caché de 5 min para peticiones idénticas y cupo diario global (`EXPLAIN_DAILY_CAP`, 500 por defecto). Sin IA nunca hay error: hay respaldo determinista;
+- el concepto de "fuerza del patrón" sigue sin ser probabilidad y la tasa de acierto histórico sigue sin estar medida: el prompt lo repite en dos reglas y el respaldo en su advertencia.
 
 **Reglas no negociables del MCP:**
 

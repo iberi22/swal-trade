@@ -5,6 +5,15 @@ import { createReadOnlyClient } from "./binance.js";
 import { futuresBase, parseAccountRiskConfig, parseProposalLimits, readCredentials } from "./config.js";
 import { ANALYSIS_CORE_MISSING, loadAnalysisCore, withSortedFindings } from "./core.js";
 import {
+  explainFallback,
+  explainRequestBody,
+  explainTimeoutMs,
+  explainToolResult,
+  explainUrl,
+  fetchHostedExplanation,
+  EXPLAIN_FALLBACK_NOTE,
+} from "./explain.js";
+import {
   ANALYZE_TIMEFRAMES,
   createFearGreedCache,
   DEFAULT_KLINE_LIMIT,
@@ -176,6 +185,77 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       } catch (err) {
         return fail(errorMessage(err));
       }
+    },
+  );
+
+  server.registerTool(
+    "explain_analysis",
+    {
+      title: "Explain analysis",
+      description: `Run the same deterministic analysis as analyze_chart and ask the hosted explain endpoint (POST /api/explain) for a plain-Spanish explanation of the top patterns: what they mean, what would confirm or invalidate them, and which risk to manage (stop placement, position size, 1x leverage). The model never gives orders and never promises results. Without SWAL_EXPLAIN_URL, or when the hosted endpoint fails, the tool returns the deterministic fallback built from the same findings. ${STRENGTH_NOTE} This tool is read-only, does not place orders and is not financial advice.`,
+      inputSchema: {
+        symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
+        timeframe: z.enum(ANALYZE_TIMEFRAMES).describe("Candle interval."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_KLINE_LIMIT)
+          .optional()
+          .describe(`Number of klines, from 1 to ${MAX_KLINE_LIMIT}. Default ${DEFAULT_KLINE_LIMIT}.`),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      const symbol = normalizeSymbol(args.symbol);
+      if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
+      const base = futuresBase(env);
+      if (!base.ok) return fail(base.error);
+      const loaded = await loadAnalysisCore(env);
+      if (!loaded.ok) return fail(ANALYSIS_CORE_MISSING);
+      let body;
+      try {
+        const candles = await fetchCandles({
+          base: base.value,
+          symbol,
+          timeframe: args.timeframe,
+          limit: args.limit ?? DEFAULT_KLINE_LIMIT,
+          fetchFn,
+        });
+        const result: unknown = await loaded.analyze({ symbol, timeframe: args.timeframe, candles });
+        const sorted = withSortedFindings(result);
+        if (!sorted.ok) return fail(sorted.error);
+        body = explainRequestBody(sorted.value, symbol, args.timeframe);
+      } catch (err) {
+        return fail(errorMessage(err));
+      }
+
+      const url = explainUrl(env);
+      if (!url) {
+        return ok(
+          explainToolResult({
+            symbol,
+            timeframe: args.timeframe,
+            payload: explainFallback(body.analysis, symbol, args.timeframe, "sin endpoint alojado"),
+            model: null,
+            hosted: false,
+            note: `SWAL_EXPLAIN_URL vacío: ${EXPLAIN_FALLBACK_NOTE}`,
+          }),
+        );
+      }
+
+      const hosted = await fetchHostedExplanation(url, body, fetchFn, explainTimeoutMs(env));
+      const analysis = hosted.ok && hosted.payload ? hosted.payload : explainFallback(body.analysis, symbol, args.timeframe, hosted.error ?? "sin explicación alojada");
+      return ok(
+        explainToolResult({
+          symbol,
+          timeframe: args.timeframe,
+          payload: analysis,
+          model: hosted.model,
+          hosted: hosted.ok,
+          note: hosted.ok ? null : `El endpoint alojado no respondió (${hosted.error ?? "error"}). ${EXPLAIN_FALLBACK_NOTE}`,
+        }),
+      );
     },
   );
 

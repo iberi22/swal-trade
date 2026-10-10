@@ -3,6 +3,7 @@
  * Contract: synapse.public.snapshot/v1
  */
 
+import { handleExplainRequest } from './explain.js';
 import { handleNewsRequest, ingestNews } from './news.js';
 
 /**
@@ -531,7 +532,12 @@ export default {
       return withSecurityHeaders(await handleNewsRequest(request, env));
     }
 
-    // 4. Static assets fallback
+    // 4. POST /api/explain — explicador IA (Workers AI) con respaldo determinista.
+    if (url.pathname === '/api/explain') {
+      return withSecurityHeaders(await handleExplainRequest(request, env));
+    }
+
+    // 5. Static assets fallback
     if (env && env.ASSETS && typeof env.ASSETS.fetch === 'function') {
       const assetResponse = await env.ASSETS.fetch(request);
       return withSecurityHeaders(assetResponse, url.pathname);

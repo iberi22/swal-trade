@@ -122,6 +122,35 @@ En el host donde corre el motor de trading (comandos desde la raíz de este repo
    systemctl --user status synapse-public-publisher.timer
    ```
 
+### 5. Explicador con IA (`POST /api/explain`)
+
+El botón **Explicar con IA** de `/analisis/` manda el análisis que ya calculó `analysis-core` en el navegador y devuelve una explicación corta en español: qué significa cada patrón, qué lo confirmaría o invalidaría y qué riesgo manejar (stop, tamaño, apalancamiento 1x). El prompt vive en `src/explain-prompt.js` y es público a propósito: nunca promete rentabilidad ni da órdenes de entrada o salida, dice que la fuerza del patrón no es una probabilidad y que la tasa de acierto histórico no está medida.
+
+Binding (`wrangler.toml`):
+
+```toml
+[ai]
+binding = "AI"
+```
+
+Variables opcionales:
+
+| Variable | Defecto | Uso |
+|---|---|---|
+| `EXPLAIN_MODEL` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Modelo de Workers AI. Se elige ese porque es el instruct rápido del catálogo actual que admite JSON Mode (`response_format` con `json_schema`), así la respuesta ya sale validada. Cualquier otro modelo sirve: el worker repara y sanea el JSON. |
+| `EXPLAIN_MAX_TOKENS` | `480` | Tope de tokens de salida. |
+| `EXPLAIN_DAILY_CAP` | `500` | Llamadas al modelo por día UTC. Al agotarse (o con `0`) responde el respaldo determinista, nunca un error. |
+
+Contrato: cuerpo `{symbol, timeframe, analysis:{top, trend, levels}}`; se rechaza con 400 un símbolo o temporalidad inválidos y más de 20 hallazgos. Respuesta `{source: "ai"|"fallback"|"cache", model, symbol, timeframe, asOf, summary, scenarios[{name, condition, invalidation, risk_note}], caution, disclaimer, reason}`.
+
+Controles de abuso (migración `0003_explain.sql`, tabla `explain_kv` en la misma D1):
+
+- **10 peticiones por hora e IP** en ventana móvil (la IP se guarda hasheada con SHA-256, nunca en claro). 429 con `Retry-After`. Si se configura un binding de Rate Limiting de Cloudflare llamado `EXPLAIN_RATE_LIMITER`, se usa además como freno de ráfaga.
+- **Caché de 5 minutos** para peticiones idénticas: no gasta cupo ni tokens.
+- **Cupo diario global** (`EXPLAIN_DAILY_CAP`).
+
+Sin binding de IA, con JSON irrecuperable, con una frase prohibida en la respuesta o con el cupo agotado, el endpoint construye la explicación con reglas fijas a partir de los propios hallazgos y sus niveles (`source: "fallback"`). El worker nunca llama a un modelo real en los tests: se mockea `env.AI`.
+
 ---
 
 ## 🧪 Pruebas y Validación Local

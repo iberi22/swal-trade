@@ -1,5 +1,14 @@
 // analisis.js — UI de /analisis/. Toda la logica de deteccion vive en analysis-core.js (pura).
 import { analyzeSync, trendOf, NO_HISTORY_TEXT } from './analysis-core.js';
+import {
+  EXPLAIN_DISCLAIMER,
+  EXPLAIN_ENDPOINT,
+  explainButtonLabel,
+  explainErrorText,
+  explainRequestFrom,
+  explainSourceLabel,
+  explainView,
+} from './explain-ui.js';
 
 const FAPI = 'https://fapi.binance.com/fapi/v1/klines';
 // Ruta actual de streams de mercado de USD-M (2025): /market/ws para kline. Si falla, se cae a /ws.
@@ -256,6 +265,123 @@ function sentimentText(label) {
   return 'neutral';
 }
 
+// ---------- explicador IA ----------
+// Los helpers puros (cuerpo de la petición, vista y errores) viven en explain-ui.js.
+// Aquí solo queda el pintado y el fetch, que es lo que necesita un DOM real.
+const explainState = { busy: false };
+
+function explainNodes() {
+  return {
+    card: $('explain-card'),
+    button: $('explain'),
+    status: $('explain-status'),
+    out: $('explain-out'),
+  };
+}
+
+// Al cambiar de símbolo o temporalidad la explicación anterior miente: se borra.
+function resetExplain() {
+  const { card, out } = explainNodes();
+  if (out) { out.replaceChildren(); out.hidden = true; }
+  if (card) card.hidden = true;
+}
+
+function paintExplain(view) {
+  const { card, out } = explainNodes();
+  if (!card || !out) return;
+  card.hidden = false;
+  out.replaceChildren();
+  out.hidden = false;
+
+  const sum = document.createElement('p');
+  sum.className = 'sum';
+  sum.textContent = view.summary;
+  out.append(sum);
+
+  if (view.scenarios.length) {
+    const ol = document.createElement('ol');
+    for (const scenario of view.scenarios) {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = scenario.name;
+      li.append(name);
+      const line = (label, value) => {
+        if (!value) return null;
+        const p = document.createElement('p');
+        p.className = 'line';
+        const b = document.createElement('b');
+        b.textContent = `${label}: `;
+        p.append(b, document.createTextNode(value));
+        return p;
+      };
+      for (const node of [
+        line('Confirma', scenario.condition),
+        line('Invalida', scenario.invalidation),
+        line('Riesgo', scenario.riskNote),
+      ]) if (node) li.append(node);
+      ol.append(li);
+    }
+    out.append(ol);
+  }
+
+  for (const [text_, className] of [[view.caution, 'caution'], [view.note, 'caution'], [explainSourceLabel(view.source, view.reason), 'src'], [view.disclaimer || EXPLAIN_DISCLAIMER, 'caution']]) {
+    if (!text_) continue;
+    const p = document.createElement('p');
+    p.className = className;
+    p.textContent = text_;
+    out.append(p);
+  }
+}
+
+function paintExplainError(message) {
+  const { card, out } = explainNodes();
+  if (!card || !out) return;
+  card.hidden = false;
+  out.hidden = false;
+  const p = document.createElement('p');
+  p.className = 'caution';
+  p.textContent = message;
+  out.replaceChildren(p);
+}
+
+async function explain() {
+  if (explainState.busy) return;
+  const { button, status, out } = explainNodes();
+  if (!button) return;
+  explainState.busy = true;
+  button.disabled = true;
+  button.textContent = explainButtonLabel(true);
+  if (status) status.textContent = 'Enviando el análisis al explicador…';
+  try {
+    const res = await fetch(EXPLAIN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(explainRequestFrom(state)),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    if (!res.ok) {
+      paintExplainError(explainErrorText(res.status, body));
+      return;
+    }
+    const parsed = explainView(body);
+    if (!parsed.ok) {
+      paintExplainError(parsed.error);
+      return;
+    }
+    paintExplain(parsed.view);
+  } catch {
+    paintExplainError('Sin conexión con el explicador. Vuelve a intentarlo.');
+  } finally {
+    explainState.busy = false;
+    button.disabled = false;
+    button.textContent = explainButtonLabel(false);
+    if (status) status.textContent = '';
+    if (out && !out.childElementCount) out.hidden = true;
+  }
+}
+
 function httpsUrl(raw) {
   try {
     const url = new URL(raw);
@@ -334,6 +460,7 @@ async function loadFng() {
 async function load() {
   const gen = ++state.gen;
   state.selected = null; state.wsRoute = 0;
+  resetExplain();
   setConn('Cargando…');
   try {
     const c = await fetchKlines(state.symbol, state.timeframe);
@@ -348,6 +475,8 @@ async function load() {
   }
 }
 $('controls').addEventListener('submit', (e) => e.preventDefault());
+const explainButton = $('explain');
+if (explainButton) explainButton.addEventListener('click', explain);
 $('symbol').addEventListener('change', (e) => { state.symbol = e.target.value; trendCache.clear(); load(); loadNews(); });
 $('timeframe').addEventListener('change', (e) => { state.timeframe = e.target.value; load(); });
 setInterval(refreshTrends, 60000);

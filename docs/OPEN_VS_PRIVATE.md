@@ -8,9 +8,10 @@ Decisión de Belal (ADR-007 D2, 2026-10-09). Este repositorio (`swal-trade`) es 
 |---|---|
 | Guardián de riesgo web y self-host | `workers/public-site/static/guardian/`, `scripts/guardian/` |
 | Núcleo de análisis determinista (patrones, niveles, tendencia, perfil de volumen) | `workers/public-site/static/analisis/analysis-core.js` |
+| Explicador con IA del sitio: endpoint, prompt, validación, respaldo determinista y controles de abuso | `workers/public-site/src/explain{,-prompt}.js`, `workers/public-site/static/analisis/explain-ui.js`, `packages/mcp/src/explain.ts` |
 | Página de análisis, landing, precios, legales y checkout | `workers/public-site/static/` |
 | Extensión de navegador (WXT + Svelte 5) | `apps/extension/` |
-| Servidor MCP de **solo lectura** (`analyze_chart`, `market_context`, `account_risk`, `propose_order`) | `packages/mcp/` |
+| Servidor MCP de **solo lectura** (`analyze_chart`, `market_context`, `explain_analysis`, `account_risk`, `propose_order`) | `packages/mcp/` |
 | Núcleo de riesgo y validación de órdenes | `crates/synapse-core/` (`risk.rs`, `sizing.rs`, `order_guard.rs`) |
 | Capa de noticias: adaptadores y normalización (las keys son secretos del despliegue, nunca código) | `workers/public-site`, `packages/mcp` |
 | Tabla **agregada** de tasas de acierto históricas, cuando se publique: tipo, temporalidad, símbolo, n, tasa, intervalo y línea base | `hit-rates.public.json` |

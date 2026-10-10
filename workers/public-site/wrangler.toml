@@ -18,6 +18,15 @@ crons = ["*/5 * * * *"]
 directory = "./static"
 binding = "ASSETS"
 
+# Workers AI: el explicador de /analisis/ (POST /api/explain). Sin este binding el
+# endpoint responde con el respaldo determinista, nunca con error. Vars (opcionales):
+#   EXPLAIN_MODEL       modelo por defecto @cf/meta/llama-3.3-70b-instruct-fp8-fast
+#                       (instruct rápido y con JSON Mode en el catálogo actual)
+#   EXPLAIN_MAX_TOKENS  tope de tokens de salida (defecto 480)
+#   EXPLAIN_DAILY_CAP   llamadas al modelo por día UTC (defecto 500; 0 = solo respaldo)
+[ai]
+binding = "AI"
+
 # KV namespace for public trading snapshots.
 # The orchestrator or deployer fills the namespace ID below after creating it via:
 # wrangler kv namespace create SNAPSHOTS

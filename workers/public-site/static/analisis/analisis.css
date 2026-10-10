@@ -26,6 +26,21 @@ select:focus-visible, button:focus-visible { outline: 2px solid hsl(var(--ring))
 .meter { height: .3rem; border-radius: 1rem; background: hsl(var(--surface-strong)); overflow: hidden; }
 .meter > i { display: block; height: 100%; background: hsl(var(--foreground)); }
 .findings .meta { font-size: .7rem; color: hsl(var(--subtle-foreground)); margin-top: .3rem; }
+.explain-cta { margin-top: .7rem; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
+.explain-cta p { margin: 0; }
+button { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border: 0; border-radius: var(--radius); padding: .45rem .8rem; font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; }
+button:hover { background: hsl(var(--foreground)); }
+button[disabled] { opacity: .5; cursor: default; }
+.explain { display: flex; flex-direction: column; gap: .6rem; }
+.explain .sum { margin: 0; font-size: .82rem; line-height: 1.45; }
+.explain ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.explain li { background: hsl(var(--background)); border-radius: calc(var(--radius) - .25rem); padding: .55rem .65rem; display: flex; flex-direction: column; gap: .2rem; }
+.explain .name { font-size: .8rem; font-weight: 600; }
+.explain .line { margin: 0; font-size: .74rem; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.explain .line b { font-weight: 600; color: hsl(var(--foreground)); }
+.explain .caution { margin: 0; font-size: .74rem; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.explain[hidden] { display: none; }
+#explain-card[hidden] { display: none; }
 .kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .85rem; }
 .kv li { display: flex; justify-content: space-between; }
 .kv .v { font-weight: 600; }

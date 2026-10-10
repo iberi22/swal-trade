@@ -25,6 +25,7 @@ El binario del paquete es `swal-trade-mcp` (`node packages/mcp/dist/index.js`).
 | Tool | Lectura | Qué hace |
 |---|---|---|
 | `analyze_chart` | sí | Velas públicas de `fapi` y hallazgos del núcleo, ordenados por fuerza. La fuerza es calidad del patrón, no probabilidad. |
+| `explain_analysis(symbol, timeframe)` | sí | Analiza el gráfico con el mismo núcleo y pide al endpoint alojado `POST /api/explain` una explicación en español sencillo de los patrones principales: qué significan, qué los confirmaría o invalidaría y qué riesgo manejar. Sin `SWAL_EXPLAIN_URL`, sin red o con error del hosting devuelve el respaldo determinista construido con los mismos hallazgos. |
 | `market_context` | sí | Tendencia en 1m, 5m, 1h y 4h (si el núcleo está), miedo y codicia (caché 1 h) y titulares. |
 | `account_risk` | sí | GETs firmados de solo lectura y las comprobaciones del guardián. |
 | `propose_order` | sí | Cantidad, stop y violaciones. No envía nada. |
@@ -43,6 +44,8 @@ No hay `place_order`, `grid_plan`, `grid_place` ni ninguna tool de escritura en 
 | `SWAL_WARN_FRACTION` | no | `0.7` | Fracción del límite diario que dispara el aviso `(0, 1]`. |
 | `SWAL_TZ_OFFSET_HOURS` | no | `-5` | Zona horaria del día de PnL, de -12 a 14. |
 | `SWAL_ANALYSIS_CORE` | no | `../../workers/public-site/static/analisis/analysis-core.js` relativo al paquete | Ruta al módulo que exporta `analyze`. |
+| `SWAL_EXPLAIN_URL` | no | `https://trade.swal.network/api/explain` | Endpoint alojado del explicador. Solo HTTPS. Vacío = modo offline: `explain_analysis` devuelve el respaldo determinista y no abre conexión. |
+| `SWAL_EXPLAIN_TIMEOUT_MS` | no | `20000` | Tiempo de espera del explicador alojado (máximo 60000). |
 | `BINANCE_FUTURES_URL` | no | `https://fapi.binance.com` | Origen HTTPS del futuro USD-M. |
 | `BRAVE_API_KEY` | no | — | Noticias locales: Brave News Search (`X-Subscription-Token`). Primera opción. |
 | `TAVILY_API_KEY` | no | — | Noticias locales: Tavily `POST /search` con `topic: news` y `Authorization: Bearer`. Segunda opción. |
@@ -51,6 +54,8 @@ No hay `place_order`, `grid_plan`, `grid_place` ni ninguna tool de escritura en 
 `propose_order` lee los topes de nocional y apalancamiento, pero no consulta el PnL del día: ese chequeo es de `account_risk` (`dailyLossEvaluated: false`).
 
 Si el núcleo no está en disco, `analyze_chart` responde `analysis core not available` y `market_context` deja la tendencia en null con el mismo texto.
+
+`explain_analysis` no envía órdenes ni promete resultados. El resultado lleva `source` (`ai` o `fallback`), `disclaimer` y `caution`: la fuerza del patrón no es una probabilidad y la tasa de acierto histórica no está medida. El prompt del servicio alojado es público (`workers/public-site/src/explain-prompt.js`); este paquete solo replica el respaldo determinista, igual que hace con las noticias.
 
 `news` prueba las claves en este orden: `BRAVE_API_KEY`, `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`. La primera que devuelve titulares gana. Si no hay claves, o ninguna devuelve titulares, se consulta `https://trade.swal.network/api/news`. Si tampoco hay nada, `news` es null y la nota es `requires local backend news source or Socio SWAL`. El tono de cada titular es un léxico de palabras (heurística, no asesoría).
 
