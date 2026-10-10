@@ -465,6 +465,50 @@ test("when the protective stop fails twice the position is closed and the tool e
   assert.ok(steps.includes("emergency_close"));
 });
 
+test("the emergency close flattens BEFORE it cancels anything", async () => {
+  // Cancelling first leaves an open position with no stop and no exit. The
+  // position order in the recorded calls is the safety property.
+  const exchange = makeExchange({
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "place_order", arguments: placeArgs });
+  });
+  const steps = exchange.paths();
+  const close = steps.indexOf("POST /fapi/v1/order");
+  const deleteAt = steps.findIndex((step) => step.startsWith("DELETE"));
+  assert.ok(close >= 0 && deleteAt >= 0, steps.join(", "));
+  assert.ok(close < deleteAt, `the close must come before the cancels: ${steps.join(", ")}`);
+  assert.ok(steps.findIndex((step) => step === "DELETE /fapi/v1/algoOpenOrders") > close);
+  assert.ok(steps.findIndex((step) => step === "DELETE /fapi/v1/allOpenOrders") > close);
+  const line = journalLines(JOURNAL, "place_order")[0];
+  const emergency = line.exchange.find((item) => item.step === "emergency_close");
+  assert.equal(emergency.flat, true);
+  assert.equal(emergency.flatten.remaining, 0);
+  assert.equal(emergency.flatten.orders.length, 1);
+});
+
+test("the emergency close does NOT cancel when the flatten is refused", async () => {
+  // A refused reduceOnly leaves the position open: cancelling now would strip
+  // its stop and its exit in the same breath.
+  const exchange = makeExchange({
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+    closeFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /MANUAL ACTION REQUIRED/);
+  });
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0);
+  const line = journalLines(JOURNAL, "place_order")[0];
+  const emergency = line.exchange.find((item) => item.step === "emergency_close");
+  assert.equal(emergency.flat, false);
+  assert.equal(emergency.remaining, 0.002);
+  assert.match(emergency.cancelledOrders, /not attempted/);
+});
+
 test("a rejected entry order sends nothing and cancels nothing", async () => {
   const exchange = makeExchange({ orderFailures: [{ code: -2010, msg: "insufficient balance" }] });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
@@ -503,6 +547,103 @@ test("close_position closes reduceOnly and cancels the symbol's orders and algo 
   const lines = journalLines(JOURNAL, "close_position");
   assert.equal(lines.length, 1);
   assert.equal(lines[0].event, "close_position");
+});
+
+test("close_position nets hedge rows and closes the net, not one leg", async () => {
+  // A 0.4 long and a 0.1 short is a net 0.3 long. Closing the LONG row alone
+  // sends a 0.4 SELL reduceOnly that the exchange refuses (or closes 0.4 of a
+  // 0.4/0.1 hedge and leaves a 0.1 short open on the other side).
+  const exchange = makeExchange({
+    positions: [
+      { symbol: "BTCUSDT", positionAmt: "0.4", notional: "40000", unrealizedProfit: "0", positionSide: "LONG", leverage: "2" },
+      { symbol: "BTCUSDT", positionAmt: "-0.1", notional: "-10000", unrealizedProfit: "0", positionSide: "SHORT", leverage: "2" },
+    ],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.positionQuantity, 0.3);
+    assert.equal(body.flat, true);
+    assert.equal(body.closeOrder.side, "SELL");
+    assert.equal(body.closeOrder.quantity, "0.3");
+    assert.match(body.notes.join(" "), /0.3 of BTCUSDT was closed/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 1, "one order for the net, not one per row");
+  assert.equal(orders[0].params.quantity, "0.3");
+});
+
+test("close_position keeps closing until the remainder is zero", async () => {
+  // The exchange fills the first close partially, so the position is still open
+  // after it. A single-shot close reports success and leaves 0.2 running.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.5", notional: "50000", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+    closeReducesTo: { BTCUSDT: ["0.2"] },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.positionQuantity, 0.5);
+    assert.equal(body.remaining, 0);
+    assert.equal(body.flat, true);
+    assert.equal(body.closeOrders.length, 2);
+    assert.equal(body.closeOrder.quantity, "0.2");
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.deepEqual(orders.map((order) => order.params.quantity), ["0.5", "0.2"]);
+  assert.ok(orders.every((order) => order.params.reduceOnly === "true"));
+});
+
+test("close_position rounds the remainder UP to stepSize, never down", async () => {
+  // A remainder of 0.0019 at stepSize 0.001 must be closed with 0.002: rounding
+  // down leaves 0.0009 open that the order guard no longer sees.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.0019", notional: "190", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.closeOrder.quantity, "0.002");
+  });
+});
+
+test("close_position does NOT cancel the orders while the position is still open", async () => {
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.5", notional: "50000", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+    closeFailures: [{ code: -2010, msg: "insufficient balance" }, { code: -2010, msg: "insufficient balance" }, { code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.flat, false);
+    assert.equal(body.cancelledOrders, null);
+    assert.equal(body.cancelledAlgoOrders, null);
+    assert.match(body.note, /could NOT be closed/);
+    assert.match(body.notes.join(" "), /were NOT cancelled/);
+  });
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0);
+  // One attempt: a reduceOnly rejected for insufficient balance is not accepted
+  // by asking again, so the remainder is reported instead of hammered.
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});
+
+test("close_position works when the notional cap and the whitelist are broken", async () => {
+  // Closing is protective: a missing SWAL_MAX_NOTIONAL_USD or a bad whitelist
+  // must not be able to trap a position open.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  const broken = { ...tradeEnvFile() };
+  delete broken.SWAL_MCP_SYMBOLS;
+  delete broken.SWAL_MAX_NOTIONAL_USD;
+  await withClient({ env: broken, fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.closeOrder.reduceOnly, "true");
+    assert.equal(body.flat, true);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+  // place_order still refuses the same configuration: the caps are entry-side.
+  await withClient({ env: broken, fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /SWAL_MCP_SYMBOLS must list at least one symbol/);
+  });
 });
 
 test("close_position works with the daily loss lock tripped: closing is protective", async () => {

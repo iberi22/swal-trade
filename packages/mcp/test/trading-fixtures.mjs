@@ -45,12 +45,23 @@ export function makeExchange(options = {}) {
     algoAnswers = {},
     /** Working orders of the symbol, for the notional cap (item 8). */
     openOrders = [],
+    /** Amounts each reduceOnly close leaves behind, in order; past the end it is zero. */
+    closeReducesTo = {},
   } = options;
 
   const calls = [];
   const orderCounts = new Map();
   /** Symbols whose position a reduceOnly order has already reduced to zero. */
   const reducedSymbols = new Set();
+  /** Symbol -> how many reduceOnly closes it has already taken. */
+  const closeCounts = new Map();
+  /** Symbol -> the amounts its reduceOnly closes leave behind, in order. */
+  const remainderQueue = new Map();
+  /** Symbol -> the positionAmt the reader currently sees, once a close left a remainder. */
+  const closeRemainder = new Map();
+  for (const [symbol, remainders] of Object.entries(closeReducesTo)) {
+    remainderQueue.set(symbol, Array.isArray(remainders) ? remainders : [remainders]);
+  }
   const failFor = (list, kind) => {
     const key = String(kind);
     const seen = orderCounts.get(key) ?? 0;
@@ -82,7 +93,9 @@ export function makeExchange(options = {}) {
     if (path === "/fapi/v2/positionRisk") {
       const opened = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/order");
       const after = opened ? positionsAfterOrder : [];
-      const rows = [...positions, ...after].filter((row) => !reducedSymbols.has(row.symbol));
+      const rows = [...positions, ...after]
+        .filter((row) => !reducedSymbols.has(row.symbol))
+        .map((row) => (closeRemainder.has(row.symbol) ? { ...row, positionAmt: closeRemainder.get(row.symbol) } : row));
       return json(rows);
     }
     if (path === "/fapi/v1/openAlgoOrders") return json(algoOrders);
@@ -102,14 +115,27 @@ export function makeExchange(options = {}) {
       const failure = failFor(orderFailures, "order");
       if (failure && params.get("reduceOnly") !== "true") return json({ code: failure.code, msg: failure.msg }, 400);
       const type = params.get("type");
-      // closeFailures stand for "the reduceOnly close fails", so they only apply
-      // once an entry order has already been sent.
       if (type === "MARKET") {
-        if (params.get("reduceOnly") === "true") reducedSymbols.add(params.get("symbol"));
-        // closeFailures stand for "the reduceOnly close fails", so they only
-        // apply once an entry order has already been sent.
-        if ((orderCounts.get("order") ?? 0) > 1 && failFor(closeFailures, "close")) {
-          return json({ code: -2010, msg: "insufficient balance" }, 400);
+        if (params.get("reduceOnly") === "true") {
+          // A close that leaves a remainder is the exchange saying "the fill was
+          // partial": the reader has to see the smaller position, not zero.
+          const key = String(params.get("symbol"));
+          const queue = remainderQueue.get(key) ?? [];
+          const index = closeCounts.get(key) ?? 0;
+          closeCounts.set(key, index + 1);
+          const left = String(queue[index] ?? "0");
+          if (Number(left) === 0) {
+            reducedSymbols.add(key);
+            closeRemainder.delete(key);
+          } else {
+            closeRemainder.set(key, left);
+          }
+          // A rejected close stays rejected: the exchange does not start
+          // accepting a reduceOnly order just because it is asked again.
+          if (closeFailures.length > 0) {
+            const rejected = closeFailures[0];
+            return json({ code: rejected.code, msg: rejected.msg }, 400);
+          }
         }
       }
       return json({

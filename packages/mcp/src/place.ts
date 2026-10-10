@@ -37,6 +37,7 @@ import {
   describeFlatten,
   emergencyClose,
   filledQuantityOf,
+  flattenPosition,
   guardLimitsFrom,
   isFinalStatus,
   logStep,
@@ -48,6 +49,7 @@ import {
   stopPriceTowardEntry,
   takeProfitAwayFromEntry,
   withJournal,
+  withWriteLock,
   writeJournalLine,
 } from "./write.js";
 import type { JournalRecord, ToolOutcome, WriteDeps } from "./write.js";
@@ -657,100 +659,100 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
  */
 export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): Promise<ToolOutcome> {
   const request = { symbol: args.symbol };
-  return withJournal(deps, "close_position", request, async (journal) => {
-    const cfg = parseTradingConfig(deps.env);
-    if (!cfg.ok) return refused(cfg.error);
-    journal.network = cfg.value.network;
-    const credentials = readCredentials(deps.env);
-    if (!credentials.ok) return refused(credentials.error);
-    const symbol = normalizeSymbol(args.symbol);
-    if (!symbol) return refused("symbol must be 2 to 30 letters or digits.");
+  return withWriteLock(deps, () =>
+    withJournal(deps, "close_position", request, async (journal) => {
+      const cfg = parseCloseConfig(deps.env);
+      if (!cfg.ok) return refused(cfg.error);
+      journal.network = cfg.value.network;
+      const credentials = readCredentials(deps.env);
+      if (!credentials.ok) return refused(credentials.error);
+      const symbol = normalizeSymbol(args.symbol);
+      if (!symbol) return refused("symbol must be 2 to 30 letters or digits.");
 
-    const journalError = await requireJournal(deps, cfg.value.journalPath);
-    if (journalError) return refused(journalError);
+      const journalError = await requireJournal(deps, cfg.value.journalPath);
+      if (journalError) return refused(journalError);
 
-    const client = createTradingClient({
-      apiKey: credentials.value.apiKey,
-      apiSecret: credentials.value.apiSecret,
-      fetchFn: deps.fetchFn,
-      now: deps.now,
-      base: cfg.value.base,
-    });
-    await client.syncTime();
+      const client = createTradingClient({
+        apiKey: credentials.value.apiKey,
+        apiSecret: credentials.value.apiSecret,
+        fetchFn: deps.fetchFn,
+        now: deps.now,
+        base: cfg.value.base,
+      });
+      await client.syncTime();
 
-    const filters = await fetchSymbolFilters(cfg.value.base, symbol, deps.fetchFn);
-    if (!filters.ok) return refused(`exchangeInfo: ${filters.error}`);
-    logStep(journal, "exchangeInfo", filters.value);
+      const filters = await fetchSymbolFilters(cfg.value.base, symbol, deps.fetchFn);
+      if (!filters.ok) return refused(`exchangeInfo: ${filters.error}`);
+      logStep(journal, "exchangeInfo", filters.value);
 
-    const risk: unknown = await client.positionRisk();
-    logStep(journal, "positionRisk", Array.isArray(risk) ? { rows: risk.length } : risk);
-    let amount: number | null = null;
-    if (Array.isArray(risk)) {
-      for (const row of risk) {
-        if (typeof row === "object" && row !== null && "symbol" in row && row.symbol === symbol) {
-          const value = Number((row as { positionAmt: unknown }).positionAmt);
-          amount = Number.isFinite(value) ? value : null;
-        }
+      // Close first, report second. The position is read netting every
+      // positionRisk row of the symbol (one-way BOTH, hedge LONG + SHORT), then
+      // reduced with a MARKET reduceOnly order rounded UP to stepSize so the
+      // whole remainder is covered, then read again: the loop repeats until the
+      // net is zero. A single order sized from the first row leaves a leg open.
+      const flatten = await flattenPosition(client, filters.value, symbol, journal);
+      const notes: string[] = [];
+      if (flatten.netBefore == null) {
+        notes.push(`positionRisk had no row for ${symbol}: treated as no open position.`);
+      } else if (flatten.netBefore === 0) {
+        notes.push(`the net position of ${symbol} was already zero.`);
+      } else if (flatten.flat) {
+        notes.push(`${flatten.netBefore} of ${symbol} was closed with ${flatten.orders.length} MARKET reduceOnly order(s).`);
       }
-    }
-    const notes: string[] = [];
-    if (amount == null) notes.push(`positionRisk has no row for ${symbol}: treated as no open position.`);
+      if (flatten.error) notes.push(flatten.error);
+      if (flatten.dustNote) notes.push(flatten.dustNote);
 
-    let closeOrder: unknown = null;
-    if (amount != null && amount !== 0) {
-      const quantity = floorToStep(Math.abs(amount), filters.value.stepSize);
-      if (quantity == null || decimalNumber(quantity) <= 0) {
-        notes.push(`the position ${amount} rounds to zero at stepSize ${filters.value.stepSize}: it cannot be closed with one order.`);
+      // The orders are cancelled only when the position is actually zero.
+      // Cancelling first would remove the stop of a position that is still open.
+      let cancelledOrders: unknown = null;
+      let cancelledAlgo: unknown = null;
+      if (!flatten.flat) {
+        notes.push(
+          `the open orders and algo orders of ${symbol} were NOT cancelled: the net position is ${flatten.remaining ?? "unknown"}, and cancelling them would leave an open position with no stop.`,
+        );
       } else {
         try {
-          closeOrder = await client.placeOrder({
-            symbol,
-            side: amount > 0 ? "SELL" : "BUY",
-            type: "MARKET",
-            quantity,
-            reduceOnly: "true",
-          });
-          logStep(journal, "close_market_reduce_only", closeOrder);
+          cancelledOrders = await client.cancelAllOpenOrders(symbol);
+          logStep(journal, "cancel_all_open_orders", cancelledOrders);
         } catch (err) {
           const message = redactSecrets(errorMessage(err), []);
-          logStep(journal, "close_market_reduce_only", { error: message });
-          return refused(`the reduceOnly close order was rejected by the exchange: ${message}. The position may still be open.`);
+          logStep(journal, "cancel_all_open_orders", { error: message });
+          notes.push(`the open orders could not be cancelled: ${message}`);
+        }
+        try {
+          cancelledAlgo = await client.cancelAlgoOrders(symbol);
+          logStep(journal, "cancel_algo_orders", cancelledAlgo);
+        } catch (err) {
+          const message = redactSecrets(errorMessage(err), []);
+          logStep(journal, "cancel_algo_orders", { error: message });
+          notes.push(`the open algo orders could not be cancelled: ${message}`);
         }
       }
-    } else {
-      notes.push(`there was no open position for ${symbol}: only the open orders were cancelled.`);
-    }
 
-    let cancelledOrders: unknown = null;
-    try {
-      cancelledOrders = await client.cancelAllOpenOrders(symbol);
-      logStep(journal, "cancel_all_open_orders", cancelledOrders);
-    } catch (err) {
-      const message = redactSecrets(errorMessage(err), []);
-      logStep(journal, "cancel_all_open_orders", { error: message });
-      notes.push(`the open orders could not be cancelled: ${message}`);
-    }
-    let cancelledAlgo: unknown = null;
-    try {
-      cancelledAlgo = await client.cancelAlgoOrders(symbol);
-      logStep(journal, "cancel_algo_orders", cancelledAlgo);
-    } catch (err) {
-      const message = redactSecrets(errorMessage(err), []);
-      logStep(journal, "cancel_algo_orders", { error: message });
-      notes.push(`the open algo orders could not be cancelled: ${message}`);
-    }
+      const sent = flatten.orders.length > 0;
+      // The note says exactly what happened: a position that could not be
+      // closed must not be described as closed.
+      const note = flatten.flat
+        ? sent
+          ? `The net position of ${symbol} was closed on ${cfg.value.network} with MARKET reduceOnly order(s)${cancelledOrders != null || cancelledAlgo != null ? " and its open orders and algo orders were cancelled" : ""}. Nothing else was sent.`
+          : `There was no open net position for ${symbol}, so only the symbol's open orders and algo orders were cancelled.`
+        : `The position of ${symbol} could NOT be closed (${flatten.error ?? flatten.dustNote ?? "unknown reason"}): ${flatten.remaining ?? "unknown"} is still open. The orders were deliberately NOT cancelled.`;
 
-    return ok({
-      network: cfg.value.network,
-      symbol,
-      positionQuantity: amount,
-      closeOrder,
-      cancelledOrders,
-      cancelledAlgoOrders: cancelledAlgo,
-      notes,
-      journal: cfg.value.journalPath,
-      sent: closeOrder != null,
-      note: `The position was closed on ${cfg.value.network} with a MARKET reduceOnly order and the symbol's open orders and algo orders were cancelled. Nothing else was sent.`,
-    });
-  });
+      return ok({
+        network: cfg.value.network,
+        symbol,
+        positionQuantity: flatten.netBefore,
+        remaining: flatten.remaining,
+        flat: flatten.flat,
+        closeOrders: flatten.orders,
+        closeOrder: flatten.orders[flatten.orders.length - 1] ?? null,
+        cancelledOrders,
+        cancelledAlgoOrders: cancelledAlgo,
+        notes,
+        journal: cfg.value.journalPath,
+        sent,
+        note,
+      });
+    }),
+  );
 }

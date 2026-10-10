@@ -121,7 +121,10 @@ export function netPosition(risk: unknown, symbol: string): NetPosition {
     amount += amt;
   }
   if (rows.length === 0) return { amount: null, rows, error: error ?? null };
-  return { amount: amount === 0 ? 0 : amount, rows, error };
+  // Round away the binary-float noise of adding decimal strings: 0.4 + (-0.1)
+  // is 0.30000000000000004 in IEEE754, and a quantity the close order rounds
+  // UP from is an over-close the exchange refuses.
+  return { amount: amount === 0 ? 0 : Number(amount.toFixed(12)), rows, error };
 }
 
 /** Symbols with a non-zero net position, in first-seen order. */

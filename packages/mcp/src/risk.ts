@@ -96,6 +96,11 @@ export function positionsFrom(account: { positions?: RawPosition[] }): Position[
  * loss that is only on paper still counts, because it becomes real the moment
  * the market keeps going.
  */
+/** Unrealized loss of the open positions: the only unrealized part that counts. */
+export function unrealizedLoss(positions: readonly Position[]): number {
+  return positions.reduce((sum, position) => (position.unrealized < 0 ? sum + position.unrealized : sum), 0);
+}
+
 export function dailyPnl(realized: number, unrealized: number): number {
   return realized + Math.min(0, unrealized);
 }
@@ -189,7 +194,7 @@ export function evaluateAccount(input: {
   }
   const realized = realizedUsd(input.income);
   const unrealized = positions.reduce((sum, position) => sum + position.unrealized, 0);
-  const dayPnl = dailyPnl(realized, unrealized);
+  const dayPnl = dailyPnl(realized, unrealizedLoss(positions));
   return {
     dayPnl,
     realized,
