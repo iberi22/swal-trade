@@ -13,7 +13,9 @@ node --test apps/key-spike/signing.test.mjs || fail=1
 
 step "Sintaxis"
 node --check workers/public-site/src/worker.js || fail=1
-node --check workers/public-site/static/app.js || fail=1
+for f in $(find workers/public-site/static -name '*.js' ! -path '*/vendor/*'); do
+  node --check "$f" || fail=1
+done
 bash -n scripts/publish-public-snapshot.sh || fail=1
 
 step "gitleaks"
