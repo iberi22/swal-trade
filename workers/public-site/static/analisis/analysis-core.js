@@ -76,7 +76,7 @@ export const WEIGHTS = {
 export function historicalHitRate(kind, timeframe, symbol) { // eslint-disable-line no-unused-vars
   return null;
 }
-export const NO_HISTORY_TEXT = 'sin medición histórica todavía';
+export const NO_HISTORY_TEXT = 'no superó al azar en nuestra medición (2026-10)';
 
 // ---------- utilidades ----------
 const clamp01 = (x) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
