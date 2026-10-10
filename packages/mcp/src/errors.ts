@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 // One error type for every exchange answer, shared by the read-only client and
 // the signed write client.
-//
 // The distinction that matters for safety is not the message but the certainty:
 // a 4xx with a code is the exchange saying "nothing was sent", while a timeout,
 // a reset connection or a 5xx means the order MAY have been accepted. Treating
@@ -59,3 +60,16 @@ export function httpError(status: number, path: string, body: string): BinanceEr
 
 /** Code of "order does not exist": a lookup that found nothing. */
 export const ORDER_NOT_FOUND_CODE = -2013;
+
+/**
+ * Client order id for every order this process sends.
+ *
+ * Binance keeps the id for as long as the order exists and answers lookups by
+ * `origClientOrderId` with it, so a new id per attempt is what makes "was my
+ * order accepted?" answerable after a timeout. A reused id would make the lookup
+ * return an older order, which is how an ambiguous fill gets reported as
+ * nothing-sent.
+ */
+export function newClientOrderId(): string {
+  return `swal${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+}

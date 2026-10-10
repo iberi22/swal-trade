@@ -26,7 +26,7 @@ test("signed read-only GETs, time offset, and income pagination", async () => {
     if (String(url).includes("/fapi/v1/time")) return { ok: true, status: 200, json: async () => ({ serverTime: 1_000_500 }), text: async () => "" };
     if (String(url).includes("/fapi/v1/income")) {
       const n = calls.filter((call) => call.url.includes("/income")).length;
-      const page = n === 1 ? Array.from({ length: 1000 }, (_, i) => ({ time: 1000 + i })) : [{ time: 5000 }];
+      const page = n === 1 ? Array.from({ length: 1000 }, (_, i) => ({ time: 1000 + i, tranId: i })) : [{ time: 5000, tranId: 5000 }];
       return { ok: true, status: 200, json: async () => page, text: async () => "" };
     }
     return { ok: true, status: 200, json: async () => (String(url).includes("positionRisk") ? [] : {}), text: async () => "" };
@@ -56,7 +56,10 @@ test("signed read-only GETs, time offset, and income pagination", async () => {
   assert.ok(calls.some((call) => call.url.includes("/fapi/v3/account")));
   assert.ok(calls.some((call) => call.url.includes("/fapi/v2/positionRisk")));
   assert.ok(calls.some((call) => call.url.includes("/fapi/v1/openAlgoOrders")));
-  assert.ok(calls.some((call) => call.url.includes("startTime=2000")));
+  // The second page advances by tranId, not by timestamp: two rows can share a
+  // millisecond and a timestamp cursor would skip the ones in between.
+  const second = calls.filter((call) => call.url.includes("/income"))[1];
+  assert.ok(second.url.includes("fromId=1000"));
   assert.ok(calls.every((call) => call.init.method === "GET"));
 });
 

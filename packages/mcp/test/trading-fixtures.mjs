@@ -32,14 +32,25 @@ export function makeExchange(options = {}) {
     income = [],
     algoOrders = [],
     orderStatus = "NEW",
+    orderExecutedQty = "0",
     orderFailures = [],
     algoFailures = [],
     marginTypeFailures = [],
     closeFailures = [],
+    /** Answer an algo order with no algoId: the exchange has no order. */
+    algoNoId = false,
+    /** Answer an algo order with no triggerPrice: nothing for it to fire on. */
+    algoNoTrigger = false,
+    /** Per-attempt overrides of the algo answer body, keyed by 1-based attempt. */
+    algoAnswers = {},
+    /** Working orders of the symbol, for the notional cap (item 8). */
+    openOrders = [],
   } = options;
 
   const calls = [];
   const orderCounts = new Map();
+  /** Symbols whose position a reduceOnly order has already reduced to zero. */
+  const reducedSymbols = new Set();
   const failFor = (list, kind) => {
     const key = String(kind);
     const seen = orderCounts.get(key) ?? 0;
@@ -69,12 +80,17 @@ export function makeExchange(options = {}) {
 
     if (path === "/fapi/v3/account") return json({ positions });
     if (path === "/fapi/v2/positionRisk") {
-      const seen = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/order");
-      return json(seen ? [...positions, ...positionsAfterOrder] : positions);
+      const opened = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/order");
+      const after = opened ? positionsAfterOrder : [];
+      const rows = [...positions, ...after].filter((row) => !reducedSymbols.has(row.symbol));
+      return json(rows);
     }
     if (path === "/fapi/v1/openAlgoOrders") return json(algoOrders);
     if (path === "/fapi/v1/income") return json(income);
-    if (path === "/fapi/v1/openOrders") return json([]);
+    if (path === "/fapi/v1/leverageBracket") {
+      return json([{ symbol: params.get("symbol"), brackets: [{ bracket: 1, initialMarginRate: "0.2", maintMarginRatio: "0.004", cum: "0" }] }]);
+    }
+    if (path === "/fapi/v1/openOrders") return json(openOrders);
 
     if (path === "/fapi/v1/leverage") return json({ leverage: Number(params.get("leverage")), symbol: params.get("symbol") });
     if (path === "/fapi/v1/marginType") {
@@ -84,19 +100,26 @@ export function makeExchange(options = {}) {
     }
     if (path === "/fapi/v1/order") {
       const failure = failFor(orderFailures, "order");
-      if (failure) return json({ code: failure.code, msg: failure.msg }, 400);
+      if (failure && params.get("reduceOnly") !== "true") return json({ code: failure.code, msg: failure.msg }, 400);
       const type = params.get("type");
       // closeFailures stand for "the reduceOnly close fails", so they only apply
       // once an entry order has already been sent.
-      if (type === "MARKET" && (orderCounts.get("order") ?? 0) > 1 && failFor(closeFailures, "close")) {
-        return json({ code: -2010, msg: "insufficient balance" }, 400);
+      if (type === "MARKET") {
+        if (params.get("reduceOnly") === "true") reducedSymbols.add(params.get("symbol"));
+        // closeFailures stand for "the reduceOnly close fails", so they only
+        // apply once an entry order has already been sent.
+        if ((orderCounts.get("order") ?? 0) > 1 && failFor(closeFailures, "close")) {
+          return json({ code: -2010, msg: "insufficient balance" }, 400);
+        }
       }
       return json({
         symbol: params.get("symbol"),
         side: params.get("side"),
         type,
         status: type === "MARKET" ? "FILLED" : orderStatus,
-        executedQty: params.get("quantity"),
+        // The exchange echoes back what it was given: a fill on a LIMIT that
+        // expired in the same instant is visible here and nowhere else.
+        executedQty: params.get("executedQty") ?? (type === "MARKET" ? params.get("quantity") : orderExecutedQty),
         quantity: params.get("quantity"),
         avgPrice: params.get("price") ?? markPrice,
         price: params.get("price"),
@@ -104,13 +127,31 @@ export function makeExchange(options = {}) {
         timeInForce: params.get("timeInForce"),
         reduceOnly: params.get("reduceOnly"),
         orderId: 1000 + calls.length,
-        clientOrderId: `test-${calls.length}`,
+        clientOrderId: params.get("clientOrderId") ?? `test-${calls.length}`,
       });
     }
     if (path === "/fapi/v1/algoOrder") {
+      const attempt = (orderCounts.get("algo") ?? 0) + 1;
       const failure = failFor(algoFailures, "algo");
       if (failure) return json({ code: failure.code, msg: failure.msg }, 400);
-      return json({ algoId: 5000 + calls.length, symbol: params.get("symbol"), status: "NEW" });
+      // The real Algo Service answer: algoId plus the trigger it accepted. A
+      // protective order that comes back with no algoId, or with no trigger, is
+      // not protecting anything, so both shapes are modelled explicitly.
+      const trigger = params.get("triggerPrice");
+      const override = algoAnswers[attempt] ?? {};
+      const answer = {
+        symbol: params.get("symbol"),
+        side: params.get("side"),
+        algoType: params.get("algoType"),
+        type: params.get("type"),
+        workingType: params.get("workingType"),
+        priceProtect: params.get("priceProtect") === "TRUE",
+        closePosition: params.get("closePosition"),
+        status: "NEW",
+      };
+      if (!algoNoId) answer.algoId = "algoId" in override ? override.algoId : 5000 + attempt;
+      if (!algoNoTrigger && trigger != null) answer.triggerPrice = trigger;
+      return json({ ...answer, ...override });
     }
     if (path === "/fapi/v1/allOpenOrders" && method === "DELETE") return json({ code: 200, msg: "cancelled" });
     if (path === "/fapi/v1/algoOpenOrders" && method === "DELETE") return json({ code: 200, msg: "cancelled" });

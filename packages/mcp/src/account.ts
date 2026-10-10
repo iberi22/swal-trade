@@ -7,7 +7,7 @@
 
 import type { ReadOnlyClient } from "./binance.js";
 import { dayStartMs, evaluateAccount } from "./risk.js";
-import type { AccountSnapshot, AlgoOrder, IncomeRow, PositionRiskRow, RawPosition } from "./risk.js";
+import type { AccountSnapshot, AlgoOrder, IncomeRow, Position, PositionRiskRow, RawPosition } from "./risk.js";
 import type { RiskCfg } from "./risk.js";
 import { isRecord, errorMessage } from "./types.js";
 
@@ -219,7 +219,7 @@ export async function readExposure(input: {
     const positions = parseAccountPositions(account);
     for (const position of positions) {
       if (!positionSymbols.includes(position.symbol)) positionSymbols.push(position.symbol);
-      openNotionalUsd += Math.abs(position.notional);
+      openNotionalUsd += Math.abs(Number.parseFloat(position.notional) || 0);
     }
   } catch (err) {
     errors.push(`account: ${errorMessage(err)}`);

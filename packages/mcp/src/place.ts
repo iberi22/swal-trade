@@ -17,29 +17,38 @@
 // close_position is the exception to the guard: closing is protective, so the
 // daily-loss lock and the position cap must not be able to trap a position open.
 
-import { decimalNumber, floorToStep, shiftStep } from "./decimal.js";
+import { ceilToStep, decimalNumber, floorToStep, shiftStep } from "./decimal.js";
 import { parseAccountRiskConfig, readCredentials } from "./config.js";
 import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
-import { loadAccountRiskView } from "./account.js";
+import { loadAccountRiskView, netPosition } from "./account.js";
 import { checkOrder } from "./order-guard.js";
 import type { GuardDecision } from "./order-guard.js";
 import { normalizeSide } from "./propose.js";
 import { normalizeSymbol } from "./symbol.js";
-import { parseTradingConfig } from "./trading-config.js";
+import { parseCloseConfig, parseTradingConfig } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
-import { BinanceError, isRepriceable } from "./trade-client.js";
+import { isAmbiguousError, isRepriceable, newClientOrderId } from "./trade-client.js";
+import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
 import {
   applyLeverageAndMargin,
+  averagePriceOf,
+  describeFlatten,
   emergencyClose,
+  filledQuantityOf,
   guardLimitsFrom,
+  isFinalStatus,
+  logStep,
   ok,
+  orderStatusOf,
+  placeProtectiveAlgoOrder,
   refused,
   requireJournal,
   stopPriceTowardEntry,
   takeProfitAwayFromEntry,
   withJournal,
+  writeJournalLine,
 } from "./write.js";
 import type { JournalRecord, ToolOutcome, WriteDeps } from "./write.js";
 import { redactSecrets, errorMessage } from "./types.js";
@@ -62,7 +71,7 @@ export interface ClosePositionArgs {
 
 /** Attempts for a post-only entry before giving up and cancelling. */
 const POST_ONLY_ATTEMPTS = 3;
-/** Attempts for the protective stop before the fail-closed exit. */
+/** Attempts for a protective algo order before the fail-closed exit. */
 const STOP_ATTEMPTS = 2;
 
 interface EntryOutcome {
@@ -70,13 +79,13 @@ interface EntryOutcome {
   order?: unknown;
   /** Aligned limit price of a resting post-only order. */
   price?: string;
+  /** The clientOrderId the entry was sent with: the only way to resolve a timeout. */
+  clientOrderId?: string;
   error?: string;
   resting?: boolean;
-}
-
-/** One labeled exchange response, appended to the journaled record. */
-function logStep(journal: JournalRecord, step: string, value: unknown): void {
-  journal.exchange.push({ step, ...(typeof value === "object" && value !== null ? (value as Record<string, unknown>) : { value }) });
+  /** True when the entry filled (fully or partially): a position exists. */
+  filled?: boolean;
+  filledQty?: number;
 }
 
 /**
@@ -91,11 +100,16 @@ function repriceAway(price: string, tickSize: string, side: "BUY" | "SELL"): str
 
 async function postOnlyEntry(
   client: TradingClient,
-  input: { symbol: string; side: "BUY" | "SELL"; quantity: string; price: string; tickSize: string },
+  input: { symbol: string; side: "BUY" | "SELL"; quantity: string; price: string; tickSize: string; clientOrderId: string },
   journal: JournalRecord,
 ): Promise<EntryOutcome> {
   let price = input.price;
+  let clientOrderId = input.clientOrderId;
+  // The id of the order that is actually resting right now. A cancelled attempt
+  // is replaced, so this is what a cleanup has to target.
+  let lastSent = input.clientOrderId;
   for (let attempt = 1; attempt <= POST_ONLY_ATTEMPTS; attempt += 1) {
+    lastSent = clientOrderId;
     const aligned = floorToStep(price, input.tickSize);
     if (aligned == null) return { ok: false, error: `price ${price} cannot be aligned to tickSize ${input.tickSize}.` };
     try {
@@ -106,57 +120,215 @@ async function postOnlyEntry(
         timeInForce: "GTX",
         quantity: input.quantity,
         price: aligned,
+        clientOrderId,
       });
       logStep(journal, `entry_post_only_${attempt}`, order);
-      const status = typeof order === "object" && order !== null && "status" in order ? String((order as { status: unknown }).status) : "";
-      if (status === "NEW" || status === "PARTIALLY_FILLED" || status === "FILLED") {
-        return { ok: true, order, price: aligned, resting: status === "NEW" };
+      const status = orderStatusOf(order);
+      const filled = filledQuantityOf(order);
+      if (status === "NEW" || status === "PARTIALLY_FILLED") {
+        // EXPIRED or -5022 does not always mean "nothing happened": a GTX limit
+        // can fill in the same instant it is rejected, and the answer carries the
+        // executedQty. A filled quantity means a position exists, so it must be
+        // protected instead of repriced.
+        if (filled > 0) return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled, resting: false };
+        return { ok: true, order, price: aligned, clientOrderId, filled: false, resting: true };
       }
-      // EXPIRED or REJECTED: reprice away from the book and try again.
+      if (status === "FILLED") return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled > 0 ? filled : decimalNumber(input.quantity) };
+      // EXPIRED, REJECTED or a status the exchange did not label: read the
+      // executedQty before assuming nothing happened.
+      if (filled > 0) return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled };
     } catch (err) {
       const message = redactSecrets(errorMessage(err), []);
       logStep(journal, `entry_post_only_${attempt}`, { error: message });
+      if (isAmbiguousError(err)) {
+        // A timeout on a post-only entry: resolve it before retrying, otherwise
+        // a second order doubles the position.
+        const resolution = await resolveEntry(client, { symbol: input.symbol, side: input.side, clientOrderId, entryPrice: decimalNumber(aligned), quantity: input.quantity }, journal);
+        if (resolution.filledQty > 0) {
+          return { ok: true, order: resolution.order, price: aligned, clientOrderId, filled: true, filledQty: resolution.filledQty };
+        }
+      }
       if (!isRepriceable(err)) return { ok: false, error: message };
     }
     const next = repriceAway(price, input.tickSize, input.side);
-    if (next == null) return { ok: false, error: `the post-only ${input.side} at ${price} could not be rested and cannot be repriced further.` };
+    if (next == null) return { ok: false, error: `the post-only ${input.side} at ${price} could not be rested and cannot be repriced further.`, clientOrderId: lastSent };
     price = next;
+    // A new id per attempt, so a lookup resolves THIS order and not the previous
+    // one, and the cancel at the end targets what is actually resting.
+    clientOrderId = newClientOrderId();
   }
-  return { ok: false, error: `the post-only ${input.side} order could not be rested after ${POST_ONLY_ATTEMPTS} attempts.` };
+  return { ok: false, clientOrderId: lastSent, error: `the post-only ${input.side} order could not be rested after ${POST_ONLY_ATTEMPTS} attempts.` };
 }
 
 interface StopOutcome {
   ok: boolean;
   response?: unknown;
+  algoId?: number;
   error?: string;
+}
+
+/**
+ * True (set) when a fill exceeded the notional cap by the tolerance and the
+ * excess was reduced on the exchange. Set inside the tool, read by
+ * `entryPayload`, which is why it lives at module scope: it is written and read
+ * inside one awaited call chain, never across two.
+ */
+let excessNotionalReduced: number | null = null;
+
+/** The success payload of place_order, in one shape for every path that reaches it. */
+function entryPayload(input: {
+  cfg: { network: string; journalPath: string };
+  symbol: string;
+  side: "BUY" | "SELL";
+  orderType: OrderTypeInput;
+  entryPrice: number;
+  quantity: string;
+  effectiveNotionalUsd: number;
+  notionalUsd: number;
+  leverage: number;
+  entry: unknown;
+  filledQty: number;
+  stopPrice: string;
+  stopLossPct: number;
+  stopResponse: unknown;
+  resting: boolean;
+  restingPrice: string | null;
+  journal: JournalRecord;
+  warnings: string[];
+  takeProfit?: unknown;
+  ambiguous?: boolean;
+}): Record<string, unknown> {
+  const warnings = [...input.warnings];
+  if (excessNotionalReduced != null) {
+    warnings.push(
+      `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${excessNotionalReduced.toFixed(4)} USD and the excess was reduced with a MARKET reduceOnly order.`,
+    );
+  }
+  const filledNotional = input.filledQty > 0 && averagePriceOf(input.entry) != null
+    ? Number(((averagePriceOf(input.entry) as number) * input.filledQty).toFixed(4))
+    : input.effectiveNotionalUsd;
+  return {
+    network: input.cfg.network,
+    symbol: input.symbol,
+    side: input.side,
+    orderType: input.orderType,
+    entryPrice: input.entryPrice,
+    quantity: input.quantity,
+    effectiveNotionalUsd: input.effectiveNotionalUsd,
+    filledQuantity: input.filledQty,
+    filledNotionalUsd: filledNotional,
+    requestedNotionalUsd: input.notionalUsd,
+    leverage: input.leverage,
+    marginMode: "ISOLATED",
+    entry: input.entry,
+    resting: input.resting,
+    restingPrice: input.restingPrice,
+    ambiguousOutcome: input.ambiguous ?? false,
+    stop: {
+      type: "STOP_MARKET",
+      side: input.side === "BUY" ? "SELL" : "BUY",
+      stopPrice: input.stopPrice,
+      stopLossPct: input.stopLossPct,
+      workingType: "MARK_PRICE",
+      priceProtect: true,
+      closePosition: true,
+      algoService: "/fapi/v1/algoOrder",
+      response: input.stopResponse,
+    },
+    takeProfit: input.takeProfit ?? null,
+    warnings,
+    journal: input.cfg.journalPath,
+    sent: true,
+    note: `The entry and its protective stop were sent to ${input.cfg.network}. Nothing else was sent.`,
+  };
+}
+
+/**
+ * Cancels whatever this tool has resting on the symbol, by clientOrderId when
+ * there is one. `allOpenOrders` would also cancel another tool's orders: the
+ * mutex serializes this process, but the user may have placed orders by hand.
+ */
+async function cancelEntry(client: TradingClient, clientOrderId: string | null, symbol: string, journal: JournalRecord): Promise<void> {
+  try {
+    const result =
+      clientOrderId != null
+        ? await client.cancelOrder(symbol, clientOrderId)
+        : await client.cancelAllOpenOrders(symbol);
+    logStep(journal, "cancel_after_failed_entry", result);
+  } catch (err) {
+    logStep(journal, "cancel_after_failed_entry", { error: redactSecrets(errorMessage(err), []) });
+  }
+}
+
+/**
+ * Resolves an ambiguous entry answer: look the order up by clientOrderId, then
+ * read the net position. Either one proving a fill is enough, because an order
+ * can be filled and cancelled from the query window but still leave a position.
+ */
+async function resolveEntry(
+  client: TradingClient,
+  input: { symbol: string; side: "BUY" | "SELL"; clientOrderId: string; entryPrice: number; quantity: string },
+  journal: JournalRecord,
+): Promise<{ filledQty: number; order: unknown }> {
+  let order: unknown = null;
+  try {
+    const found = await client.queryOrder(input.symbol, input.clientOrderId);
+    logStep(journal, "query_by_client_order_id", found);
+    order = found;
+    const status = orderStatusOf(found);
+    const filled = filledQuantityOf(found);
+    if (filled > 0 || status === "FILLED") return { filledQty: filled > 0 ? filled : Number(input.quantity), order: found };
+    if (isFinalStatus(status)) return { filledQty: filled, order: found };
+  } catch (err) {
+    logStep(journal, "query_by_client_order_id", { error: redactSecrets(errorMessage(err), []) });
+  }
+  // Not settled by the lookup: read the position, which is the ground truth.
+  try {
+    const risk = await client.positionRisk();
+    const net = netPosition(risk, input.symbol);
+    logStep(journal, "position_after_ambiguous_entry", { net: net.amount, rows: net.rows, error: net.error });
+    if (net.error == null && net.amount != null && net.amount !== 0) {
+      return { filledQty: Math.abs(net.amount), order };
+    }
+  } catch (err) {
+    logStep(journal, "position_after_ambiguous_entry", { error: redactSecrets(errorMessage(err), []) });
+  }
+  return { filledQty: 0, order };
 }
 
 async function placeProtectiveStop(
   client: TradingClient,
-  input: { symbol: string; side: "BUY" | "SELL"; stopPrice: string },
-  journal: JournalRecord,
+  input: { symbol: string; side: "BUY" | "SELL"; stopPrice: string; entryPrice: number; journal: JournalRecord },
 ): Promise<StopOutcome> {
-  let lastError = "unknown error";
-  for (let attempt = 1; attempt <= STOP_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await client.placeAlgoOrder({
-        symbol: input.symbol,
-        side: input.side,
-        type: "STOP_MARKET",
-        algoType: "CONDITIONAL",
-        workingType: "MARK_PRICE",
-        closePosition: "true",
-        price: input.stopPrice,
-        timeInForce: "GTC",
-      });
-      logStep(journal, `protective_stop_${attempt}`, response);
-      return { ok: true, response };
-    } catch (err) {
-      lastError = redactSecrets(errorMessage(err), []);
-      logStep(journal, `protective_stop_${attempt}`, { error: lastError });
-    }
-  }
-  return { ok: false, error: lastError };
+  const outcome = await placeProtectiveAlgoOrder(client, {
+    symbol: input.symbol,
+    side: input.side,
+    kind: "STOP_MARKET",
+    triggerPrice: input.stopPrice,
+    referencePrice: input.entryPrice,
+    attempts: STOP_ATTEMPTS,
+    journal: input.journal,
+    label: "protective_stop",
+  });
+  return outcome.ok ? { ok: true, response: outcome.response, algoId: outcome.algoId } : { ok: false, error: outcome.error };
+}
+
+async function placeTakeProfit(
+  client: TradingClient,
+  input: { symbol: string; side: "BUY" | "SELL"; takeProfitPrice: string; entryPrice: number; journal: JournalRecord },
+): Promise<{ ok: boolean; response?: unknown; algoId?: number; error?: string }> {
+  return placeProtectiveAlgoOrder(client, {
+    symbol: input.symbol,
+    side: input.side,
+    kind: "TAKE_PROFIT_MARKET",
+    triggerPrice: input.takeProfitPrice,
+    referencePrice: input.entryPrice,
+    // One attempt: an answer that fails validation with the same parameters
+    // fails again, and every extra attempt is another order on the exchange.
+    attempts: 1,
+    journal: input.journal,
+    label: "take_profit",
+  });
 }
 
 /**
@@ -261,6 +433,24 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       return refused(`the stop rounds to ${stopPrice}, which is not on the loss side of the entry price ${entryPrice}: the stop distance is smaller than one tickSize.`);
     }
 
+    // The exchange's own liquidation estimate, not the textbook 100/leverage:
+    // positionRisk after the leverage was set, or the maintenance margin ratio of
+    // the leverage bracket. A stop beyond that fires after the liquidation.
+    const liquidation = await fetchLiquidationInputs(client, { symbol, side, referencePrice: entryPrice, leverage });
+    const estimate = readLiquidationEstimate({
+      positionRisk: liquidation.positionRisk,
+      leverageBracket: liquidation.leverageBracket,
+      symbol,
+      side,
+      referencePrice: entryPrice,
+      leverage,
+    });
+    logStep(journal, "liquidation", estimate);
+    const insideLiquidation = stopInsideLiquidation({ side, entryPrice, stopPrice: stopNumber, estimate });
+    if (!insideLiquidation.ok) {
+      return refused(`the entry was not sent: ${insideLiquidation.reason ?? "the stop is not inside the liquidation estimate"}`);
+    }
+
     let takeProfitPrice: string | null = null;
     if (takeProfitPct != null) {
       const rawTp = side === "BUY" ? entryPrice * (1 + takeProfitPct / 100) : entryPrice * (1 - takeProfitPct / 100);
@@ -277,91 +467,185 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     logStep(journal, "leverage", prelude.leverage);
     logStep(journal, "marginType", prelude.margin);
 
+    // The intent is journaled BEFORE the entry is sent: a line that only exists
+    // after the exchange answered cannot prove that an ambiguous answer (a
+    // timeout, a reset) left a position behind, which is exactly the case the
+    // startup sweep has to find.
+    const clientOrderId = newClientOrderId();
+    const intentFailure = await writeJournalLine(deps, cfg.value.journalPath, {
+      ts: new Date(deps.now()).toISOString(),
+      event: "place_order_intent",
+      network: cfg.value.network,
+      symbol,
+      side,
+      orderType,
+      clientOrderId,
+      quantity,
+      entryPrice,
+      notionalUsd,
+      stopLossPct,
+      leverage,
+    });
+    if (intentFailure) {
+      return refused(`the intent could not be journaled (${intentFailure}): the order was not sent because an ambiguous outcome could not be reconstructed.`);
+    }
+    let outcomeJournaled = false;
+    const writeOutcome = async (extra: Record<string, unknown>): Promise<void> => {
+      outcomeJournaled = true;
+      const failure = await writeJournalLine(deps, cfg.value.journalPath, {
+        ts: new Date(deps.now()).toISOString(),
+        event: "place_order_outcome",
+        network: cfg.value.network,
+        symbol,
+        clientOrderId,
+        ...extra,
+      });
+      if (failure) logStep(journal, "journal_outcome", { error: failure });
+    };
+
     let entry: EntryOutcome;
     if (orderType === "post_only") {
-      entry = await postOnlyEntry(client, { symbol, side, quantity, price: bookPrice, tickSize: filters.value.tickSize }, journal);
+      entry = await postOnlyEntry(
+        client,
+        { symbol, side, quantity, price: bookPrice, tickSize: filters.value.tickSize, clientOrderId },
+        journal,
+      );
       if (!entry.ok) {
-        // Nothing filled: cancel anything resting and report. No position, so no
-        // stop was needed and the fail-closed exit is only a cleanup.
-        try {
-          logStep(journal, "cancel_after_failed_entry", await client.cancelAllOpenOrders(symbol));
-        } catch (err) {
-          logStep(journal, "cancel_after_failed_entry", { error: redactSecrets(errorMessage(err), []) });
-        }
+        // Nothing filled: cancel anything resting by clientOrderId and report. No
+        // position, so no stop was needed and the fail-closed exit is a cleanup.
+        await cancelEntry(client, entry.clientOrderId ?? clientOrderId, symbol, journal);
+        await writeOutcome({ filled: false, error: entry.error });
         return refused(`the order was not sent: ${entry.error}`);
       }
     } else {
       try {
-        const order = await client.placeOrder({ symbol, side, type: "MARKET", quantity });
+        const order = await client.placeOrder({ symbol, side, type: "MARKET", quantity, clientOrderId });
         logStep(journal, "entry_market", order);
-        entry = { ok: true, order };
+        entry = { ok: true, order, clientOrderId, filled: true, filledQty: filledQuantityOf(order) };
       } catch (err) {
         const message = redactSecrets(errorMessage(err), []);
         logStep(journal, "entry_market", { error: message });
+        // A network error, a timeout or a 5xx is NOT a rejection: the entry may
+        // have been accepted. Resolve it by clientOrderId and by position before
+        // reporting anything, so a fill is never left without a stop.
+        if (isAmbiguousError(err)) {
+          const resolution = await resolveEntry(client, { symbol, side, clientOrderId, entryPrice, quantity }, journal);
+          if (resolution.filledQty > 0) {
+            const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
+            if (!stop.ok) {
+              const aborted = await emergencyClose(client, filters.value, symbol, journal);
+              await writeOutcome({ filled: true, filledQty: resolution.filledQty, stopPlaced: false, error: stop.error });
+              return refused(
+                `the entry answer was ambiguous (${message}); ${describeFlatten(aborted)}. The protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}).`,
+              );
+            }
+            await writeOutcome({ filled: true, filledQty: resolution.filledQty, stopPlaced: true, order: resolution.order });
+            return ok(entryPayload({
+              cfg: cfg.value,
+              symbol,
+              side,
+              orderType,
+              entryPrice,
+              quantity,
+              effectiveNotionalUsd: Number(effectiveNotional.toFixed(4)),
+              notionalUsd,
+              leverage,
+              entry: resolution.order,
+              filledQty: resolution.filledQty,
+              stopPrice,
+              stopLossPct,
+              stopResponse: stop.response,
+              resting: false,
+              restingPrice: null,
+              journal,
+              warnings: [`the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`],
+              ambiguous: true,
+            }));
+          }
+          await writeOutcome({ filled: false, error: message });
+          return refused(`the entry order could not be confirmed (${message}); the lookup by clientOrderId and the position read found no fill, so no stop was armed.`);
+        }
+        await writeOutcome({ filled: false, error: message });
         return refused(`the entry order was rejected by the exchange: ${message}`);
       }
     }
 
-    const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice }, journal);
+    // The entry filled (a MARKET answer, or a post-only order that came back
+    // with an executedQty). The notional the account really carries is
+    // avgPrice * executedQty: rounding can only move it against the cap, never
+    // for us.
+    if (entry.ok) {
+      const fillQty = entry.filledQty ?? 0;
+      const avg = averagePriceOf(entry.order) ?? entryPrice;
+      const effectiveAfterFill = avg * fillQty;
+      if (fillQty > 0 && effectiveAfterFill > cfg.value.maxNotionalUsd * 1.01) {
+        const excessQty = ceilToStep(effectiveAfterFill - cfg.value.maxNotionalUsd, filters.value.stepSize);
+        if (excessQty != null && decimalNumber(excessQty) > 0) {
+          try {
+            const reduction = await client.placeOrder({
+              symbol,
+              side: side === "BUY" ? "SELL" : "BUY",
+              type: "MARKET",
+              quantity: excessQty,
+              reduceOnly: "true",
+            });
+            logStep(journal, "reduce_excess_notional", reduction);
+            excessNotionalReduced = effectiveAfterFill - cfg.value.maxNotionalUsd;
+          } catch (err) {
+            logStep(journal, "reduce_excess_notional", { error: redactSecrets(errorMessage(err), []) });
+          }
+        }
+      }
+    }
+
+    const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
     if (!stop.ok) {
       const aborted = await emergencyClose(client, filters.value, symbol, journal);
-      const closed = aborted.closeOrder
-        ? "the position was closed with a MARKET reduceOnly order"
-        : `the position could not be closed automatically (${aborted.closeError ?? "no position was open"}): MANUAL ACTION REQUIRED`;
-      return refused(`the protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}); ${closed}.`);
+      await writeOutcome({ filled: entry.filled ?? false, stopPlaced: false, error: stop.error });
+      return refused(`the protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}); ${describeFlatten(aborted)}.`);
     }
 
     let takeProfitResponse: unknown = null;
     let takeProfitWarning: string | null = null;
     if (takeProfitPrice != null) {
-      try {
-        takeProfitResponse = await client.placeAlgoOrder({
-          symbol,
-          side: side === "BUY" ? "SELL" : "BUY",
-          type: "TAKE_PROFIT_MARKET",
-          algoType: "CONDITIONAL",
-          workingType: "MARK_PRICE",
-          closePosition: "true",
-          price: takeProfitPrice,
-          timeInForce: "GTC",
-        });
-        logStep(journal, "take_profit", takeProfitResponse);
-      } catch (err) {
-        takeProfitWarning = redactSecrets(errorMessage(err instanceof BinanceError ? err.msg : err), []);
-        logStep(journal, "take_profit", { error: takeProfitWarning });
+      const tp = await placeTakeProfit(client, {
+        symbol,
+        side: side === "BUY" ? "SELL" : "BUY",
+        takeProfitPrice,
+        entryPrice,
+        journal,
+      });
+      if (tp.ok) {
+        takeProfitResponse = tp.response;
+      } else {
+        takeProfitWarning = tp.error ?? "the take profit was not placed";
       }
     }
+    await writeOutcome({ filled: entry.filled ?? false, stopPlaced: true });
 
-    return ok({
-      network: cfg.value.network,
-      symbol,
-      side,
-      orderType,
-      entryPrice,
-      quantity,
-      effectiveNotionalUsd: Number(effectiveNotional.toFixed(4)),
-      requestedNotionalUsd: notionalUsd,
-      leverage,
-      marginMode: "ISOLATED",
-      entry: entry.order,
-      resting: entry.resting ?? false,
-      restingPrice: entry.price ?? null,
-      stop: {
-        type: "STOP_MARKET",
-        side: side === "BUY" ? "SELL" : "BUY",
+    return ok(
+      entryPayload({
+        cfg: cfg.value,
+        symbol,
+        side,
+        orderType,
+        entryPrice,
+        quantity,
+        effectiveNotionalUsd: Number(effectiveNotional.toFixed(4)),
+        notionalUsd,
+        leverage,
+        entry: entry.order,
+        filledQty: entry.filledQty ?? 0,
         stopPrice,
         stopLossPct,
-        workingType: "MARK_PRICE",
-        closePosition: true,
-        algoService: "/fapi/v1/algoOrder",
-        response: stop.response,
-      },
-      takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
-      warnings: takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : [],
-      journal: cfg.value.journalPath,
-      sent: true,
-      note: `The entry and its protective stop were sent to ${cfg.value.network}. Nothing else was sent.`,
-    });
+        stopResponse: stop.response,
+        resting: entry.resting ?? false,
+        restingPrice: entry.price ?? null,
+        journal,
+        warnings: takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : [],
+        takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
+      }),
+    );
   });
 }
 

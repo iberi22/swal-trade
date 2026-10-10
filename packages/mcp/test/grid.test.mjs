@@ -358,7 +358,7 @@ test("grid_place is fail-closed when a level cannot be rested", async () => {
   await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
     assert.match(text, /could not be rested as a post-only order/);
-    assert.match(text, /The grid was cancelled/);
+    assert.match(text, /The grid was not placed/);
   });
   // Level 1 repriced once and then stopped; no stop was ever armed.
   assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);

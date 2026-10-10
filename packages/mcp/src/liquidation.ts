@@ -147,8 +147,18 @@ export interface LiquidationClient {
   leverageBracket: (symbol: string) => Promise<unknown>;
 }
 
-/** Reads positionRisk and the leverage bracket, tolerating a read failure. */
-export async function fetchLiquidationInputs(client: LiquidationClient, symbol: string): Promise<LiquidationInput & { symbol: string }> {
+/**
+ * Reads positionRisk and the leverage bracket, tolerating a read failure.
+ *
+ * A read that fails returns null for that source, not a throw: an estimate that
+ * cannot be read degrades to the simplified check, which the guard applies
+ * anyway. Throwing here would refuse an entry for a reason that has nothing to
+ * do with the order.
+ */
+export async function fetchLiquidationInputs(
+  client: LiquidationClient,
+  input: { symbol: string; side: "BUY" | "SELL"; referencePrice: number; leverage: number },
+): Promise<LiquidationInput> {
   const read = async (fn: () => Promise<unknown>): Promise<unknown> => {
     try {
       return await fn();
@@ -156,6 +166,6 @@ export async function fetchLiquidationInputs(client: LiquidationClient, symbol: 
       return null;
     }
   };
-  const [positionRisk, leverageBracket] = await Promise.all([read(() => client.positionRisk()), read(() => client.leverageBracket(symbol))]);
-  return { positionRisk, leverageBracket, symbol };
+  const [positionRisk, leverageBracket] = await Promise.all([read(() => client.positionRisk()), read(() => client.leverageBracket(input.symbol))]);
+  return { positionRisk, leverageBracket, symbol: input.symbol, side: input.side, referencePrice: input.referencePrice, leverage: input.leverage };
 }

@@ -12,6 +12,7 @@ import { createReadOnlyClient, RECV_WINDOW } from "./binance.js";
 import type { ReadOnlyClient } from "./binance.js";
 import { BinanceError, httpError } from "./errors.js";
 import { errorMessage, isRecord, redactSecrets } from "./types.js";
+import { ORDER_NOT_FOUND_CODE } from "./errors.js";
 import type { FetchLike } from "./types.js";
 
 export { BinanceError, isAmbiguousError, isRejectedError, newClientOrderId } from "./errors.js";
@@ -139,9 +140,9 @@ export function createTradingClient(options: TradingClientOptions): TradingClien
     setMarginType: (symbol, marginType) => post("/fapi/v1/marginType", { symbol, marginType }),
     placeOrder: (params) => post("/fapi/v1/order", params),
     placeAlgoOrder: (params) => post("/fapi/v1/algoOrder", params),
-    queryOrder: (symbol, origClientOrderId) => get("/fapi/v1/order", { symbol, origClientOrderId }),
+    queryOrder: (symbol, origClientOrderId) => reader.get("/fapi/v1/order", { symbol, origClientOrderId }),
     cancelOrder: (symbol, origClientOrderId) => del("/fapi/v1/order", { symbol, origClientOrderId }),
-    leverageBracket: (symbol) => get("/fapi/v1/leverageBracket", { symbol }),
+    leverageBracket: (symbol) => reader.get("/fapi/v1/leverageBracket", { symbol }),
     cancelAllOpenOrders: (symbol) => del("/fapi/v1/allOpenOrders", { symbol }),
     cancelAlgoOrders: (symbol) => del("/fapi/v1/algoOpenOrders", { symbol }),
   };

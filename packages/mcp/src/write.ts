@@ -228,29 +228,107 @@ export function algoIdOf(response: unknown): number | null {
 
 export type StopValidation = { accepted: true; algoId: number } | { accepted: false; reason: string };
 
+export type ProtectiveKind = "STOP_MARKET" | "TAKE_PROFIT_MARKET";
+
+export interface ProtectiveOutcome {
+  ok: boolean;
+  kind: ProtectiveKind;
+  response?: unknown;
+  /** The algoId the exchange echoed back, when it did. */
+  algoId?: number;
+  error?: string;
+}
+
+/** Appends one labeled exchange response to a journaled record. */
+export function logStep(journal: JournalRecord, step: string, value: unknown): void {
+  journal.exchange.push({ step, ...(typeof value === "object" && value !== null ? (value as Record<string, unknown>) : { value }) });
+}
+
 /**
- * A protective stop counts as placed only when the exchange answered with an
- * algoId AND echoed a trigger on the loss side of the entry. Anything else
- * (no algoId, no trigger, or a trigger on the wrong side) is a stop that is not
- * protecting anything, and the position has to be closed rather than left bare.
+ * Sends one protective algo order and only accepts it when the exchange proved
+ * it is live: an algoId in the answer plus a trigger echoed back on the side of
+ * the reference price that this order is supposed to fire on.
+ *
+ * A `stop` has to trigger on the LOSS side (a stop above a long entry fires
+ * after the profit); a take profit has to trigger on the PROFIT side. An answer
+ * without one of those is not a protective order, so the caller has to treat
+ * the position as unprotected.
  */
-export function validateStopResponse(input: { response: unknown; side: "BUY" | "SELL"; entryPrice: number; type: string }): StopValidation {
+export async function placeProtectiveAlgoOrder(
+  client: TradingClient,
+  input: {
+    symbol: string;
+    /** The side that closes the position. */
+    side: "BUY" | "SELL";
+    kind: ProtectiveKind;
+    triggerPrice: string;
+    /** Entry price (or worst level) the trigger is measured against. */
+    referencePrice: number;
+    attempts?: number;
+    journal: JournalRecord;
+    label: string;
+  },
+): Promise<ProtectiveOutcome> {
+  const attempts = input.attempts ?? 2;
+  let lastError = "unknown error";
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await client.placeAlgoOrder(
+        algoStopBody({ symbol: input.symbol, side: input.side, type: input.kind, triggerPrice: input.triggerPrice }),
+      );
+      const verdict = validateStopResponse({
+        response,
+        side: input.side,
+        referencePrice: input.referencePrice,
+        kind: input.kind,
+      });
+      if (verdict.accepted) {
+        logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response });
+        return { ok: true, kind: input.kind, response, algoId: verdict.algoId };
+      }
+      lastError = verdict.reason;
+      logStep(input.journal, `${input.label}_${attempt}`, { rejected: verdict.reason, response });
+    } catch (err) {
+      lastError = redactSecrets(errorMessage(err), []);
+      logStep(input.journal, `${input.label}_${attempt}`, { error: lastError });
+    }
+  }
+  return { ok: false, kind: input.kind, error: lastError };
+}
+
+/**
+ * A protective algo order counts as placed only when the exchange answered with
+ * an algoId AND echoed a trigger on the side of the reference price that this
+ * order has to fire on. Anything else (no algoId, no trigger, or a trigger on
+ * the wrong side) is a stop that is not protecting anything, and the position
+ * has to be closed rather than left bare.
+ */
+export function validateStopResponse(input: {
+  response: unknown;
+  /** The side that closes the position: SELL closes a long, BUY closes a short. */
+  side: "BUY" | "SELL";
+  referencePrice: number;
+  kind: ProtectiveKind;
+}): StopValidation {
   const algoId = algoIdOf(input.response);
   if (algoId == null) {
-    return { accepted: false, reason: "the algo order answer carries no algoId, so no stop is live on the exchange" };
+    return { accepted: false, reason: `the algo order answer for ${input.kind} carries no algoId, so no stop is live on the exchange` };
   }
   const trigger = echoedTrigger(input.response);
   if (trigger == null) {
     return {
       accepted: false,
-      reason: `the algo order answer for ${input.type} carries no triggerPrice, so the exchange has no price to fire on`,
+      reason: `the algo order answer for ${input.kind} carries no triggerPrice, so the exchange has no price to fire on`,
     };
   }
-  const onLossSide = input.side === "BUY" ? trigger < input.entryPrice : trigger > input.entryPrice;
-  if (!onLossSide) {
+  const belowReference = input.side === "SELL";
+  const required = input.kind === "STOP_MARKET" ? belowReference : !belowReference;
+  const onRequiredSide = required ? trigger < input.referencePrice : trigger > input.referencePrice;
+  if (!onRequiredSide) {
+    const wanted = input.kind === "STOP_MARKET" ? "loss" : "profit";
     return {
       accepted: false,
-      reason: `the algo order answer echoed a trigger of ${trigger}, which is not on the loss side of the entry ${input.entryPrice}`,
+      reason: `the algo order answer for ${input.kind} echoed a trigger of ${trigger}, which is not on the ${wanted} side of the reference ${input.referencePrice}`,
     };
   }
   return { accepted: true, algoId };
@@ -354,6 +432,23 @@ export interface EmergencyCloseReport {
   cancelledAlgoOrders: unknown;
   /** True only when the position is flat AND the cancellations were attempted. */
   done: boolean;
+}
+
+/**
+ * One sentence, exactly as wide as what happened.
+ *
+ * A failed flatten says so in capitals: a caller that reads "the position was
+ * closed" when it was not is a position nobody is watching. When nothing was
+ * open, the sentence says that instead of implying a close that never happened.
+ */
+export function describeFlatten(aborted: EmergencyCloseReport): string {
+  if (aborted.flatten.flat) {
+    return aborted.flatten.orders.length > 0
+      ? "the position was closed with a MARKET reduceOnly order and its orders were cancelled"
+      : "there was no open position to close and the symbol's orders were cancelled";
+  }
+  const why = aborted.flatten.error ?? aborted.flatten.dustNote ?? "the position could not be closed";
+  return `the position could NOT be closed automatically (${why}; ${aborted.flatten.remaining ?? "unknown"} still open): MANUAL ACTION REQUIRED`;
 }
 
 /**

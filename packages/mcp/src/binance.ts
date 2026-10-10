@@ -5,7 +5,7 @@ import { createHmac } from "node:crypto";
 
 import { BinanceError, httpError } from "./errors.js";
 import type { FetchLike } from "./types.js";
-import { errorMessage, redactSecrets } from "./types.js";
+import { errorMessage, isRecord, redactSecrets } from "./types.js";
 
 export { BinanceError };
 
@@ -110,8 +110,8 @@ export function createReadOnlyClient(options: ReadOnlyClientOptions): ReadOnlyCl
       for (const row of batch) {
         const key = tranIdOf(row);
         if (key != null) {
-          if (seen.has(key)) continue; // the cursor is inclusive: same row twice, counted once
-          seen.add(key);
+          if (seen.has(String(key))) continue; // the cursor is inclusive: same row twice, counted once
+          seen.add(String(key));
         }
         rows.push(row);
         added += 1;

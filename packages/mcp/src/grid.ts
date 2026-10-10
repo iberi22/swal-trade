@@ -36,6 +36,7 @@ import { loadAccountRiskView } from "./account.js";
 import { parseAccountRiskConfig } from "./config.js";
 import {
   applyLeverageAndMargin,
+  describeFlatten,
   emergencyClose,
   guardLimitsFrom,
   ok,
@@ -525,9 +526,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     if (failure) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
       return refused(
-        `level ${failure.level} at ${failure.price} could not be rested as a post-only order (${failure.error}). The grid was cancelled and any open position closed: ${
-          aborted.closeOrder ? "closed" : aborted.closeError ?? "nothing to close"
-        }.`,
+        `level ${failure.level} at ${failure.price} could not be rested as a post-only order (${failure.error}). The grid was not placed. ${describeFlatten(aborted)}.`,
       );
     }
 
@@ -535,9 +534,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     if (!stop.ok) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
       return refused(
-        `the protective stop ${plan.direction === "long" ? "below" : "above"} the grid failed after ${STOP_ATTEMPTS} attempts (${stop.error}). The grid was cancelled and any open position closed: ${
-          aborted.closeOrder ? "closed" : aborted.closeError ?? "nothing to close"
-        }.`,
+        `the protective stop ${plan.direction === "long" ? "below" : "above"} the grid failed after ${STOP_ATTEMPTS} attempts (${stop.error}). The grid was cancelled. ${describeFlatten(aborted)}.`,
       );
     }
 
