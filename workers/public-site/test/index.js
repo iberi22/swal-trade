@@ -12,3 +12,4 @@ import './analisis-csp.test.mjs';
 import './news.test.mjs';
 import './explain.test.mjs';
 import './backup.test.mjs';
+import './backup-security.test.mjs';

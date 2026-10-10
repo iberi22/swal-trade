@@ -167,6 +167,13 @@ Sobre (JSON, base64 salvo `v` e `iter`):
 { "v": 1, "kdf": "PBKDF2-SHA256", "iter": 600000, "salt": "<16B>", "iv": "<12B>", "ct": "<GCM>" }
 ```
 
+Parámetros obligatorios del sobre (se validan en el cliente y en el servidor **antes** de derivar
+ninguna clave): `iter` entero entre 600 000 y 2 000 000, sal de exactamente 16 bytes e IV de
+exactamente 12. `v`, `kdf`, `iter` y `salt` viajan además como **AAD** de AES-GCM: alterar
+cualquiera de ellos rompe la etiqueta, así que no se puede rebajar el número de iteraciones de un
+sobre ya cifrado. La frase de paso exige **12 caracteres** como mínimo, en `encryptBackup` y en la
+página (`/backup/`), que muestra el motivo cuando falta.
+
 Endpoints autenticados con `Authorization: Bearer <licencia Ed25519>` (la misma que `/guardian/`;
 clave pública en `https://pay.swal.network/v1/pubkey`, campo `spki_base64`). La clave por cuenta
 es el `sub` de la licencia.

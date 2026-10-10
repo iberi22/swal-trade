@@ -9,15 +9,23 @@
 // la clave se deriva en el cliente (PBKDF2) y NUNCA sale del navegador: ni la frase, ni la
 // clave derivada, ni el texto en claro viajan a /api/backup. Solo viaja el `sobre`.
 
-/** Versión del formato de sobre. Un cliente futuro que no la entienda, rechaza el sobre. */
+/**
+ * Versión del formato de sobre. Un cliente futuro que no la entienda, rechaza el sobre.
+ * La v1 NUNCA se desplegó: los topes de abajo se aplican a v1 en el sitio.
+ */
 export const BACKUP_ENVELOPE_VERSION = 1;
-/** KDF: PBKDF2-HMAC-SHA256. Iteraciones por defecto (>= 600.000, "o mejor si hay"). */
+/** KDF: PBKDF2-HMAC-SHA256. Iteraciones por defecto (600.000, "o mejor si hay"). */
 export const KDF_ITERATIONS = 600000;
-/** Mínimo aceptado al cifrar: por debajo de esto se usa KDF_ITERATIONS. */
+/** Topes de iteraciones aceptados: por debajo de 600.000 el KDF es demasiado barato de forzar. */
 export const MIN_KDF_ITERATIONS = 600000;
-/** Sal aleatoria: 16 bytes (128 bits). IV de AES-GCM: 12 bytes (96 bits, el recomendado). */
+export const MAX_KDF_ITERATIONS = 2000000;
+/** Sal aleatoria: exactamente 16 bytes (128 bits). IV de AES-GCM: exactamente 12 bytes (96 bits, el recomendado). */
 export const SALT_BYTES = 16;
 export const IV_BYTES = 12;
+/** Frase de paso mínimo exigido al cifrar y al restaurar (regla de revisión de seguridad). */
+export const MIN_PASSPHRASE = 12;
+/** Etiqueta del KDF: única aceptada. */
+const KDF_NAME = 'PBKDF2-SHA256';
 /** Tope de tamaño del sobre serializado: 256 KB. Lo aplica también el worker. */
 export const MAX_BACKUP_BYTES = 256 * 1024;
 
@@ -115,6 +123,45 @@ export function buildBackupData(input = {}) {
   return scrubDenied(data);
 }
 
+// ---------- parámetros del sobre: validación estricta (ANTES de cualquier KDF) ----------
+
+/**
+ * true solo si `iter` es un número entero dentro de [MIN_KDF_ITERATIONS, MAX_KDF_ITERATIONS].
+ * Se exige `typeof === 'number'`: `true`, `"600000"` o `[600000]` deben caer aquí, no en el KDF.
+ * @param {unknown} iter
+ * @returns {boolean}
+ */
+export function isValidKdfIterations(iter) {
+  return typeof iter === 'number'
+    && Number.isInteger(iter)
+    && iter >= MIN_KDF_ITERATIONS
+    && iter <= MAX_KDF_ITERATIONS;
+}
+
+/**
+ * Problema de una frase de paso, o null si sirve. Mínimo 12 caracteres (y texto, no solo espacios).
+ * @param {unknown} passphrase
+ * @returns {string|null}
+ */
+export function passphraseProblem(passphrase) {
+  if (typeof passphrase !== 'string' || !passphrase) return `Escribe una frase de paso de al menos ${MIN_PASSPHRASE} caracteres.`;
+  if (passphrase.length < MIN_PASSPHRASE) {
+    return `La frase de paso debe tener al menos ${MIN_PASSPHRASE} caracteres (ahora tiene ${passphrase.length}).`;
+  }
+  if (!passphrase.trim()) return `Escribe una frase de paso de al menos ${MIN_PASSPHRASE} caracteres.`;
+  return null;
+}
+
+/**
+ * Bytes ligados al sobre como datos adicionales (AAD) de AES-GCM: versión, KDF, iteraciones
+ * y sal. Así, alterar cualquiera de esos campos rompe la etiqueta GCM aunque el atacante
+// conserve el texto cifrado: no se puede bajar el número de iteraciones ni cambiar la sal.
+ * @returns {Uint8Array}
+ */
+export function envelopeAad(v, kdf, iter, salt) {
+  return new TextEncoder().encode(JSON.stringify([v, kdf, iter, salt]));
+}
+
 // ---------- derivación de clave y cifrado AES-256-GCM ----------
 
 /**
@@ -127,7 +174,9 @@ export function buildBackupData(input = {}) {
  * @returns {Promise<CryptoKey>}
  */
 export async function deriveKey(passphrase, salt, iterations = KDF_ITERATIONS, subtle = crypto.subtle) {
-  const iter = Math.max(MIN_KDF_ITERATIONS, Math.floor(iterations));
+  if (!isValidKdfIterations(iterations)) {
+    throw new Error(`iteraciones inválidas: deben ser un entero entre ${MIN_KDF_ITERATIONS} y ${MAX_KDF_ITERATIONS}`);
+  }
   const baseKey = await subtle.importKey(
     'raw',
     new TextEncoder().encode(passphrase),
@@ -136,7 +185,7 @@ export async function deriveKey(passphrase, salt, iterations = KDF_ITERATIONS, s
     ['deriveKey'],
   );
   return subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
     baseKey,
     { name: 'AES-GCM', length: 256 },
     false, // no extraíble
@@ -147,21 +196,34 @@ export async function deriveKey(passphrase, salt, iterations = KDF_ITERATIONS, s
 /**
  * Cifra un objeto (o texto) y devuelve el sobre versionado {v, kdf, iter, salt, iv, ct},
  * todo en base64 salvo v e iter. Sal e IV son aleatorios y nuevos en cada llamada.
+ * La frase debe tener al menos MIN_PASSPHRASE caracteres.
  * @param {unknown} plaintext
  * @param {string} passphrase
  * @param {{iterations?: number, salt?: Uint8Array, iv?: Uint8Array, subtle?: SubtleCrypto}} [opts]
  */
 export async function encryptBackup(plaintext, passphrase, opts = {}) {
   const subtle = opts.subtle ?? crypto.subtle;
-  const iterations = Math.max(MIN_KDF_ITERATIONS, Math.floor(opts.iterations ?? KDF_ITERATIONS));
+  const problem = passphraseProblem(passphrase);
+  if (problem) throw new Error(problem);
+  if (opts.iterations !== undefined && !isValidKdfIterations(opts.iterations)) {
+    throw new Error(`iteraciones inválidas: deben ser un entero entre ${MIN_KDF_ITERATIONS} y ${MAX_KDF_ITERATIONS}`);
+  }
+  const iterations = opts.iterations ?? KDF_ITERATIONS;
   const salt = opts.salt ?? randomBytes(SALT_BYTES);
   const iv = opts.iv ?? randomBytes(IV_BYTES);
+  if (!(salt instanceof Uint8Array) || salt.length !== SALT_BYTES) {
+    throw new Error(`sal inválida: deben ser exactamente ${SALT_BYTES} bytes`);
+  }
+  if (!(iv instanceof Uint8Array) || iv.length !== IV_BYTES) {
+    throw new Error(`IV inválido: deben ser exactamente ${IV_BYTES} bytes`);
+  }
   const key = await deriveKey(passphrase, salt, iterations, subtle);
   const data = typeof plaintext === 'string' ? plaintext : JSON.stringify(plaintext);
-  const ctBuf = await subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(data));
+  const aad = envelopeAad(BACKUP_ENVELOPE_VERSION, KDF_NAME, iterations, bytesToBase64(salt));
+  const ctBuf = await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, key, new TextEncoder().encode(data));
   return {
     v: BACKUP_ENVELOPE_VERSION,
-    kdf: 'PBKDF2-SHA256',
+    kdf: KDF_NAME,
     iter: iterations,
     salt: bytesToBase64(salt),
     iv: bytesToBase64(iv),
@@ -172,32 +234,27 @@ export async function encryptBackup(plaintext, passphrase, opts = {}) {
 /**
  * Descifra un sobre comprobando su integridad. La etiqueta de AES-GCM detecta tanto la
  * frase incorrecta como datos alterados: en ambos casos subtle.decrypt lanza y aquí se
- * convierte en un error legible. Devuelve el objeto (o el texto) original.
+ * convierte en un error legible. Los parámetros del sobre (v, kdf, iter, salt) viajan como
+ * AAD, así que modificarlos también rompe la etiqueta. Devuelve el objeto (o el texto) original.
  * @param {object} envelope
  * @param {string} passphrase
  * @param {{subtle?: SubtleCrypto}} [opts]
  */
 export async function decryptBackup(envelope, passphrase, opts = {}) {
   const subtle = opts.subtle ?? crypto.subtle;
-  if (!envelope || typeof envelope !== 'object') throw new Error('sobre inválido');
-  if (envelope.v !== BACKUP_ENVELOPE_VERSION) {
-    throw new Error(`versión de sobre no soportada: ${String(envelope.v)}`);
-  }
-  if (envelope.kdf !== 'PBKDF2-SHA256') {
-    throw new Error(`kdf no soportado: ${String(envelope.kdf)}`);
-  }
-  const iterations = Number(envelope.iter);
-  if (!Number.isFinite(iterations) || iterations < 1) throw new Error('iteraciones inválidas');
-  const salt = base64ToBytes(envelope.salt);
-  const iv = base64ToBytes(envelope.iv);
-  const ct = base64ToBytes(envelope.ct);
-  if (iv.length !== IV_BYTES) throw new Error('IV inválido');
-  if (ct.length < 16) throw new Error('texto cifrado inválido (falta la etiqueta GCM)');
+  // Validación de forma ANTES de derivar ninguna clave (un sobre con parámetros absurdos
+  // no debe gastar ni un ciclo de PBKDF2).
+  const parsed = parseEnvelope(envelope);
+  if (!parsed.ok) throw new Error(`sobre inválido: ${parsed.error}`);
+  const { v, kdf, iter, salt, iv, ct } = parsed.value;
+  const problem = passphraseProblem(passphrase);
+  if (problem) throw new Error(problem);
 
-  const key = await deriveKey(passphrase, salt, iterations, subtle);
+  const key = await deriveKey(passphrase, base64ToBytes(salt), iter, subtle);
+  const aad = envelopeAad(v, kdf, iter, salt);
   let ptBuf;
   try {
-    ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    ptBuf = await subtle.decrypt({ name: 'AES-GCM', iv: base64ToBytes(iv), additionalData: aad }, key, base64ToBytes(ct));
   } catch {
     throw new Error('no se pudo descifrar: frase incorrecta o datos alterados');
   }
@@ -230,7 +287,9 @@ export function measureEnvelopeBytes(envelope) {
 
 /**
  * Valida la forma de un sobre sin descifrarlo (lo usa el worker antes de guardar, y el
- * cliente al restaurar). No toca la clave ni el texto: solo estructura y tamaños.
+ * cliente al restaurar). No toca la clave ni el texto: solo estructura y tamaños. Obliga a
+ * que `iter` sea entero dentro de [600000, 2000000], la sal de 16 bytes y el IV de 12; si
+ * algo no encaja, el sobre se rechaza ANTES de derivar ninguna clave.
  * @param {unknown} envelope
  * @returns {{ok: true, value: object}|{ok: false, error: string}}
  */
@@ -238,20 +297,25 @@ export function parseEnvelope(envelope) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) return { ok: false, error: 'envelope_invalid' };
   const v = envelope.v;
   if (v !== BACKUP_ENVELOPE_VERSION) return { ok: false, error: 'envelope_version' };
-  if (envelope.kdf !== 'PBKDF2-SHA256') return { ok: false, error: 'envelope_kdf' };
-  const iter = Number(envelope.iter);
-  if (!Number.isInteger(iter) || iter < 1) return { ok: false, error: 'envelope_iter' };
+  if (envelope.kdf !== KDF_NAME) return { ok: false, error: 'envelope_kdf' };
+  // `iter` debe ser número entero dentro de los topes: antes de tocar el KDF se rechaza
+  // cualquier otra cosa (true, "600000", [600000], 1e15…).
+  const iter = envelope.iter;
+  if (!isValidKdfIterations(iter)) return { ok: false, error: 'envelope_iter' };
   for (const field of ['salt', 'iv', 'ct']) {
     if (typeof envelope[field] !== 'string' || !envelope[field]) return { ok: false, error: `envelope_${field}` };
   }
+  let saltLen;
   let ivLen;
   let ctLen;
   try {
+    saltLen = base64ToBytes(envelope.salt).length;
     ivLen = base64ToBytes(envelope.iv).length;
     ctLen = base64ToBytes(envelope.ct).length;
   } catch {
     return { ok: false, error: 'envelope_b64' };
   }
+  if (saltLen !== SALT_BYTES) return { ok: false, error: 'envelope_salt_length' };
   if (ivLen !== IV_BYTES) return { ok: false, error: 'envelope_iv_length' };
   if (ctLen < 16) return { ok: false, error: 'envelope_ct_length' };
   return { ok: true, value: { v, kdf: envelope.kdf, iter, salt: envelope.salt, iv: envelope.iv, ct: envelope.ct } };
