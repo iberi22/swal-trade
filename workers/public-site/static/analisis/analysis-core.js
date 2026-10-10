@@ -38,6 +38,11 @@ export const DEFAULTS = {
   atrPeriod: 14,
   shockK: 3,            // umbral k * mediana para velas de choque
   shockWindow: 50,      // ventana de la mediana movil
+  shockBuyShare: 0.65,  // participacion del lado comprador (taker) que hace de un choque una compra agresiva
+  shockSellShare: 0.35, // participacion del lado comprador por debajo de la cual el choque es venta agresiva
+  absorptionMaxRangeAt: 0.7, // rango maximo (x ATR) de una vela de absorcion (rango diminuto)
+  climaxLookback: 20,   // velas hacia atras para medir un movimiento extendido
+  climaxDrift: 1.5,     // desplazamiento neto (x ATR) que se considera extendido
   maxShocks: 20,
   profileBins: 24,
   rsiPeriod: 14,
@@ -65,6 +70,10 @@ export const WEIGHTS = {
   wedge: { fit: 0.3, convergence: 0.3, proximity: 0.25, recency: 0.15 },
   flag: { pole: 0.4, retrace: 0.3, tightness: 0.2, recency: 0.1 },
   candle: { shape: 0.55, context: 0.25, recency: 0.2 },
+  volumeShock: { volume: 0.5, share: 0.2, recency: 0.3 },
+  absorption: { volume: 0.4, range: 0.2, context: 0.2, recency: 0.2 },
+  delta: { priceGap: 0.3, conviction: 0.3, proximity: 0.15, recency: 0.25 },
+  climax: { extension: 0.3, volume: 0.3, reversal: 0.25, recency: 0.15 },
 };
 
 /**
@@ -175,6 +184,12 @@ function scoreStrength(kind, raw, { status = 'forming', components = null, candl
   if (kind === 'shock') strength = Math.min(strength, 0.62);
   if (kind === 'volume_profile') strength = Math.min(strength, 0.5);
   if (typeof kind === 'string' && kind.startsWith('candle_')) strength = Math.min(strength, 0.68);
+  // Flujo de volumen (agresion del tape): techos propios, por debajo de un patron de grafico.
+  // No entran en CHART_KINDS: con evidencia comparable quedan por debajo de doble techo, ruptura o divergencia.
+  if (kind === 'volume_shock_buy' || kind === 'volume_shock_sell') strength = Math.min(strength, 0.66);
+  if (kind === 'delta_divergence_bullish' || kind === 'delta_divergence_bearish') strength = Math.min(strength, 0.82);
+  if (kind === 'absorption') strength = Math.min(strength, 0.7);
+  if (kind === 'climax') strength = Math.min(strength, 0.72);
   if (!exceptional) strength = Math.min(strength, 0.98);
   else strength = Math.min(strength, 0.999);
   return { strength, exceptional };
@@ -655,6 +670,293 @@ export function volumeProfile(candles, opts = {}) {
       valueAreaLow: r4(val), valueAreaHigh: r4(vah), candlesSince: 0, distAtr: r4(distAtr), exceptional: scored.exceptional,
     },
   })];
+}
+
+// ---------- 8b. flujo de volumen: agresión del tape (delta, CVD, absorción, clímax) ----------
+// Binance futuros expone por vela el volumen de compra agresiva (taker buy base volume, índice 9)
+// y el número de trades (índice 8). Con el taker buy volume se construye el flujo:
+//   delta    = 2·takerBuy − volume   (comprador − vendedor por mercado en esa vela)
+//   cvd      = suma acumulada de delta (línea de presión compradora neta)
+//   buyShare = takerBuy / volume     (fracción del volumen del lado comprador agresivo)
+// Sin takerBuyVolume (velas antiguas) NO se inventa nada: volumeFlow devuelve null y los cuatro
+// detectores de aquí no publican nada (compatibilidad hacia atrás). strength = calidad de
+// evidencia (magnitud, convicción, recencia, cercanía), nunca una probabilidad.
+
+/**
+ * Series por vela del flujo de volumen (puro, sin red ni reloj). `null` si ninguna vela trae
+ * takerBuyVolume. Las velas sin dato aportan delta 0 y buyShare null (el CVD se mantiene).
+ */
+export function volumeFlow(candles) {
+  if (!Array.isArray(candles) || !candles.length) return null;
+  if (!candles.some((k) => Number.isFinite(k.takerBuyVolume) && Number.isFinite(k.volume) && k.volume > 0)) return null;
+  const delta = [], cvd = [], buyShare = [];
+  let acc = 0;
+  for (const k of candles) {
+    const has = Number.isFinite(k.takerBuyVolume) && Number.isFinite(k.volume) && k.volume > 0;
+    const d = has ? 2 * k.takerBuyVolume - k.volume : 0;
+    const share = has ? k.takerBuyVolume / k.volume : null;
+    acc += d;
+    delta.push(r4(d));
+    cvd.push(r4(acc));
+    buyShare.push(share == null ? null : r4(share));
+  }
+  return { delta, cvd, buyShare };
+}
+
+/** Mediana móvil del volumen de las `window` velas previas a `i` (sin incluir la vela actual). */
+function rollingMedianVolume(candles, i, window) {
+  const from = Math.max(0, i - window);
+  return median(candles.slice(from, i).map((k) => k.volume));
+}
+
+/** Choques de volumen con sesgo de agresión: volumen > k·mediana y el tape sesga compra o venta. */
+export function volumeShocks(candles, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const flow = volumeFlow(candles);
+  if (!flow) return [];
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const w = WEIGHTS.volumeShock;
+  const groups = { volume_shock_buy: [], volume_shock_sell: [] };
+  for (let i = 10; i < candles.length; i++) {
+    const medV = rollingMedianVolume(candles, i, o.shockWindow);
+    if (!(medV > 0) || !(candles[i].volume > o.shockK * medV)) continue;
+    const share = flow.buyShare[i];
+    if (share == null) continue;
+    const buy = share >= o.shockBuyShare, sell = share <= o.shockSellShare;
+    if (buy === sell) continue; // nunca true&&true; si ambos false (sin sesgo claro) se salta
+    const k = candles[i];
+    const rV = k.volume / medV;
+    const magS = sat((rV - o.shockK) / o.shockK);
+    const edge = buy ? share - o.shockBuyShare : o.shockSellShare - share;
+    const shareS = sat(edge * 5);
+    const candlesSince = n - i;
+    const price = buy ? k.high : k.low;
+    const distAtr = Math.abs(price - candles[n].close) / a;
+    const confirmPx = buy ? k.high : k.low;
+    const invalidatePx = buy ? k.low : k.high;
+    const kind = buy ? 'volume_shock_buy' : 'volume_shock_sell';
+    const raw = w.volume * magS + w.share * shareS + w.recency * boundedRecency(candlesSince, 25);
+    const scored = scoreStrength(kind, raw, { status: 'confirmed', candlesSince, distAtr, nearWeight: 0.25, nearScale: 4 });
+    const sidePct = Math.round((buy ? share : 1 - share) * 100);
+    const thPct = Math.round((buy ? o.shockBuyShare : o.shockSellShare) * 100);
+    const explanation = buy
+      ? `Compra agresiva en ${fmt(k.close)}: volumen ${rV.toFixed(1)}× lo normal con el ${sidePct}% del volumen del lado comprador (por encima de ${thPct}%). La demanda entró con fuerza. Si la vela siguiente cierra por encima de ${fmt(confirmPx)}, el impulso se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+      : `Venta agresiva en ${fmt(k.close)}: volumen ${rV.toFixed(1)}× lo normal con el ${sidePct}% del volumen del lado vendedor (participación de compra por debajo de ${thPct}%). La oferta salió con fuerza. Si la vela siguiente cierra por debajo de ${fmt(confirmPx)}, el impulso se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+    groups[kind].push(finding({
+      id: `${kind}:${k.time}`, kind, label: buy ? 'Compra agresiva' : 'Venta agresiva',
+      explanation, from: k.time, to: k.time,
+      levels: stamp([{ role: 'volume_shock', price: r4(k.close) }], confirmPx, invalidatePx),
+      direction: buy ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
+      evidence: { index: i, volumeRatio: r4(rV), buyShare: r4(share), k: o.shockK, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
+    }));
+  }
+  const cap = (arr) => arr.slice(0, o.maxShocks);
+  return [...cap(groups.volume_shock_buy), ...cap(groups.volume_shock_sell)];
+}
+
+/** Divergencia de delta: el precio hace un nuevo extremo pero el CVD (flujo) no lo acompaña. */
+export function deltaDivergence(candles, pivots, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const flow = volumeFlow(candles);
+  if (!flow) return [];
+  const a = atr(candles, o.atrPeriod);
+  const n = candles.length - 1;
+  if (!a) return [];
+  const cvd = flow.cvd;
+  const w = WEIGHTS.delta;
+  const out = [];
+  for (const type of ['low', 'high']) {
+    const bull = type === 'low';
+    const ps = pivots.filter((p) => p.type === type).slice(-3);
+    for (let k = 1; k < ps.length; k++) {
+      const p1 = ps[k - 1], p2 = ps[k];
+      const gap = p2.index - p1.index;
+      if (gap < 5 || gap > 60 || p2.index < n - o.lookbackPatterns) continue;
+      const priceDiff = bull ? p1.price - p2.price : p2.price - p1.price;                 // >0: nuevo extremo en precio
+      const cvdDiff = bull ? cvd[p2.index] - cvd[p1.index] : cvd[p1.index] - cvd[p2.index]; // >0: el CVD diverge del precio
+      if (priceDiff < 0.1 * a || cvdDiff <= 0) continue;
+      const after = candles.slice(p2.index + 1);
+      if (after.some((x) => (bull ? x.low < p2.price : x.high > p2.price))) continue; // invalidada: el extremo se superó
+      let gross = 0;
+      for (let i = p1.index; i <= p2.index; i++) gross += Math.abs(flow.delta[i]);
+      const conviction = gross > 0 ? Math.min(1, Math.abs(cvdDiff) / gross) : 0;
+      const candlesSince = n - p2.index;
+      const between = candles.slice(p1.index, p2.index + 1);
+      const confirmPx = bull ? Math.max(...between.map((x) => x.high)) : Math.min(...between.map((x) => x.low));
+      const distAtr = Math.abs(candles[n].close - p2.price) / a;
+      const components = [sat(priceDiff / a), sat(conviction * 4), sat(3 * Math.exp(-distAtr / 2)), boundedRecency(candlesSince, 35)];
+      const raw = w.priceGap * components[0] + w.conviction * components[1] + w.proximity * components[2] + w.recency * components[3];
+      const kind = bull ? 'delta_divergence_bullish' : 'delta_divergence_bearish';
+      const scored = scoreStrength(kind, raw, { status: 'confirmed', components, candlesSince, distAtr, nearWeight: 0.2, nearScale: 5 });
+      const explanation = bull
+        ? `Divergencia de delta alcista entre ${fmt(p1.price)} y ${fmt(p2.price)}: el precio hizo un mínimo más bajo, pero el flujo comprador agresivo (CVD) subió de ${cvd[p1.index].toFixed(0)} a ${cvd[p2.index].toFixed(0)}: hay compra sostenida dentro de la caída. Si cierra por encima de ${fmt(confirmPx)}, el rebote se confirma. Se invalida si cierra por debajo de ${fmt(p2.price)}.`
+        : `Divergencia de delta bajista entre ${fmt(p1.price)} y ${fmt(p2.price)}: el precio hizo un máximo más alto, pero el flujo comprador agresivo (CVD) bajó de ${cvd[p1.index].toFixed(0)} a ${cvd[p2.index].toFixed(0)}: hay venta sostenida dentro de la subida. Si cierra por debajo de ${fmt(confirmPx)}, el retroceso se confirma. Se invalida si cierra por encima de ${fmt(p2.price)}.`;
+      out.push(finding({
+        id: `delta_div:${bull ? 'bull' : 'bear'}:${p1.time}:${p2.time}`, kind,
+        label: bull ? 'Divergencia de delta alcista' : 'Divergencia de delta bajista',
+        explanation, from: p1.time, to: p2.time,
+        levels: stamp([
+          { role: 'divergence_start', price: r4(p1.price), time: p1.time },
+          { role: 'divergence_end', price: r4(p2.price), time: p2.time },
+        ], confirmPx, p2.price),
+        direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
+        evidence: {
+          price1: p1.price, price2: p2.price, cvd1: r4(cvd[p1.index]), cvd2: r4(cvd[p2.index]),
+          cvdGap: r4(cvdDiff), priceGapAtr: r4(priceDiff / a), conviction: r4(conviction),
+          barsBetween: gap, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
+        },
+      }));
+    }
+  }
+  return out;
+}
+
+/** Zona de un rol concreto solapa la vela (tolerancia 0.35 ATR), igual que las velas clásicas. */
+function zoneRoleNear(zones, k, a, role) {
+  return zones.some((z) => {
+    const lv = z.levels?.[0];
+    if (!lv || lv.role !== role) return false;
+    const low = Number.isFinite(lv.low) ? lv.low : lv.price;
+    const high = Number.isFinite(lv.high) ? lv.high : lv.price;
+    return k.low <= high + 0.35 * a && k.high >= low - 0.35 * a;
+  });
+}
+
+/** Absorción: volumen alto con rango mínimo en un swing o en una zona S/R. Un lado frena al otro. */
+export function absorption(candles, pivots, zones = [], opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const flow = volumeFlow(candles);
+  if (!flow) return [];
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const w = WEIGHTS.absorption;
+  const maxRange = o.absorptionMaxRangeAt * a;
+  const best = { buyers: null, sellers: null };
+  for (let i = Math.max(5, n - 60); i <= n; i++) {
+    const k = candles[i];
+    const range = k.high - k.low;
+    if (!(range > 0) || range > maxRange) continue;              // rango diminuto
+    const medV = rollingMedianVolume(candles, i, o.shockWindow);
+    if (!(medV > 0) || !(k.volume >= o.shockK * medV)) continue; // volumen alto
+    const rV = k.volume / medV;
+    const lowSwing = candleContext(candles, pivots, zones, i, 'low', a).swing;
+    const highSwing = candleContext(candles, pivots, zones, i, 'high', a).swing;
+    const inSupport = zoneRoleNear(zones, k, a, 'support');
+    const inResist = zoneRoleNear(zones, k, a, 'resistance');
+    let side = null;
+    if (lowSwing && !highSwing) side = 'buyers';
+    else if (highSwing && !lowSwing) side = 'sellers';
+    else if (inSupport && !inResist) side = 'buyers';
+    else if (inResist && !inSupport) side = 'sellers';
+    if (!side) continue;
+    const buyers = side === 'buyers';
+    const share = flow.buyShare[i];
+    const volS = sat((rV - o.shockK) / o.shockK);
+    const rangeS = sat((1 - range / maxRange) * 3);
+    const swing = buyers ? lowSwing : highSwing;
+    const zone = buyers ? inSupport : inResist;
+    const contextScore = swing && zone ? 1 : swing ? 0.85 : 0.7;
+    const candlesSince = n - i;
+    const distAtr = Math.abs(candles[n].close - k.close) / a;
+    const raw = w.volume * volS + w.range * rangeS + w.context * sat(contextScore * 3) + w.recency * boundedRecency(candlesSince, 25);
+    const scored = scoreStrength('absorption', raw, { status: 'confirmed', candlesSince, distAtr, nearWeight: 0.25, nearScale: 3 });
+    const item = { i, k, rV, range, share, candlesSince, distAtr, scored, lowSwing, highSwing, inSupport, inResist };
+    if (!best[side] || scored.strength > best[side].scored.strength) best[side] = item;
+  }
+  const out = [];
+  for (const side of ['buyers', 'sellers']) {
+    const it = best[side];
+    if (!it) continue;
+    const k = it.k;
+    const buyers = side === 'buyers';
+    const confirmPx = buyers ? k.high : k.low;
+    const invalidatePx = buyers ? k.low : k.high;
+    const where = buyers ? 'un mínimo o soporte' : 'un máximo o resistencia';
+    const explanation = buyers
+      ? `Absorción compradora en ${fmt(k.close)}: volumen ${it.rV.toFixed(1)}× lo normal con un rango mínimo (${fmt(it.range)} frente a ${fmt(a)} de ATR) en ${where}. Los compradores están absorbiendo la oferta: el precio no cae pese al volumen. Si cierra por encima de ${fmt(confirmPx)}, el rechazo se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`
+      : `Absorción vendedora en ${fmt(k.close)}: volumen ${it.rV.toFixed(1)}× lo normal con un rango mínimo (${fmt(it.range)} frente a ${fmt(a)} de ATR) en ${where}. Los vendedores están absorbiendo la demanda: el precio no sube pese al volumen. Si cierra por debajo de ${fmt(confirmPx)}, el rechazo se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`;
+    out.push(finding({
+      id: `absorption:${side}:${k.time}`, kind: 'absorption',
+      label: buyers ? 'Absorción compradora' : 'Absorción vendedora',
+      explanation, from: k.time, to: k.time,
+      levels: stamp([{ role: 'absorption', price: r4(k.close) }], confirmPx, invalidatePx),
+      direction: buyers ? 'up' : 'down', strength: it.scored.strength, status: 'confirmed',
+      evidence: {
+        index: it.i, volumeRatio: r4(it.rV), rangeAtAtr: r4(it.range / a), buyShare: it.share == null ? null : r4(it.share),
+        atLowSwing: it.lowSwing, atHighSwing: it.highSwing, atSupport: it.inSupport, atResist: it.inResist,
+        candlesSince: it.candlesSince, distAtr: r4(it.distAtr), exceptional: it.scored.exceptional,
+      },
+    }));
+  }
+  return out;
+}
+
+/** Clímax: choque de volumen al final de un movimiento extendido, con cierre de reversión (agotamiento). */
+export function climax(candles, opts = {}) {
+  const o = { ...DEFAULTS, ...opts };
+  const flow = volumeFlow(candles);
+  if (!flow) return [];
+  const n = candles.length - 1;
+  const a = atr(candles, o.atrPeriod);
+  if (!a) return [];
+  const w = WEIGHTS.climax;
+  const L = o.climaxLookback;
+  const best = { up: null, down: null };
+  const consider = (dir, i, k, rV, driftMag, share, rex) => {
+    const extS = sat((driftMag - o.climaxDrift) / 1.5);
+    const volS = sat((rV - o.shockK) / o.shockK);
+    const revS = sat((rex - 0.5) * 4);
+    const candlesSince = n - i;
+    const distAtr = Math.abs(candles[n].close - k.close) / a;
+    const raw = w.extension * extS + w.volume * volS + w.reversal * revS + w.recency * boundedRecency(candlesSince, 25);
+    const scored = scoreStrength('climax', raw, { status: 'confirmed', candlesSince, distAtr, nearWeight: 0.25, nearScale: 3 });
+    const item = { dir, i, k, rV, driftMag, share, rex, candlesSince, distAtr, scored };
+    if (!best[dir] || scored.strength > best[dir].scored.strength) best[dir] = item;
+  };
+  for (let i = Math.max(L + 2, 10); i <= n; i++) {
+    const k = candles[i];
+    const medV = rollingMedianVolume(candles, i, o.shockWindow);
+    if (!(medV > 0) || !(k.volume >= o.shockK * medV)) continue;
+    const rV = k.volume / medV;
+    const share = flow.buyShare[i];
+    if (share == null) continue;
+    const range = k.high - k.low;
+    if (!(range > 0)) continue;
+    const drift = (k.close - candles[i - L].close) / a; // movimiento neto de las L velas, en ATR
+    const rexUp = (k.high - k.close) / range;           // cierre en la parte baja = reversión bajista
+    const rexDn = (k.close - k.low) / range;            // cierre en la parte alta = reversión alcista
+    if (drift >= o.climaxDrift && share >= o.shockBuyShare && rexUp >= 0.5) consider('down', i, k, rV, drift, share, rexUp);
+    if (-drift >= o.climaxDrift && share <= o.shockSellShare && rexDn >= 0.5) consider('up', i, k, rV, -drift, share, rexDn);
+  }
+  const out = [];
+  for (const dir of ['down', 'up']) {
+    const it = best[dir];
+    if (!it) continue;
+    const k = it.k;
+    const buying = dir === 'down'; // clímax de compra → giro bajista; clímax de venta → giro alcista
+    const confirmPx = buying ? k.low : k.high;
+    const invalidatePx = buying ? k.high : k.low;
+    const sidePct = Math.round((buying ? it.share : 1 - it.share) * 100);
+    const explanation = buying
+      ? `Clímax de compra en ${fmt(k.high)}: volumen ${it.rV.toFixed(1)}× lo normal y compra agresiva (${sidePct}% del volumen) al final de una subida de ${L} velas, pero la vela cierra en ${fmt(k.close)}, lejos del máximo. Agotamiento: quienes empujaron el precio están repartiendo. Si cierra por debajo de ${fmt(confirmPx)}, el giro a la baja se confirma. Se invalida si cierra por encima de ${fmt(invalidatePx)}.`
+      : `Clímax de venta en ${fmt(k.low)}: volumen ${it.rV.toFixed(1)}× lo normal y venta agresiva (${sidePct}% del volumen) al final de una bajada de ${L} velas, pero la vela cierra en ${fmt(k.close)}, lejos del mínimo. Agotamiento: quienes empujaron el precio están cerrando. Si cierra por encima de ${fmt(confirmPx)}, el rebote se confirma. Se invalida si cierra por debajo de ${fmt(invalidatePx)}.`;
+    out.push(finding({
+      id: `climax:${dir}:${k.time}`, kind: 'climax',
+      label: buying ? 'Clímax de compra' : 'Clímax de venta',
+      explanation, from: candles[it.i - L].time, to: k.time,
+      levels: stamp([{ role: 'climax', price: r4(k.close) }], confirmPx, invalidatePx),
+      direction: buying ? 'down' : 'up', strength: it.scored.strength, status: 'confirmed',
+      evidence: {
+        index: it.i, volumeRatio: r4(it.rV), driftAtr: r4(it.driftMag), reversal: r4(it.rex),
+        buyShare: it.share == null ? null : r4(it.share), lookback: L,
+        candlesSince: it.candlesSince, distAtr: r4(it.distAtr), exceptional: it.scored.exceptional,
+      },
+    }));
+  }
+  return out;
 }
 
 // ---------- 9. divergencia RSI ----------
@@ -1462,7 +1764,7 @@ function selectTop(findings, limit, perKind) {
 export function analyzeSync({ symbol = '', timeframe = '', candles = [], options = {} } = {}) {
   const o = { ...DEFAULTS, ...options };
   if (!Array.isArray(candles) || candles.length < 20) {
-    return { symbol, timeframe, findings: [], top: [], trend: trendOf(candles || [], o), levels: [], pivots: [], hitRate: null };
+    return { symbol, timeframe, findings: [], top: [], trend: trendOf(candles || [], o), levels: [], pivots: [], volumeFlow: null, hitRate: null };
   }
   const pivots = findPivots(candles, o.pivotWindow);
   const trend = trendOf(candles, o);
@@ -1473,7 +1775,11 @@ export function analyzeSync({ symbol = '', timeframe = '', candles = [], options
     ...triangles(candles, pivots, o),
     ...rangeBreakout(candles, o),
     ...shocks(candles, o),
+    ...volumeShocks(candles, o),
+    ...absorption(candles, pivots, zones, o),
     ...volumeProfile(candles, o),
+    ...deltaDivergence(candles, pivots, o),
+    ...climax(candles, o),
     ...rsiDivergence(candles, pivots, o),
     ...fairValueGaps(candles, o),
     ...marketStructure(candles, pivots, o),
@@ -1487,7 +1793,7 @@ export function analyzeSync({ symbol = '', timeframe = '', candles = [], options
   findings.sort((a, b) => b.strength - a.strength || b.to - a.to);
   const top = selectTop(findings, o.topLimit, o.topPerKind);
   const levels = findings.flatMap((f) => f.levels.map((l) => ({ ...l, findingId: f.id, kind: f.kind })));
-  return { symbol, timeframe, findings, top, trend, levels, pivots };
+  return { symbol, timeframe, findings, top, trend, levels, pivots, volumeFlow: volumeFlow(candles) };
 }
 
 /** API tipo herramienta: la misma funcion puede envolverse en un servidor MCP. */
@@ -1495,13 +1801,14 @@ export async function analyze(input) {
   const res = analyzeSync(input);
   return {
     findings: res.findings, top: res.top, trend: res.trend, levels: res.levels, pivots: res.pivots,
+    volumeFlow: res.volumeFlow,
     symbol: res.symbol, timeframe: res.timeframe, generatedAt: new Date().toISOString(),
   };
 }
 
 export const TOOL_SPEC = {
   name: 'analyze_chart',
-  description: 'Detecta patrones de precio de forma determinista (pivotes, tendencia, soportes/resistencias, doble techo/suelo, hombro-cabeza-hombro, triángulos, cuñas, banderas, estructura: FVG, BOS/CHoCH, order blocks y barridos de liquidez, rupturas de rango, velas de choque, velas clásicas en contexto, perfil de volumen, divergencias RSI) y los devuelve ordenados por "fuerza del patrón" (puntuación geométrica 0-1; no es una probabilidad ni una tasa de acierto). Cada hallazgo incluye explicación en español, niveles con precios confirm e invalidate, y la evidencia numérica.',
+  description: 'Detecta patrones de precio de forma determinista (pivotes, tendencia, soportes/resistencias, doble techo/suelo, hombro-cabeza-hombro, triángulos, cuñas, banderas, estructura: FVG, BOS/CHoCH, order blocks y barridos de liquidez, rupturas de rango, velas de choque, velas clásicas en contexto, perfil de volumen, divergencias RSI y flujo de volumen: choques con agresión compradora/vendedora, divergencias de delta (CVD), absorción y clímax) y los devuelve ordenados por "fuerza del patrón" (puntuación geométrica 0-1; no es una probabilidad ni una tasa de acierto). Cada hallazgo incluye explicación en español, niveles con precios confirm e invalidate, y la evidencia numérica. Con takerBuyVolume por vela expone además volumeFlow {delta, cvd, buyShare}.',
   input_schema: {
     type: 'object',
     properties: {
@@ -1512,11 +1819,11 @@ export const TOOL_SPEC = {
         description: 'Velas ordenadas de la más antigua a la más reciente.',
         items: {
           type: 'object', required: ['time', 'open', 'high', 'low', 'close', 'volume'],
-          properties: { time: { type: 'integer', description: 'Segundos UTC de apertura' }, open: { type: 'number' }, high: { type: 'number' }, low: { type: 'number' }, close: { type: 'number' }, volume: { type: 'number' } },
+          properties: { time: { type: 'integer', description: 'Segundos UTC de apertura' }, open: { type: 'number' }, high: { type: 'number' }, low: { type: 'number' }, close: { type: 'number' }, volume: { type: 'number' }, trades: { type: 'number', description: 'Número de trades (opcional).' }, takerBuyVolume: { type: 'number', description: 'Volumen de compra agresiva (taker buy base). Opcional: sin él no hay flujo de volumen ni hallazgos de agresión.' } },
         },
       },
     },
     required: ['symbol', 'timeframe', 'candles'],
   },
-  output: 'Objeto {findings[], trend, levels[], pivots[], generatedAt}. findings[].strength es la fuerza del patrón (0-1).',
+  output: 'Objeto {findings[], trend, levels[], pivots[], volumeFlow, generatedAt}. findings[].strength es la fuerza del patrón (0-1). volumeFlow = {delta[], cvd[], buyShare[]} o null si las velas no traen takerBuyVolume.',
 };
