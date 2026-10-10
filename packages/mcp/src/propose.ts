@@ -1,16 +1,33 @@
 // Builds a proposed order. This module never calls the network and never sends an order.
 // Liquidation distance matches synapse-core sizing.rs: liquidation at 100/leverage percent,
 // and a safe stop is 80% of that distance (SAFE_SL_LIQUIDATION_FACTOR).
+//
+// The quantity is rounded down to the exchange stepSize and the resulting notional is
+// checked against MIN_NOTIONAL, so the proposal is the order that can actually be sent:
+// a quantity the exchange would reject with -1111 or -1013 is not a proposal, it is a
+// guess. The exchange filters are passed in by the caller (the server reads them from
+// exchangeInfo); when they are absent the raw math is returned with the rounding skipped
+// and a note saying so.
 
 import type { ProposalLimits } from "./config.js";
+import { decimalNumber, floorToStep } from "./decimal.js";
 import { normalizeSymbol } from "./symbol.js";
 
 export const SAFE_SL_LIQUIDATION_FACTOR = 0.8;
-export const PLACEMENT_NOTE = "Order placement tools are disabled in this build. Nothing was sent.";
+export const PLACEMENT_NOTE =
+  "This is a proposal only and nothing was sent. Placing it requires the write tools: SWAL_MCP_TRADING=enabled, and every order passes the same order guard.";
 
 export const ORDER_SIDES = ["BUY", "SELL", "LONG", "SHORT"] as const;
 export type OrderSideInput = (typeof ORDER_SIDES)[number];
 export type ExchangeSide = "BUY" | "SELL";
+
+/** Exchange filters, when the caller could read them from exchangeInfo. */
+export interface ProposalFilters {
+  stepSize?: string;
+  minQty?: string;
+  tickSize?: string;
+  minNotional?: string;
+}
 
 export interface ProposalInput {
   symbol: string;
@@ -20,6 +37,7 @@ export interface ProposalInput {
   leverage: number;
   markPrice: number;
   limits: ProposalLimits;
+  filters?: ProposalFilters | null;
 }
 
 export interface Proposal {
@@ -27,8 +45,11 @@ export interface Proposal {
   side: ExchangeSide;
   orderType: "MARKET";
   quantity: number;
+  /** Decimal string aligned to the exchange stepSize, ready to be sent. */
+  quantityString: string;
   notionalUsd: number;
   markPrice: number;
+  effectiveNotionalUsd: number;
   leverage: number;
   marginUsd: number;
   stopPrice: number;
@@ -42,6 +63,8 @@ export interface Proposal {
   withinSafeDistance: boolean;
   violations: string[];
   limits: ProposalLimits & { dailyLossEvaluated: false };
+  filters: { stepSize: string | null; minQty: string | null; tickSize: string | null; minNotional: string | null };
+  rounding: { applied: boolean; quantityBeforeRounding: number };
   sent: false;
   note: string;
 }
@@ -103,15 +126,38 @@ export function proposeFromMark(input: ProposalInput): ProposalResult {
     );
   }
 
+  // Rounding to the exchange filters. Without them the raw math is returned and
+  // the proposal says the rounding was not applied.
+  const filters = input.filters ?? null;
+  const stepSize = filters?.stepSize ?? null;
+  const rawQuantity = input.notionalUsd / input.markPrice;
+  const rounded = stepSize ? floorToStep(rawQuantity, stepSize) : null;
+  const quantity = rounded == null ? rawQuantity : decimalNumber(rounded);
+  const effectiveNotionalUsd = quantity * input.markPrice;
+  const minNotional = filters?.minNotional ? decimalNumber(filters.minNotional) : null;
+  if (rounded == null) {
+    // No filters to round to: the raw math is returned and `rounding.applied` is false.
+  } else {
+    const minQty = filters?.minQty ? decimalNumber(filters.minQty) : null;
+    if (minQty != null && quantity < minQty) {
+      violations.push(`quantity ${rounded} is below the exchange minQty ${filters?.minQty}: raise the notional`);
+    }
+    if (minNotional != null && minNotional > 0 && effectiveNotionalUsd < minNotional) {
+      violations.push(`notional ${effectiveNotionalUsd.toFixed(4)} USD after rounding is below the exchange MIN_NOTIONAL ${filters?.minNotional} USD: raise the notional`);
+    }
+  }
+
   return {
     ok: true,
     proposal: {
       symbol,
       side,
       orderType: "MARKET",
-      quantity: input.notionalUsd / input.markPrice,
+      quantity,
+      quantityString: rounded ?? String(rawQuantity),
       notionalUsd: input.notionalUsd,
       markPrice: input.markPrice,
+      effectiveNotionalUsd,
       leverage: input.leverage,
       marginUsd: input.notionalUsd / input.leverage,
       stopPrice,
@@ -125,6 +171,13 @@ export function proposeFromMark(input: ProposalInput): ProposalResult {
       withinSafeDistance: distance === null,
       violations,
       limits: { ...input.limits, dailyLossEvaluated: false },
+      filters: {
+        stepSize,
+        minQty: filters?.minQty ?? null,
+        tickSize: filters?.tickSize ?? null,
+        minNotional: filters?.minNotional ?? null,
+      },
+      rounding: { applied: rounded != null, quantityBeforeRounding: rawQuantity },
       sent: false,
       note: PLACEMENT_NOTE,
     },

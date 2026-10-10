@@ -27,16 +27,17 @@ test("default analysis core path is relative to the package", () => {
   assert.ok(resolved.endsWith(`${path.sep}workers${path.sep}public-site${path.sep}static${path.sep}analisis${path.sep}analysis-core.js`));
 });
 
-test("lists only the four read-only tools", async () => {
+test("lists the read-only tools and keeps the write tools out when the flag is off", async () => {
   await withClient({ env: {}, fetchFn: async () => jsonResponse({}) }, async (client) => {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name).sort();
-    assert.deepEqual(names, ["account_risk", "analyze_chart", "market_context", "propose_order"]);
+    assert.deepEqual(names, ["account_risk", "analyze_chart", "grid_plan", "market_context", "propose_order"]);
     const byName = Object.fromEntries(listed.tools.map((tool) => [tool.name, tool.description]));
     assert.match(byName.analyze_chart, /Strength is pattern quality, not probability/);
     assert.match(byName.market_context, /Strength is pattern quality, not probability/);
-    assert.match(byName.propose_order, /Order placement tools are disabled in this build/);
-    for (const name of names) assert.doesNotMatch(name, /place_order|grid_plan|grid_place|withdraw|cancel/);
+    assert.match(byName.propose_order, /SWAL_MCP_TRADING=enabled/);
+    assert.doesNotMatch(byName.propose_order, /Order placement tools are disabled in this build/);
+    for (const name of names) assert.doesNotMatch(name, /place_order|close_position|grid_place|withdraw|cancel/);
   });
 });
 
@@ -255,8 +256,10 @@ test("account_risk redacts secrets from transport errors", async () => {
 
 test("propose_order returns math and violations and never sends an order", async () => {
   const calls = [];
+  const exchangeInfo = { symbols: [{ symbol: "BTCUSDT", filters: [{ filterType: "LOT_SIZE", stepSize: "0.001", minQty: "0.001" }, { filterType: "PRICE_FILTER", tickSize: "0.1" }, { filterType: "MIN_NOTIONAL", notional: "5" }] }] };
   const fetchFn = async (url, init = {}) => {
     calls.push({ url: String(url), init });
+    if (String(url).includes("/fapi/v1/exchangeInfo")) return jsonResponse(exchangeInfo);
     return jsonResponse({ symbol: "BTCUSDT", markPrice: "100" });
   };
   const env = {
@@ -276,6 +279,9 @@ test("propose_order returns math and violations and never sends an order", async
       ),
     );
     assert.equal(body.quantity, 2.5);
+    assert.equal(body.quantityString, "2.5");
+    assert.equal(body.rounding.applied, true);
+    assert.equal(body.filters.minNotional, "5");
     assert.equal(body.stopPrice, 98);
     assert.equal(body.sent, false);
     assert.equal(body.withinSafeDistance, true);
@@ -283,18 +289,22 @@ test("propose_order returns math and violations and never sends an order", async
       "leverage 10x exceeds SWAL_MAX_LEVERAGE 5x",
       "notional 250 USD exceeds SWAL_MAX_NOTIONAL_USD 100",
     ]);
-    assert.match(body.note, /Nothing was sent/);
+    assert.match(body.note, /nothing was sent/i);
     assert.equal(body.limits.dailyLossEvaluated, false);
   });
-  assert.equal(calls.length, 1);
-  const url = new URL(calls[0].url);
+  assert.equal(calls.length, 2);
+  const mark = calls.find((call) => call.url.includes("/fapi/v1/premiumIndex"));
+  const info = calls.find((call) => call.url.includes("/fapi/v1/exchangeInfo"));
+  assert.ok(mark && info);
+  const url = new URL(mark.url);
   assert.equal(url.origin, "https://fapi.binance.com");
   assert.equal(url.pathname, "/fapi/v1/premiumIndex");
   assert.equal(url.searchParams.get("symbol"), "BTCUSDT");
-  assert.equal(calls[0].init.method, "GET");
-  assert.equal(calls[0].init.headers, undefined);
-  assert.equal(calls[0].init.body, undefined);
-  assert.equal(calls[0].url.includes(SECRET), false);
+  assert.equal(new URL(info.url).searchParams.get("symbol"), "BTCUSDT");
+  assert.equal(mark.init.method, "GET");
+  assert.equal(mark.init.headers, undefined);
+  assert.equal(mark.init.body, undefined);
+  assert.equal(mark.url.includes(SECRET), false);
 
   await withClient({ env, fetchFn }, async (client) => {
     const body = JSON.parse(
