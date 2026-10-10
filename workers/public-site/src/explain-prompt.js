@@ -118,7 +118,16 @@ export function findForbiddenPhrase(text) {
     .replace(/\s+/g, ' ');
   for (const phrase of FORBIDDEN_PHRASES) {
     const needle = phrase.normalize('NFD').replace(/\p{M}/gu, '');
-    if (folded.includes(needle)) return phrase;
+    let from = 0;
+    for (;;) {
+      const at = folded.indexOf(needle, from);
+      if (at < 0) break;
+      // Negated mentions are the caution we want ("no garantiza", "nada garantiza",
+      // "ni garantiza"): only an affirmative use is forbidden.
+      const before = folded.slice(Math.max(0, at - 12), at);
+      if (!/\b(no|nada|ni|nunca|sin que)\s+(se\s+)?$/.test(before)) return phrase;
+      from = at + needle.length;
+    }
   }
   return null;
 }

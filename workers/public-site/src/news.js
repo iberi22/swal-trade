@@ -431,7 +431,8 @@ export function parseFirecrawlBody(body) {
 async function providerFetch(fetchImpl, url, init, label) {
   let res;
   try {
-    res = await fetchImpl(url, { ...init, redirect: 'error' });
+    // Workers only supports 'follow' | 'manual'; a redirect is treated as a provider error.
+    res = await fetchImpl(url, { ...init, redirect: 'manual' });
   } catch (err) {
     const message = err && err.message ? String(err.message).slice(0, 180) : 'red';
     throw new Error(`${label} red ${message}`);

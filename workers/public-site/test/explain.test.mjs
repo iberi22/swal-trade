@@ -635,3 +635,11 @@ test('UI: la página tiene el botón y el descargo, y el CSS usa un solo tono', 
   const js = readFileSync(new URL('../static/analisis/analisis.js', import.meta.url), 'utf8');
   assert.match(js, /explainRequestFrom\(state\)/);
 });
+
+import { findForbiddenPhrase as _ffp } from '../src/explain-prompt.js';
+test('forbidden phrases allow negated cautions but block affirmative ones', () => {
+  assert.equal(_ffp('Este análisis no garantiza ningún resultado.'), null);
+  assert.equal(_ffp('Nada garantiza que el patrón se cumpla.'), null);
+  assert.equal(_ffp('Esto te garantiza ganancias.'), 'garantiz');
+  assert.equal(_ffp('compra ya antes de que suba'), 'compra ya');
+});

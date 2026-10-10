@@ -325,8 +325,15 @@ export function coerceExplainPayload(value) {
   if (!isObj(value)) return { ok: false, error: 'not_object' };
   let repaired = false;
 
-  let summary = cleanString(value.summary, 600);
-  if (!summary) return { ok: false, error: 'summary_missing' };
+  let summary = cleanString(value.summary ?? value.resumen ?? value.Summary, 600);
+  if (!summary) {
+    // Diagnostic without content: which keys did the model actually return?
+    console.warn('explain: summary missing; keys =', Object.keys(value).slice(0, 12).join(','));
+    if (!Array.isArray(value.scenarios) || value.scenarios.length === 0) return { ok: false, error: 'summary_missing' };
+    const names = value.scenarios.map((x) => (x && typeof x.name === 'string' ? x.name : '')).filter(Boolean).slice(0, 3);
+    summary = cleanString(`Patrones a vigilar: ${names.join(', ') || 'ver escenarios'}. Cada uno tiene su nivel de confirmación e invalidación; si se contradicen, lo prudente es esperar.`, 600);
+    repaired = true;
+  }
   if (summary !== value.summary) repaired = true;
 
   const rawScenarios = Array.isArray(value.scenarios) ? value.scenarios : null;
