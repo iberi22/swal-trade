@@ -153,6 +153,48 @@ Sin binding de IA, con JSON irrecuperable, con una frase prohibida en la respues
 
 ---
 
+## 🔐 Respaldo cifrado de extremo a extremo (Socio SWAL)
+
+Página en `/backup/`. Cifra los ajustes del guardián, los de análisis y un diario local
+en el **navegador** (`static/backup/backup-core.js`, PBKDF2-SHA256 con 600 000 iteraciones +
+AES-256-GCM) y sube **solo el sobre cifrado**. Contrato E2EE (`docs/SWAL/GOAL.md`): ni la frase
+de paso ni la clave derivada ni el texto en claro llegan al servidor; las claves de API de
+Binance nunca se incluyen (denylist en `buildBackupData`, con test adverso).
+
+Sobre (JSON, base64 salvo `v` e `iter`):
+
+```json
+{ "v": 1, "kdf": "PBKDF2-SHA256", "iter": 600000, "salt": "<16B>", "iv": "<12B>", "ct": "<GCM>" }
+```
+
+Endpoints autenticados con `Authorization: Bearer <licencia Ed25519>` (la misma que `/guardian/`;
+clave pública en `https://pay.swal.network/v1/pubkey`, campo `spki_base64`). La clave por cuenta
+es el `sub` de la licencia.
+
+| Método | Ruta | Cuerpo / respuesta | Notas |
+|---|---|---|---|
+| `PUT` | `/api/backup` | cuerpo = sobre | Tope **256 KB** (413). Guarda el sobre tal cual en D1. |
+| `GET` | `/api/backup` | `{sub, dev, updated_at, size, envelope}` | 404 si no hay respaldo. Devuelve el sobre, nunca el texto. |
+| `DELETE` | `/api/backup` | `{sub, dev, deleted:true}` | Borra el respaldo de la cuenta. |
+
+Migración `0004_backup.sql`, tabla `backups(account_sub, updated_at, size, envelope)` (una fila
+por cuenta). El límite por cuenta usa la tabla `explain_kv` como almacén clave/valor.
+
+Variables (`wrangler.toml`, todas opcionales):
+
+| Variable | Defecto | Uso |
+|---|---|---|
+| `BACKUP_LICENSE_PUBKEY` | — | Clave SPKI base64 de licencias. Si se fija, no se consulta la red. |
+| `BACKUP_RATE_LIMIT` | `60` | Peticiones por hora y cuenta, para cuidar las escrituras de D1 (límite gratuito: 100 000 al día). |
+| `BACKUP_DEV_OPEN` | — | `true` = **gratis durante desarrollo**: acepta cualquier token como cuenta `dev:<hash>`, sin licencia real. **Nunca en producción.** |
+
+Tests: `node --test workers/public-site/test/` incluye `backup.test.mjs` (ida y vuelta, frase
+incorrecta, texto alterado, unicidad de salt/IV, denylist de claves de Binance, 401/402 sin
+licencia, tope de tamaño, el servidor guarda solo el sobre sin texto en claro y el interruptor
+dev-open).
+
+---
+
 ## 🧪 Pruebas y Validación Local
 
 - **Tests unitarios del sanitizador:**
