@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "SWAL Trade — Análisis de gráficos",
+    "description": "Nombre de la extensión. Sin promesas de resultado."
+  },
+  "extDescription": {
+    "message": "Explica patrones sobre el gráfico de Binance o TradingView. No es un servicio de señales. Medimos: ningún patrón superó al azar.",
+    "description": "Descripción corta de la tienda. Máximo 132 caracteres. No prometer ganancias."
+  },
+  "actionTitle": {
+    "message": "SWAL Trade — Análisis de gráficos",
+    "description": "Tooltip del icono en la barra del navegador."
+  }
+}

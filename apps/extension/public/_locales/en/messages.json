@@ -1,0 +1,14 @@
+{
+  "extName": {
+    "message": "SWAL Trade — Chart analysis",
+    "description": "Extension name. No performance promises."
+  },
+  "extDescription": {
+    "message": "Explains patterns on the Binance or TradingView chart. Not a signal service. We measured: no pattern beat random.",
+    "description": "Store short description. 132 characters max. Do not promise profits."
+  },
+  "actionTitle": {
+    "message": "SWAL Trade — Chart analysis",
+    "description": "Toolbar icon tooltip."
+  }
+}

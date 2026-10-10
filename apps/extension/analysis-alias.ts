@@ -12,6 +12,10 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 export function analysisCoreAlias(): string {
   const real = resolve(here, '../../workers/public-site/static/analisis/analysis-core.js');
+  // Copia que `scripts/stage-analysis-core.mjs` mete en el zip de fuentes de AMO.
+  const staged = resolve(here, 'vendor/analysis-core.js');
   const stub = resolve(here, 'src/lib/analysis-core-stub.ts');
-  return existsSync(real) ? real : stub;
+  if (existsSync(real)) return real;
+  if (existsSync(staged)) return staged;
+  return stub;
 }

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>Privacidad de la extensión SWAL Trade</title>
+  <meta name="description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance y titulares en trade.swal.network. Sin claves, sin seguimiento y sin cuenta.">
+  <link rel="canonical" href="https://trade.swal.network/extension-privacy/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SWAL Trade">
+  <meta property="og:title" content="Privacidad de la extensión SWAL Trade">
+  <meta property="og:description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance y titulares en trade.swal.network. Sin claves, sin seguimiento y sin cuenta.">
+  <meta property="og:url" content="https://trade.swal.network/extension-privacy/">
+  <meta property="og:locale" content="es_CO">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="site-brand" href="/">SWAL Trade</a>
+    <nav class="site-nav" aria-label="Principal">
+      <a href="/">Inicio</a>
+      <a href="/pricing/">Precios</a>
+      <a href="/operativa/">Operativa</a>
+      <a href="/analisis/">Análisis</a>
+      <a href="/guardian/">Guardián</a>
+      <a href="/terms/">Términos</a>
+      <a href="/privacy/">Privacidad</a>
+      <a href="/extension-privacy/" aria-current="page">Extensión</a>
+      <a href="/risk/">Riesgo</a>
+      <a href="/contact/">Contacto</a>
+    </nav>
+  </header>
+  <main class="site-main">
+    <p class="eyebrow">Extensión de navegador · versión 0.1.0</p>
+    <h1>Privacidad de la extensión</h1>
+    <p class="lead">Este aviso cubre solo la extensión SWAL Trade para Chrome y Firefox. Describe qué sale del navegador. La política del sitio está en <a href="/privacy/">/privacy/</a>.</p>
+    <p>La extensión explica patrones sobre el gráfico del símbolo que tienes abierto en Binance Futures o TradingView. No es un servicio de señales. No abre ni cierra operaciones y no promete resultados. Lo medimos en BTC y ETH (1 minuto a 4 horas, regla de cierre, con comisiones y corrección estadística, 2026-10) y ningún patrón superó al azar.</p>
+
+    <h2>Qué sale del navegador</h2>
+    <p>Solo estas peticiones. La extensión no añade claves, cabeceras de autenticación ni una cookie propia. El símbolo y la temporalidad van en la URL porque el dato de mercado público se pide así.</p>
+    <table>
+      <thead>
+        <tr><th>Destino</th><th>Qué lleva la URL</th><th>Cuándo</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>GET https://fapi.binance.com/fapi/v1/klines</code></td>
+          <td>símbolo, temporalidad y límite de velas</td>
+          <td>al abrir el panel y al cambiar de par o de temporalidad</td>
+        </tr>
+        <tr>
+          <td><code>wss://fstream.binance.com/market/ws/</code> y, si esa no abre, <code>wss://fstream.binance.com/ws/</code></td>
+          <td>símbolo y temporalidad en la ruta del stream</td>
+          <td>mientras el panel sigue abierto, para la vela en curso</td>
+        </tr>
+        <tr>
+          <td><code>GET https://trade.swal.network/api/news</code></td>
+          <td><code>symbol=BTC</code> o <code>symbol=ETH</code>, y <code>limit</code></td>
+          <td>solo si el par abierto es de BTC o de ETH</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Como en cualquier conexión HTTPS o websocket, Binance y trade.swal.network ven la dirección IP de esa conexión. La extensión no le pone un identificador de usuario, no la guarda en una cuenta y no la cruza con una identidad. No hay analítica ni píxeles de seguimiento.</p>
+
+    <h2>Qué no sale</h2>
+    <ul>
+      <li>No pedimos ni enviamos claves de API, balances, órdenes, posiciones ni datos de cuenta.</li>
+      <li>No leemos cookies, formularios ni el historial del navegador.</li>
+      <li>El content script, en <code>binance.com/*/futures/*</code> y <code>tradingview.com/chart/*</code>, lee la URL, el control de temporalidad visible y, solo si la página no lo pinta, el valor de unas claves concretas de intervalo en <code>localStorage</code>. No enumera el almacenamiento. Ese valor se queda en el navegador, salvo el símbolo y la temporalidad que ya viajan en las peticiones de arriba.</li>
+      <li>Los ajustes (temporalidad por defecto, lista de símbolos y si el panel sigue a la página) se guardan en <code>storage.local</code> de la extensión. El último símbolo de la sesión, en <code>storage.session</code>. No se envían a SWAL.</li>
+      <li>Los hallazgos se calculan en el panel. No hay código remoto: la CSP de las páginas de la extensión es <code>script-src 'self'</code>.</li>
+    </ul>
+
+    <h2>Titulares</h2>
+    <p>La respuesta de <code>/api/news</code> trae título, fuente, fecha y un tono calculado por léxico. No es una recomendación. Otros símbolos no piden titulares.</p>
+
+    <h2>Contacto</h2>
+    <p>Para pedir acceso o aclarar este aviso, escribe desde <a href="/contact/">soporte@swal.network</a>. Responsable del sitio: SWAL — Laboratorio de sistemas, representado por Brahyan Belalcazar (Colombia).</p>
+    <div class="warn">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Lee el <a href="/risk/">aviso de riesgo</a>.</div>
+
+    <h2>In English</h2>
+    <p>This notice covers only the SWAL Trade browser extension (Chrome and Firefox). It explains chart patterns. It is not a signal service, it does not place orders, and it does not promise results. We measured BTC and ETH, from 1 minute to 4 hours, with a close rule, fees, and a multiplicity correction (2026-10): no pattern beat random.</p>
+    <p>What leaves the browser:</p>
+    <ul>
+      <li>Public candles: <code>GET https://fapi.binance.com/fapi/v1/klines</code> with the symbol, the timeframe, and a candle limit.</li>
+      <li>The live candle: a public websocket at <code>wss://fstream.binance.com/market/ws/</code>, falling back to <code>wss://fstream.binance.com/ws/</code>, with the symbol and the timeframe in the path.</li>
+      <li>Headlines, and only for BTC or ETH: <code>GET https://trade.swal.network/api/news?symbol=BTC|ETH&amp;limit=5</code>.</li>
+    </ul>
+    <p>The extension adds no API key, no auth header, and no cookie of its own. It does not read account data, balances, orders, forms, cookies, or browsing history. The content script reads the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
+    <p>As with any HTTPS or websocket connection, Binance and trade.swal.network see the connection's IP address. The extension does not attach a user id, store that address on an account, or link it to an identity. Questions: <a href="/contact/">soporte@swal.network</a>. The site policy is at <a href="/privacy/">/privacy/</a>.</p>
+  </main>
+  <footer class="site-footer">
+    <p id="disclaimer" class="disclaimer">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Ninguna estrategia del bot público tiene todavía una ventaja estadística validada. <a href="/risk/">Aviso de riesgo</a></p>
+    <nav aria-label="Pie"><a href="/">Inicio</a> · <a href="/pricing/">Precios</a> · <a href="/operativa/">Operativa</a> · <a href="/analisis/">Análisis</a> · <a href="/guardian/">Guardián</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a> · <a href="/extension-privacy/" aria-current="page">Extensión</a> · <a href="/risk/">Riesgo</a> · <a href="/contact/">Contacto</a></nav>
+    <p class="muted">SWAL — Laboratorio de sistemas · Código abierto bajo AGPL-3.0 · <a href="https://github.com/iberi22/swal-trade" rel="noopener">github.com/iberi22/swal-trade</a></p>
+  </footer>
+</body>
+</html>

@@ -15,9 +15,14 @@ npm run dev:firefox  # Firefox
 npm test             # temporalidades, leyenda del gráfico, titulares y ajustes
 npm run build        # Chrome → .output/chrome-mv3
 npm run build:firefox
+npm run icons        # PNG 16/32/48/128 desde public/icon/icon.svg
+npm run zip          # .output/*-chrome.zip
+npm run zip:firefox  # .output/*-firefox.zip y el zip de fuentes para AMO
 ```
 
-El alias `@swal/analysis-core` apunta a `workers/public-site/static/analisis/analysis-core.js`. Si ese archivo todavía no está, el build usa un stub que devuelve hallazgos vacíos.
+Los textos de la ficha, las justificaciones de permisos y los pasos de alta están en `docs/STORE_LISTING.md`. El aviso de la extensión es [trade.swal.network/extension-privacy/](https://trade.swal.network/extension-privacy/). Esos comandos no publican nada.
+
+El alias `@swal/analysis-core` apunta a `workers/public-site/static/analisis/analysis-core.js`. Si ese archivo todavía no está, usa `vendor/analysis-core.js` (lo copia `npm run zip` para el zip de fuentes de AMO; no se commitea) y, si tampoco está, un stub que devuelve hallazgos vacíos.
 
 ## Cargar el build en Chrome
 
@@ -51,11 +56,11 @@ En Firefox 140+ el instalador muestra que la extensión transmite "contenido del
 |---|---|
 | `sidePanel` (solo Chrome) | Abrir el panel lateral al pulsar el icono |
 | `storage` | Ajustes en `storage.local`; último símbolo y temporalidad en `storage.session`, mientras el navegador sigue abierto |
-| `https://www.binance.com/*` | Content script en `/*/futures/*`. Lee la URL, el botón de temporalidad activo y, si hace falta, la clave de `localStorage` que guarda el intervalo |
-| `https://www.tradingview.com/*` | Content script en `/chart/*`. Lee la URL, el título de la página y el control de intervalo |
-| `https://trade.swal.network/*` | Titulares públicos `GET /api/news?symbol=BTC\|ETH&limit=5` |
-| `https://fapi.binance.com/*` | Velas públicas `GET /fapi/v1/klines` |
-| `https://fstream.binance.com/*` y `wss://fstream.binance.com/*` | Websocket público de la vela en curso |
+| `https://www.binance.com/*/futures/*` | Content script en `/*/futures/*`. Lee la URL, el botón de temporalidad activo y, si hace falta, la clave de `localStorage` que guarda el intervalo |
+| `https://www.tradingview.com/chart/*` | Content script en `/chart/*`. Lee la URL, el título de la página y el control de intervalo |
+| `https://trade.swal.network/api/news*` | Titulares públicos `GET /api/news?symbol=BTC\|ETH&limit=5` |
+| `https://fapi.binance.com/fapi/v1/klines*` | Velas públicas `GET /fapi/v1/klines` |
+| `wss://fstream.binance.com/*` | Websocket público de la vela en curso (`/market/ws/` y el respaldo `/ws/`) |
 
 No pedimos `tabs`, `scripting`, `history`, `cookies` ni acceso a otros sitios. La CSP de las páginas de la extensión es `script-src 'self'; object-src 'self'`: no hay código remoto. Lightweight Charts va dentro del build (Apache-2.0).
 
