@@ -11,6 +11,7 @@ export const ANALYSIS_CORE_STUB = true;
 export function analyze(_input: AnalysisInput): AnalysisResult {
   return {
     findings: [],
+    top: [],
     trend: null,
     levels: [],
     generatedAt: new Date(0).toISOString(),

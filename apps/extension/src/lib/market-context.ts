@@ -146,6 +146,7 @@ export function detectMarketContext(input: {
   href: string;
   title?: string;
   domInterval?: string | null;
+  storageInterval?: string | null;
 }): MarketContext | null {
   let url: URL;
   try {
@@ -159,7 +160,8 @@ export function detectMarketContext(input: {
     if (!parsed) return null;
     // En Binance el intervalo pelado ("5") no cuenta: podría ser apalancamiento.
     const dom = parseIntervalLabel(input.domInterval, { bare: false });
-    const timeframe = parsed.timeframe ?? dom;
+    const stored = parseIntervalLabel(input.storageInterval, { bare: false });
+    const timeframe = parsed.timeframe ?? dom ?? stored;
     return {
       symbol: parsed.symbol,
       timeframe: timeframe ?? DEFAULT_TIMEFRAME,
@@ -172,9 +174,10 @@ export function detectMarketContext(input: {
     if (!parsed) return null;
     const title = parseTradingViewTitle(input.title ?? '');
     const dom = parseIntervalLabel(input.domInterval, { bare: true });
+    const stored = parseIntervalLabel(input.storageInterval, { bare: true });
     const symbol = parsed.symbol ?? title.symbol;
     if (!symbol) return null;
-    const timeframe = parsed.timeframe ?? dom ?? title.timeframe;
+    const timeframe = parsed.timeframe ?? dom ?? title.timeframe ?? stored;
     return {
       symbol,
       timeframe: timeframe ?? DEFAULT_TIMEFRAME,

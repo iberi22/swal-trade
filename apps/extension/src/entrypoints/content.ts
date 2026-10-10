@@ -1,10 +1,79 @@
 import { browser } from 'wxt/browser';
-import { detectMarketContext, parseIntervalLabel } from '../lib/market-context';
+import { detectMarketContext } from '../lib/market-context';
+import {
+  CONTROL_SELECTOR,
+  probeDomInterval,
+  probeStorageInterval,
+  type PageSource,
+} from '../lib/page-probe';
+
+/** Atributos que cambian cuando el usuario pulsa otro intervalo. */
+const OBSERVED_ATTRS = [
+  'class',
+  'aria-pressed',
+  'aria-checked',
+  'aria-selected',
+  'aria-current',
+  'data-value',
+  'data-interval',
+  'data-resolution',
+  'data-name',
+  'data-active',
+  'data-state',
+  'title',
+];
+
+/** Estos, si cambian, solo los lleva un control: disparan el relectura seguro. */
+const SPECIFIC_ATTRS = new Set([
+  'aria-pressed',
+  'aria-checked',
+  'data-value',
+  'data-interval',
+  'data-resolution',
+  'data-name',
+  'data-active',
+  'data-state',
+]);
+
+const INTERVAL_NAME = /interval|kline|timeframe|resolution/i;
+
+function isIntervalNode(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  if (!element || typeof element.matches !== 'function') return false;
+  const identity = `${element.id ?? ''} ${
+    typeof element.className === 'string' ? element.className : ''
+  } ${element.getAttribute('data-testid') ?? ''}`;
+  if (INTERVAL_NAME.test(identity)) return true;
+  if (element.matches(CONTROL_SELECTOR)) return true;
+  try {
+    return element.querySelector(CONTROL_SELECTOR) !== null;
+  } catch {
+    return false;
+  }
+}
 
 /**
- * Lee el símbolo y la temporalidad de la URL (y, en TradingView, del título
- * y del control de intervalo). No lee balances, órdenes, formularios, cookies
- * ni el storage de la página.
+ * Filtro de ruido: el gráfico en vivo muta cientos de nodos por segundo y
+ * releer la barra cada vez saldría caro. Solo pasan las mutaciones de un nodo
+ * que sea, contenga o se llame como un control de intervalo.
+ */
+function shouldRescan(records: MutationRecord[]): boolean {
+  for (const record of records) {
+    if (record.type === 'attributes') {
+      const name = (record.attributeName ?? '').toLowerCase();
+      if (SPECIFIC_ATTRS.has(name)) return true;
+      if (isIntervalNode(record.target)) return true;
+      continue;
+    }
+    if (isIntervalNode(record.target)) return true;
+  }
+  return false;
+}
+
+/**
+ * Lee el símbolo y la temporalidad de la URL, del DOM (barra de intervalos) y,
+ * si la página no la pinta, de la clave de storage que la guarda. No lee
+ * balances, órdenes, formularios, cookies ni el resto del almacenamiento.
  */
 export default defineContentScript({
   matches: ['https://www.binance.com/*/futures/*', 'https://www.tradingview.com/chart/*'],
@@ -15,29 +84,16 @@ export default defineContentScript({
     let lastKey = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const source = location.hostname.endsWith('tradingview.com') ? 'tradingview' : 'binance';
+    const source: PageSource = location.hostname.endsWith('tradingview.com')
+      ? 'tradingview'
+      : 'binance';
 
-    const readDomInterval = (): string | null => {
-      if (source === 'tradingview') {
-        const active = document.querySelector(
-          '#header-toolbar-intervals [aria-checked="true"], #header-toolbar-intervals [aria-pressed="true"]',
-        );
-        const text = active?.textContent?.trim() ?? '';
-        return text.length > 0 && text.length <= 8 ? text : null;
+    const readStoredInterval = (key: string): string | null => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
       }
-      const nodes = document.querySelectorAll('button, [role="tab"]');
-      for (const node of nodes) {
-        const text = node.textContent?.trim() ?? '';
-        if (text.length === 0 || text.length > 8) continue;
-        if (!parseIntervalLabel(text, { bare: false })) continue;
-        const selected =
-          node.getAttribute('aria-pressed') === 'true' ||
-          node.getAttribute('aria-selected') === 'true' ||
-          node.getAttribute('aria-checked') === 'true';
-        const cls = String(node.className ?? '');
-        if (selected || /(?:^|\s)active(?:\s|$)/i.test(cls) || cls.includes('--active')) return text;
-      }
-      return null;
     };
 
     const publish = () => {
@@ -45,7 +101,8 @@ export default defineContentScript({
         const context = detectMarketContext({
           href: location.href,
           title: document.title,
-          domInterval: readDomInterval(),
+          domInterval: probeDomInterval(document, source),
+          storageInterval: probeStorageInterval(readStoredInterval, source),
         });
         if (!context) return;
         const key = `${context.source}|${context.symbol}|${context.timeframe}|${context.timeframeInferred}`;
@@ -61,6 +118,23 @@ export default defineContentScript({
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(publish, 150);
     };
+
+    const observer = new MutationObserver((records) => {
+      if (shouldRescan(records)) schedule();
+    });
+    // La SPA de Binance y TradingView reemplaza la barra entera al cambiar de
+    // intervalo: hacen falta childList + subtree, no solo atributos.
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: OBSERVED_ATTRS,
+      characterData: true,
+    });
+
+    // Red de seguridad: si el DOM ya no cambia y el intervalo solo está en
+    // storage, el sondeo lo recoge. Una relectura cada 5 s es desdeñable.
+    const poll = setInterval(schedule, 5000);
 
     const pushState = history.pushState.bind(history);
     const replaceState = history.replaceState.bind(history);
@@ -91,20 +165,13 @@ export default defineContentScript({
     ).navigation;
     navigation?.addEventListener('navigatesuccess', schedule);
 
-    document.addEventListener(
-      'click',
-      (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        const control = target.closest('button, [role="tab"]');
-        if (!control) return;
-        const text = control.textContent?.trim() ?? '';
-        if (text.length === 0 || text.length > 8) return;
-        if (!parseIntervalLabel(text, { bare: source === 'tradingview' })) return;
-        schedule();
-      },
-      true,
-    );
+    document.addEventListener('click', schedule, true);
+
+    window.addEventListener('pagehide', () => {
+      observer.disconnect();
+      clearInterval(poll);
+      if (timer !== null) clearTimeout(timer);
+    });
 
     schedule();
   },

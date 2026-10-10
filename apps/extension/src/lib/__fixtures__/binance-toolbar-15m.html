@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Barra de intervalos de Binance Futures tal y como la pinta la SPA: un grupo
+  de botones hermanos, las seis temporalidades, y la elegida marcada con
+  aria-pressed + clase is-active.
+-->
+<html lang="en">
+  <head><title>BTCUSDT | Binance Futures</title></head>
+  <body>
+    <div class="layout">
+      <aside class="order-book">
+        <div class="price">43,501.5</div>
+        <div class="amount">1,234.50 USDT</div>
+      </aside>
+      <main class="chart-area">
+        <div
+          id="chart-toolbar"
+          class="bn-toolbar chart-toolbar"
+          role="toolbar"
+          aria-label="Chart interval"
+        >
+          <button type="button" class="interval-btn" data-value="1m">1m</button>
+          <button type="button" class="interval-btn" data-value="5m">5m</button>
+          <button
+            type="button"
+            class="interval-btn is-active"
+            data-value="15m"
+            aria-pressed="true"
+            aria-label="15 minutes"
+          >15m</button>
+          <button type="button" class="interval-btn" data-value="1h">1h</button>
+          <button type="button" class="interval-btn" data-value="4h">4h</button>
+          <button type="button" class="interval-btn" data-value="1d">1d</button>
+        </div>
+        <div class="trading-panel">
+          <button type="button" class="leverage">20x</button>
+          <button type="button" class="margin-mode">Cross</button>
+          <button type="button" class="order-type">Limit</button>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

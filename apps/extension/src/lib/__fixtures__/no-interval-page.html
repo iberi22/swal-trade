@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  Página de trading sin ninguna barra de intervalos: formulario de orden,
+  apalancamiento, cartera. El parser NO debe inventar una temporalidad.
+  Sirve de guarda contra falsos positivos de "1", "5" o "20x".
+-->
+<html lang="en">
+  <head><title>Place Order | Binance Futures</title></head>
+  <body>
+    <form class="order-form">
+      <label for="qty">Quantity</label>
+      <input id="qty" name="quantity" value="1,234.50" data-value="5" />
+      <label for="lev">Leverage</label>
+      <input id="lev" name="leverage" value="20x" />
+      <select id="order-type" name="type">
+        <option value="1">Limit</option>
+        <option value="2">Market</option>
+        <option value="3">Stop</option>
+      </select>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="false">Positions</button>
+        <button type="button" role="tab" aria-selected="true" class="active">Open Orders</button>
+      </div>
+      <table class="wallet">
+        <tr><td>Available Balance</td><td>0.00 USDT</td></tr>
+        <tr><td>Wallet Balance</td><td>0.00 USDT</td></tr>
+      </table>
+      <button type="submit" class="submit-order">Buy / Long</button>
+    </form>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # Extensión SWAL Trade
 
-Panel lateral para Chrome y Firefox. Muestra el símbolo que tienes abierto en Binance Futures o TradingView, un gráfico propio de velas y los hallazgos del núcleo de análisis. No pide claves y no lee la cuenta.
+Panel lateral para Chrome y Firefox. Muestra el símbolo que tienes abierto en Binance Futures o TradingView, un gráfico propio de velas con los niveles de cada hallazgo, los titulares del símbolo y los hallazgos del núcleo de análisis. No pide claves y no lee la cuenta.
 
 Herramienta autodirigida, no asesoría de inversión. Licencia AGPL-3.0, la misma del repositorio.
 
@@ -12,7 +12,7 @@ Desde `apps/extension`:
 npm install
 npm run dev          # Chrome, con recarga
 npm run dev:firefox  # Firefox
-npm test             # parsers y helper de hallazgos
+npm test             # temporalidades, leyenda del gráfico, titulares y ajustes
 npm run build        # Chrome → .output/chrome-mv3
 npm run build:firefox
 ```
@@ -27,6 +27,11 @@ El alias `@swal/analysis-core` apunta a `workers/public-site/static/analisis/ana
 4. "Cargar extensión descomprimida" y elige `apps/extension/.output/chrome-mv3`
 5. Abre un futuro (`https://www.binance.com/en/futures/BTCUSDT`) o un gráfico de TradingView
 6. Pulsa el icono de SWAL. El panel se abre al lado
+
+Si la barra de intervalos de la página está a la vista, el panel la sigue: cambia
+de temporalidad y el gráfico se recarga solo. Si la página la tiene plegada o
+guardada en `localStorage`, también: el content script la busca en un puñado de
+claves concretas (ver `src/lib/page-probe.ts`).
 
 ## Cargar el build en Firefox
 
@@ -45,9 +50,10 @@ En Firefox 140+ el instalador muestra que la extensión transmite "contenido del
 | Permiso | Para qué |
 |---|---|
 | `sidePanel` (solo Chrome) | Abrir el panel lateral al pulsar el icono |
-| `storage` | Recordar el último símbolo y temporalidad en `storage.session`, mientras el navegador sigue abierto |
-| `https://www.binance.com/*` | Content script en `/*/futures/*`. Lee la URL y, si hace falta, el texto del botón de temporalidad activo |
+| `storage` | Ajustes en `storage.local`; último símbolo y temporalidad en `storage.session`, mientras el navegador sigue abierto |
+| `https://www.binance.com/*` | Content script en `/*/futures/*`. Lee la URL, el botón de temporalidad activo y, si hace falta, la clave de `localStorage` que guarda el intervalo |
 | `https://www.tradingview.com/*` | Content script en `/chart/*`. Lee la URL, el título de la página y el control de intervalo |
+| `https://trade.swal.network/*` | Titulares públicos `GET /api/news?symbol=BTC\|ETH&limit=5` |
 | `https://fapi.binance.com/*` | Velas públicas `GET /fapi/v1/klines` |
 | `https://fstream.binance.com/*` y `wss://fstream.binance.com/*` | Websocket público de la vela en curso |
 
@@ -55,8 +61,28 @@ No pedimos `tabs`, `scripting`, `history`, `cookies` ni acceso a otros sitios. L
 
 ## Privacidad
 
-No hace falta una API key. La extensión no lee balances, órdenes, formularios, cookies ni el almacenamiento de Binance o TradingView. El content script solo obtiene símbolo y temporalidad.
+No hace falta una API key. La extensión no lee balances, órdenes, formularios, cookies ni datos de cuenta.
 
-Lo único que sale del navegador son peticiones de mercado público a Binance Futures (`fapi.binance.com` y `fstream.binance.com`): velas históricas y la vela en curso. El símbolo viaja en esa URL porque es un dato de mercado, no de tu cuenta. Los hallazgos se calculan en el panel. En el manifest de Firefox eso se declara como `data_collection_permissions.required: ["websiteContent"]`.
+**Símbolo y temporalidad.** El content script lee la URL, el botón de intervalo activo y, solo si la página no lo pinta, la clave de `localStorage` que guarda el intervalo. Son unas veinte claves concretas (`binance_kline_interval`, `chart_interval`…), se leen de una en una y solo su valor. **Nunca se enumera el almacenamiento**: es donde vive la información de cuenta, y no se toca.
+
+**Titulares.** `GET https://trade.swal.network/api/news?symbol=BTC|ETH&limit=5` pide solo el activo del símbolo abierto. La respuesta trae título, fuente, fecha y un tono por léxico.
+
+**Market data.** Lo demás que sale del navegador son peticiones de mercado público a Binance Futures (`fapi.binance.com` y `fstream.binance.com`): velas históricas y la vela en curso. El símbolo viaja en esa URL porque es un dato de mercado, no de tu cuenta. Los hallazgos se calculan en el panel. En el manifest de Firefox eso se declara como `data_collection_permissions.required: ["websiteContent"]`.
+
+**Ajustes.** Temporalidad por defecto, lista blanca de símbolos y si el panel sigue a la página. Van en `storage.local` de la extensión, no en la página.
 
 El websocket vive en el panel mientras está abierto. El service worker de Manifest V3 se duerme y no mantiene un socket.
+
+## Qué pinta el gráfico
+
+El núcleo (`analyzeSync`) devuelve un `top` diverso de hallazgos. La extensión dibuja
+**todos** los del `top`, no solo el elegido:
+
+- un marcador por `from`/`to` de cada hallazgo, anclado a la vela más cercana;
+- una línea sólida por cada nivel y dos líneas de decisión, `levels.confirm` y
+  `levels.invalidate`, esta última punteada;
+- una leyenda bajo el gráfico con el nombre del hallazgo y sus dos precios.
+
+Pulsar un hallazgo, en la leyenda o en la lista, lo resalta: el resto se queda en
+el mismo tono, más flojo. Sin rojo ni verde: un solo tono hueso, igual que
+`workers/public-site/static/tokens.css`.

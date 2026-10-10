@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  Caso límite: una barra de intervalos sin ninguno marcado. El parser no debe
+  elegir uno al azar; devuelve null y el panel dice que la temporalidad es
+  inferida en lugar de mentir.
+-->
+<html lang="en">
+  <head><title>BTCUSDT | Binance Futures</title></head>
+  <body>
+    <div id="chart-toolbar" class="chart-interval-toolbar" role="group">
+      <button type="button" class="interval-btn" data-value="1m">1m</button>
+      <button type="button" class="interval-btn" data-value="5m">5m</button>
+      <button type="button" class="interval-btn" data-value="4h">4h</button>
+      <button type="button" class="interval-btn" data-value="1d">1d</button>
+    </div>
+  </body>
+</html>

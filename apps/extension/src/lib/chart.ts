@@ -8,7 +8,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Candle } from './types';
-import type { ChartAnnotation } from './findings-view';
+import type { ChartAnnotation, ChartPriceLine, PriceLineKind } from './findings-view';
 
 /**
  * Mismos escalones que workers/public-site/static/tokens.css.
@@ -19,11 +19,16 @@ const FG = 'hsl(30 12% 12%)';
 const MUTED = 'hsl(30 8% 40%)';
 const GRID = 'hsl(40 18% 87%)';
 
+/** El tono es único: lo que cambia es la opacidad, nunca el color. */
+const DIM = 'hsl(30 12% 12% / 0.32)';
+const SOFT = 'hsl(30 12% 12% / 0.55)';
+
 export interface ChartHandle {
   setCandles(candles: Candle[]): void;
   updateCandle(candle: Candle): void;
   times(): number[];
-  setAnnotations(annotation: ChartAnnotation): void;
+  /** Anotaciones de todos los hallazgos; `selectedId` resalta uno. */
+  setAnnotations(annotation: ChartAnnotation, selectedId?: string | null): void;
   destroy(): void;
 }
 
@@ -44,6 +49,12 @@ function toBar(candle: Candle): Bar {
     close: candle.close,
   };
 }
+
+const LINE_KIND: Record<PriceLineKind, { lineStyle: LineStyle }> = {
+  level: { lineStyle: LineStyle.Solid },
+  confirm: { lineStyle: LineStyle.Dashed },
+  invalidate: { lineStyle: LineStyle.Dashed },
+};
 
 export function mountChart(container: HTMLElement): ChartHandle {
   const chart = createChart(container, {
@@ -75,7 +86,7 @@ export function mountChart(container: HTMLElement): ChartHandle {
     wickDownColor: FG,
   });
   const markers = createSeriesMarkers(series, []);
-  const priceLines: IPriceLine[] = [];
+  const priceLines: Array<{ line: IPriceLine; findingId: string }> = [];
   let bars: Bar[] = [];
 
   return {
@@ -100,33 +111,47 @@ export function mountChart(container: HTMLElement): ChartHandle {
     times() {
       return bars.map((bar) => bar.time as number);
     },
-    setAnnotations(annotation) {
-      for (const line of priceLines) series.removePriceLine(line);
-      priceLines.length = 0;
+    setAnnotations(annotation, selectedId = null) {
       markers.setMarkers(
-        annotation.markers.map((marker) => ({
-          time: marker.time as UTCTimestamp,
-          position: marker.position,
-          shape: marker.shape,
-          color: FG,
-          text: marker.text,
-        })),
+        annotation.markers.map((marker) => {
+          const selected = selectedId !== null && marker.findingId === selectedId;
+          return {
+            time: marker.time as UTCTimestamp,
+            position: marker.position,
+            shape: marker.shape,
+            color: selected ? FG : DIM,
+            text: selected ? marker.text : '',
+            size: selected ? 2 : 1,
+          };
+        }),
       );
+
+      for (const entry of priceLines) series.removePriceLine(entry.line);
+      priceLines.length = 0;
+
       for (const line of annotation.priceLines) {
-        priceLines.push(
-          series.createPriceLine({
-            price: line.price,
-            title: line.title,
-            color: FG,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-          }),
-        );
+        priceLines.push({
+          line: series.createPriceLine(priceLineOptions(line, selectedId)),
+          findingId: line.findingId,
+        });
       }
     },
     destroy() {
       chart.remove();
     },
+  };
+}
+
+/** Un hallazgo elegido manda: el resto se queda en el mismo tono, más flojo. */
+function priceLineOptions(line: ChartPriceLine, selectedId: string | null) {
+  const kind = LINE_KIND[line.kind] ?? LINE_KIND.level;
+  const selected = selectedId !== null && line.findingId === selectedId;
+  return {
+    price: line.price,
+    title: line.title,
+    color: selected ? FG : SOFT,
+    lineWidth: selected ? (2 as const) : (1 as const),
+    lineStyle: kind.lineStyle,
+    axisLabelVisible: selected,
   };
 }

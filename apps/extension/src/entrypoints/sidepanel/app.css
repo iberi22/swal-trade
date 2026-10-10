@@ -47,6 +47,7 @@ select {
 
 .app {
   height: 100%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -75,7 +76,8 @@ select {
 .hint,
 .trend,
 .empty,
-.live {
+.live,
+.meta {
   color: hsl(var(--muted-foreground));
   font-size: 0.78rem;
 }
@@ -100,40 +102,134 @@ select {
   text-transform: uppercase;
 }
 
+/* El gráfico tiene alto fijo para que la página del panel haga scroll, no el
+   gráfico. La leyenda va encima, en el mismo tono. */
 .chart {
-  flex: 1 1 auto;
-  min-height: 180px;
+  position: relative;
+  flex: 0 0 auto;
+  height: 15rem;
   border-radius: var(--radius);
   overflow: hidden;
   background: hsl(var(--background));
 }
 
-.findings {
+/* Leyenda del gráfico: qué pinta cada hallazgo del top y con qué precios
+   decide. Vive fuera del canvas: dentro, el lienzo se come los clics. */
+.legend {
+  margin: -0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 0 0 auto;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.legend li {
+  min-width: 0;
+}
+
+.legend button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) - 0.35rem);
+  padding: 0.2rem 0.3rem;
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.legend button:hover,
+.legend button.selected {
+  background: hsl(var(--surface));
+}
+
+.legend .swatch {
+  width: 0.7rem;
+  height: 0.15rem;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.45);
+}
+
+.legend button.selected .swatch {
+  background: hsl(var(--foreground));
+  height: 0.2rem;
+}
+
+.legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.legend-prices {
+  display: flex;
+  gap: 0.4rem;
+  color: hsl(var(--muted-foreground));
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.legend-prices [data-kind='invalidate'] {
+  color: hsl(var(--subtle-foreground));
+}
+
+.legend-empty {
+  font-size: 0.7rem;
+  color: hsl(var(--subtle-foreground));
+  padding: 0.15rem 0.2rem;
+}
+
+.findings,
+.news {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  max-height: 42%;
-  min-height: 7.5rem;
-  margin: 0 -0.85rem -0.7rem;
+  flex: 0 0 auto;
+}
+
+.findings {
+  margin: 0 -0.85rem;
   padding: 0.75rem 0.85rem 0.85rem;
   background: hsl(var(--surface));
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
-.findings h2 {
+.findings h2,
+.news h2 {
   margin: 0;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.findings ul {
+.news-state {
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: hsl(var(--subtle-foreground));
+}
+
+.findings ul,
+.news ul {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -200,4 +296,96 @@ select {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+/* Titulares: enlace, fuente, hace cuánto y tono como texto. */
+.news li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.news a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.news a:hover {
+  text-decoration: underline;
+}
+
+.news .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+}
+
+.news .sentiment {
+  font-family: var(--font-mono);
+  color: hsl(var(--subtle-foreground));
+}
+
+.news .sentiment[data-label='positivo'] {
+  color: hsl(var(--foreground));
+}
+
+/* Ajustes. storage.local, sin cuenta. */
+.settings {
+  flex: 0 0 auto;
+  background: hsl(var(--surface));
+  border-radius: var(--radius);
+  padding: 0.5rem 0.65rem;
+}
+
+.settings summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.settings .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.settings .field.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.settings input[type='text'],
+.settings select {
+  background: hsl(var(--background));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.2rem);
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  color: hsl(var(--foreground));
+}
+
+.settings select {
+  text-transform: none;
+  font-family: var(--font-sans);
+}
+
+.settings code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
 }

@@ -10,6 +10,23 @@ export interface MarketContext {
   timeframeInferred: boolean;
 }
 
+/**
+ * Nivel de decisión de un hallazgo. El núcleo rellena `confirm` e
+ * `invalidate` en cada nivel con los precios de decisión del patrón.
+ * `levels: []` en los hallazgos antiguos: se acepta también el número pelado.
+ */
+export interface FindingLevel {
+  /** Papel del nivel dentro del patrón: cuello, soporte, val, trough… */
+  role?: string;
+  price: number;
+  /** Precio que confirma el patrón si el cierre lo atraviesa. */
+  confirm?: number;
+  /** Precio que invalida el patrón si el cierre lo atraviesa. */
+  invalidate?: number;
+  /** Otros campos numéricos del núcleo (low, high, touches…). */
+  [key: string]: unknown;
+}
+
 /** Vela en segundos unix, el contrato de `analyze`. */
 export interface Candle {
   time: number;
@@ -27,9 +44,11 @@ export interface Finding {
   explanation: string;
   from: number;
   to: number;
-  levels: number[];
+  levels: Array<FindingLevel | number>;
   direction: string;
   strength: number;
+  /** `confirmed` cuando el patrón ya cerró; `forming` mientras se forma. */
+  status?: string;
   evidence: unknown;
 }
 
@@ -41,6 +60,8 @@ export interface AnalysisInput {
 
 export interface AnalysisResult {
   findings: Finding[];
+  /** Subconjunto diverso de `findings`: lo que se dibuja en el gráfico. */
+  top: Finding[];
   trend: string | null;
   levels: number[];
   generatedAt: string;

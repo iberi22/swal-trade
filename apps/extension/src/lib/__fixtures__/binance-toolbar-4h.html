@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  La misma barra después de que el usuario pulse "4h". La SPA mueve aria-pressed
+  y la clase activa, no recrea el grupo: el parser debe seguir al cambio.
+-->
+<html lang="en">
+  <head><title>BTCUSDT | Binance Futures</title></head>
+  <body>
+    <div class="chart-area">
+      <div
+        id="chart-toolbar"
+        class="bn-toolbar chart-toolbar"
+        role="toolbar"
+        aria-label="Chart interval"
+      >
+        <button type="button" class="interval-btn" data-value="1m">1m</button>
+        <button type="button" class="interval-btn" data-value="5m">5m</button>
+        <button type="button" class="interval-btn" data-value="15m">15m</button>
+        <button type="button" class="interval-btn" data-value="1h">1h</button>
+        <button
+          type="button"
+          class="interval-btn is-active"
+          data-value="4h"
+          aria-pressed="true"
+          aria-label="4 hours"
+        >4h</button>
+        <button type="button" class="interval-btn" data-value="1d">1d</button>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,4 +1,5 @@
-import { isMarketContext, type MarketContext } from './market-context';
+import { isMarketContext } from './market-context';
+import type { MarketContext } from './types';
 
 export interface MarketContextMessage {
   type: 'market-context';

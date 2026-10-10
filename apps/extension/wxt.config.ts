@@ -32,6 +32,7 @@ export default defineConfig({
     host_permissions: [
       'https://www.binance.com/*',
       'https://www.tradingview.com/*',
+      'https://trade.swal.network/*',
       'https://fapi.binance.com/*',
       'https://fstream.binance.com/*',
       'wss://fstream.binance.com/*',

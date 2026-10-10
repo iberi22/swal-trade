@@ -1,5 +1,5 @@
 import * as coreModule from '@swal/analysis-core';
-import type { AnalysisInput, AnalysisResult } from './types';
+import type { AnalysisInput, AnalysisResult, Finding } from './types';
 
 /**
  * Punto de integración con el núcleo determinista compartido.
@@ -22,6 +22,19 @@ interface AnalysisCoreModule {
 
 const core = coreModule as AnalysisCoreModule;
 
+/** Fallback de `top` si el núcleo no lo devuelve: fuerza primero, máx. 2 por tipo. */
+export const TOP_LIMIT = 5;
+export const TOP_PER_KIND = 2;
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asFindings(value: unknown): Finding[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Finding => isRecordLike(item) && typeof item.id === 'string');
+}
+
 export const usingAnalysisStub = core.ANALYSIS_CORE_STUB === true;
 
 function pickAnalyze(mod: AnalysisCoreModule): ((input: AnalysisInput) => unknown) | null {
@@ -39,6 +52,7 @@ function pickAnalyze(mod: AnalysisCoreModule): ((input: AnalysisInput) => unknow
 function emptyResult(): AnalysisResult {
   return {
     findings: [],
+    top: [],
     trend: null,
     levels: [],
     generatedAt: new Date(0).toISOString(),
@@ -56,24 +70,50 @@ function trendText(trend: unknown): string | null {
 function toResult(raw: unknown): AnalysisResult | null {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof (raw as { then?: unknown }).then === 'function') return null;
-  const rec = raw as { findings?: unknown; trend?: unknown; levels?: unknown; generatedAt?: unknown };
+  const rec = raw as { findings?: unknown; top?: unknown; trend?: unknown; levels?: unknown; generatedAt?: unknown };
   if (!Array.isArray(rec.findings)) return null;
   const levels = Array.isArray(rec.levels)
     ? rec.levels.filter((level): level is number => typeof level === 'number' && Number.isFinite(level))
     : [];
   return {
-    findings: rec.findings as AnalysisResult['findings'],
+    findings: asFindings(rec.findings),
+    top: asFindings(rec.top),
     trend: trendText(rec.trend),
     levels,
     generatedAt: typeof rec.generatedAt === 'string' ? rec.generatedAt : new Date().toISOString(),
   };
 }
 
+/**
+ * `analyzeSync` devuelve `top`; `analyze` también. Si un núcleo antiguo solo
+ * trae `findings`, el panel deriva un `top` diverso para no perder el gráfico.
+ */
+function selectTopFallback(findings: readonly Finding[]): Finding[] {
+  const ranked = findings
+    .map((finding, index) => ({ finding, index }))
+    .sort(
+      (a, b) =>
+        Number(b.finding.strength ?? 0) - Number(a.finding.strength ?? 0) || a.index - b.index,
+    );
+  const perKind = new Map<string, number>();
+  const out: Finding[] = [];
+  for (const { finding } of ranked) {
+    const kind = String(finding.kind ?? '');
+    const seen = perKind.get(kind) ?? 0;
+    if (seen >= TOP_PER_KIND) continue;
+    perKind.set(kind, seen + 1);
+    out.push(finding);
+    if (out.length >= TOP_LIMIT) break;
+  }
+  return out;
+}
+
 export function analyze(input: AnalysisInput): AnalysisResult {
   const fn = pickAnalyze(core);
   if (!fn) return emptyResult();
   try {
-    return toResult(fn(input)) ?? emptyResult();
+    const result = toResult(fn(input)) ?? emptyResult();
+    return { ...result, top: result.top.length > 0 ? result.top : selectTopFallback(result.findings) };
   } catch {
     return emptyResult();
   }
