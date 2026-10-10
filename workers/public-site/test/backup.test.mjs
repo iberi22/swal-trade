@@ -109,16 +109,22 @@ function fakeDb() {
   };
 }
 
-const req = (method, envelope, token) => new Request('https://trade.swal.network/api/backup', {
+/** Host de producción: el modo desarrollo NUNCA debe colarse aquí. */
+const PROD_URL = 'https://trade.swal.network/api/backup';
+/** Host local (wrangler dev): único sitio donde el modo desarrollo tiene sentido. */
+const LOCAL_URL = 'http://localhost:8787/api/backup';
+
+const req = (method, envelope, token, url = PROD_URL, extraHeaders = {}) => new Request(url, {
   method,
   headers: {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(envelope ? { 'Content-Type': 'application/json' } : {}),
+    ...extraHeaders,
   },
   body: envelope ? JSON.stringify(envelope) : undefined,
 });
 
-const freshDeps = (pubkeyB64) => ({ pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW, rateStore: explainStore({}) });
+const freshDeps = (pubkeyB64) => ({ pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
 
 // ---------- cliente: ida y vuelta, adverso, unicidad, formato ----------
 
@@ -353,7 +359,7 @@ test('servidor: limita peticiones por cuenta (429 con Retry-After)', async () =>
 test('dev-open: con el flag acepta cualquier token como cuenta dev; sin flag, 401', async () => {
   // Con BACKUP_DEV_OPEN=true: token arbitrario -> cuenta dev:<hash>, sin licencia real.
   const devEnv = { DB: fakeDb(), BACKUP_DEV_OPEN: 'true' };
-  const resDev = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-de-desarrollo-libre'), devEnv, { nowSec: NOW_SEC, nowMs: NOW, rateStore: explainStore({}) });
+  const resDev = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-de-desarrollo-libre', LOCAL_URL), devEnv, { nowSec: NOW_SEC, nowMs: NOW });
   assert.equal(resDev.status, 200);
   const devBody = await resDev.json();
   assert.equal(devBody.dev, true);
@@ -361,21 +367,21 @@ test('dev-open: con el flag acepta cualquier token como cuenta dev; sin flag, 40
 
   // Sin el flag y sin licencia válida: 401 (aunque pueda resolverse la pubkey).
   const prodEnv = { DB: fakeDb() };
-  const res = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-cualquiera'), prodEnv, { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC, nowMs: NOW, rateStore: explainStore({}) });
+  const res = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-cualquiera', LOCAL_URL), prodEnv, { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
   assert.equal(res.status, 401);
 
   // dev-open false explícito no activa el modo desarrollo.
-  const off = await handleBackupRequest(req('PUT', fakeEnvelope(), 'x'), { DB: fakeDb(), BACKUP_DEV_OPEN: 'false' }, { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC, nowMs: NOW, rateStore: explainStore({}) });
+  const off = await handleBackupRequest(req('PUT', fakeEnvelope(), 'x', LOCAL_URL), { DB: fakeDb(), BACKUP_DEV_OPEN: 'false' }, { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
   assert.equal(off.status, 401);
 });
 
 test('dev-open: authorizeBackup separa las cuentas de desarrollo de las reales', async () => {
   const { pubkeyB64, token } = await makeSigner();
-  const authDev = await authorizeBackup(req('GET', null, 'abc'), { BACKUP_DEV_OPEN: true }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC });
+  const authDev = await authorizeBackup(new Request(LOCAL_URL, { headers: { Authorization: 'Bearer abc' } }), { BACKUP_DEV_OPEN: true }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC });
   assert.equal(authDev.ok, true);
   assert.ok(authDev.sub.startsWith('dev:'));
   const real = await token({ sub: 'acc_real', exp: NOW_SEC + 3600 });
-  const authReal = await authorizeBackup(req('GET', null, real), { BACKUP_DEV_OPEN: true }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC });
+  const authReal = await authorizeBackup(new Request(LOCAL_URL, { headers: { Authorization: `Bearer ${real}` } }), { BACKUP_DEV_OPEN: true }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC });
   assert.deepEqual(authReal, { ok: true, sub: 'acc_real', dev: false });
 });
 

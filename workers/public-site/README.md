@@ -193,7 +193,7 @@ Variables (`wrangler.toml`, todas opcionales):
 |---|---|---|
 | `BACKUP_LICENSE_PUBKEY` | — | Clave SPKI base64 de licencias. Si se fija, no se consulta la red. |
 | `BACKUP_RATE_LIMIT` | `60` | Peticiones por hora y cuenta, para cuidar las escrituras de D1 (límite gratuito: 100 000 al día). |
-| `BACKUP_DEV_OPEN` | — | `true` = **gratis durante desarrollo**: acepta cualquier token como cuenta `dev:<hash>`, sin licencia real. **Nunca en producción.** |
+| `BACKUP_DEV_OPEN` | — | `true` = **gratis durante desarrollo**: acepta cualquier token como cuenta `dev:<hash>`, sin licencia real. Solo tiene efecto en `localhost` / `127.0.0.1` / `::1` / `*.workers.dev`; en `trade.swal.network` (o cualquier otro host) se ignora y la petición se trata como licencia inválida (401). |
 
 Tests: `node --test workers/public-site/test/` incluye `backup.test.mjs` (ida y vuelta, frase
 incorrecta, texto alterado, unicidad de salt/IV, denylist de claves de Binance, 401/402 sin

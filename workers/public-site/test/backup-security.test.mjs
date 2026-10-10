@@ -2,7 +2,7 @@
 //   1. Parámetros del sobre (iter/salt/iv) validados ANTES del KDF y ligados como AAD.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleBackupRequest, verifyBackupLicense } from '../src/backup.js';
+import { authorizeBackup, devOpenHostAllowed, handleBackupRequest, verifyBackupLicense } from '../src/backup.js';
 import {
   BACKUP_ENVELOPE_VERSION,
   IV_BYTES,
@@ -24,6 +24,8 @@ const NOW = Date.parse('2026-10-10T12:00:00.000Z');
 const NOW_SEC = Math.floor(NOW / 1000);
 const PASS = 'frase-de-paso-larga-y-segura-42';
 const PROD_URL = 'https://trade.swal.network/api/backup';
+const LOCAL_URL = 'http://127.0.0.1:8787/api/backup';
+const PREVIEW_URL = 'https://swal-trade-public-site.worker-dev.example.workers.dev/api/backup';
 
 async function makeSigner() {
   const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
@@ -269,4 +271,54 @@ test('licencia: la fila se busca SOLO por sub (sin account/account_id)', async (
   const res2 = await handleBackupRequest(req('PUT', fakeEnvelope(), noSub, PROD_URL), { DB: fakeDb() }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
   assert.equal(res2.status, 401);
   assert.equal((await res2.json()).error, 'license_no_sub');
+});
+
+// ---------- 5. dev-open solo en localhost ----------
+
+test('dev-open: se acepta en localhost y en *.workers.dev, nunca en el dominio público', () => {
+  assert.equal(devOpenHostAllowed(new Request(LOCAL_URL)), true);
+  assert.equal(devOpenHostAllowed(new Request('http://localhost:8787/api/backup')), true);
+  assert.equal(devOpenHostAllowed(new Request('http://127.0.0.1:8787/api/backup')), true);
+  assert.equal(devOpenHostAllowed(new Request('http://[::1]:8787/api/backup')), true);
+  assert.equal(devOpenHostAllowed(new Request(PREVIEW_URL)), true);
+  // Producción y cualquier otro host: prohibido.
+  assert.equal(devOpenHostAllowed(new Request(PROD_URL)), false);
+  assert.equal(devOpenHostAllowed(new Request('https://trade.swal.network.evil.com/api/backup')), false);
+  assert.equal(devOpenHostAllowed(new Request('https://workers.dev.ejemplo.com/api/backup')), false);
+});
+
+test('dev-open: con el flag activo, en trade.swal.network NO se acepta un token sin licencia', async () => {
+  const { pubkeyB64 } = await makeSigner();
+  const env = { DB: fakeDb(), BACKUP_DEV_OPEN: true };
+  const deps = { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW };
+  const res = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-de-desarrollo-libre', PROD_URL), env, deps);
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).error, 'license_invalid');
+  // Nada se guarda y el límite ni se reclama.
+  assert.equal(env.DB.rows.size, 0);
+  assert.equal(env.DB.rates.size, 0);
+
+  // El mismo token sí funciona en localhost.
+  const local = await handleBackupRequest(req('PUT', fakeEnvelope(), 'token-de-desarrollo-libre', LOCAL_URL), env, deps);
+  assert.equal(local.status, 200);
+  const localBody = await local.json();
+  assert.equal(localBody.dev, true);
+  assert.match(localBody.sub, /^dev:[0-9a-f]{32}$/);
+});
+
+test('dev-open: en producción una licencia válida sigue funcionando con el flag puesto', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const t = await token({ sub: 'acc_prod', exp: NOW_SEC + 3600 });
+  const res = await handleBackupRequest(req('PUT', fakeEnvelope(), t, PROD_URL), { DB: fakeDb(), BACKUP_DEV_OPEN: 'true' }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).dev, false);
+});
+
+test('dev-open: authorizeBackup no marca dev fuera de un host local', async () => {
+  const auth = await authorizeBackup(
+    new Request(PROD_URL, { headers: { Authorization: 'Bearer x' } }),
+    { BACKUP_DEV_OPEN: true },
+    { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC },
+  );
+  assert.deepEqual(auth, { ok: false, status: 401, error: 'license_invalid' });
 });

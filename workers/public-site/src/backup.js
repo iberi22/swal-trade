@@ -129,6 +129,34 @@ export function devOpenEnabled(env) {
   return v === true || v === 'true' || v === '1';
 }
 
+/**
+ * Host de la petición ("trade.swal.network"), o cadena vacía si no se puede determinar.
+ * No registra nada: solo se usa para decidir si el modo desarrollo puede aplicarse.
+ * @param {Request} request
+ * @returns {string}
+ */
+function requestHost(request) {
+  try {
+    return new URL(request.url).hostname;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * true solo en localhost / 127.0.0.1 / ::1 / *.workers.dev (previsualizaciones de Cloudflare).
+ * Cualquier otro host (producción incluida) bloquea el modo desarrollo: el flag nunca debe
+ * poder aceptar tokens sin licencia real en el dominio público.
+ * @param {Request} request
+ * @returns {boolean}
+ */
+export function devOpenHostAllowed(request) {
+  const host = requestHost(request).toLowerCase();
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') return true;
+  return DEV_ALLOWED_SUFFIXES.some((suffix) => host.endsWith(`.${suffix}`));
+}
+
 function bearerToken(request) {
   const auth = request.headers.get('Authorization') || '';
   return auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
@@ -142,7 +170,7 @@ export async function authorizeBackup(request, env, deps = {}) {
   const token = bearerToken(request);
   if (!token) return { ok: false, status: 401, error: 'license_required' };
 
-  const devOpen = devOpenEnabled(env);
+  const devOpen = devOpenEnabled(env) && devOpenHostAllowed(request);
   let pubkey = null;
   try {
     pubkey = await resolveBackupPubkey(env, deps);
