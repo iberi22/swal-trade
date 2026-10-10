@@ -5,6 +5,7 @@ import {
   triangles, rangeBreakout, shocks, volumeProfile, rsiDivergence, ema, rsi, CHART_KINDS,
   fairValueGaps, marketStructure, orderBlocks, liquiditySweeps, headAndShoulders, wedges, flags,
   candlestickPatterns,
+  volumeFlow, volumeShocks, deltaDivergence, absorption, climax,
 } from '../static/analisis/analysis-core.js';
 
 // Velas sinteticas: cierre lineal entre puntos de paso [indice, precio]; mechas fijas de 0.3.
@@ -512,4 +513,166 @@ test('cada hallazgo trae levels.confirm y levels.invalidate', () => {
     }
     for (const n of Object.values(counts)) assert.ok(n <= 2);
   }
+});
+
+// ---------- flujo de volumen: agresión del tape (takerBuyVolume) ----------
+// Velas sintéticas con dato de agresión. [open, high, low, close, volume, takerBuyVolume?, trades?]
+function flowRows(rows) {
+  return rows.map((r, i) => {
+    const c = { time: 1_700_000_000 + i * 60, open: r[0], high: r[1], low: r[2], close: r[3], volume: r[4] };
+    if (r[5] != null) c.takerBuyVolume = r[5];
+    if (r[6] != null) c.trades = r[6];
+    return c;
+  });
+}
+// Tramo tranquilo: sube/baja poco, volumen constante 100, taker 55 (buyShare 0.55, sin sesgo).
+function calmRun(n, start = 100, step = 0) {
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const p = start + step * i;
+    rows.push([p, p + 0.2, p - 0.2, p, 100, 55, 12]);
+  }
+  return flowRows(rows);
+}
+
+test('flujo de volumen: delta, cvd y buyShare; null sin takerBuyVolume', () => {
+  const f = volumeFlow([
+    { time: 1, open: 10, high: 11, low: 9, close: 10, volume: 100, takerBuyVolume: 80 },
+    { time: 2, open: 10, high: 12, low: 9, close: 11, volume: 100, takerBuyVolume: 40 },
+    { time: 3, open: 11, high: 13, low: 10, close: 12, volume: 100, takerBuyVolume: 55 },
+  ]);
+  assert.deepEqual(f.delta, [60, -20, 10]);    // 2·taker − volume
+  assert.deepEqual(f.cvd, [60, 40, 50]);       // acumulado
+  assert.deepEqual(f.buyShare, [0.8, 0.4, 0.55]);
+  assert.equal(volumeFlow(path([[0, 100], [30, 110], [45, 100], [60, 110.2], [70, 104]])), null);
+  assert.equal(volumeFlow([]), null);
+});
+
+test('compatibilidad hacia atrás: sin takerBuyVolume no hay flujo ni hallazgos nuevos', () => {
+  const c = path([[0, 90], [30, 110], [45, 100], [60, 110.2], [70, 104]]);
+  const out = analyzeSync({ symbol: 'BTCUSDT', timeframe: '15m', candles: c });
+  assert.equal(out.volumeFlow, null);
+  assert.ok(!out.findings.some((k) => /volume_shock|delta_divergence|absorption|climax/.test(k.kind)));
+});
+
+test('choque de volumen compra/venta agresiva y k configurable', () => {
+  const buy = calmRun(40);
+  buy.push({ time: buy.at(-1).time + 60, open: 100, high: 101.5, low: 99.9, close: 101.2, volume: 900, takerBuyVolume: 810, trades: 500 });
+  const fs = volumeShocks(buy);
+  const b = fs.find((f) => f.kind === 'volume_shock_buy');
+  assert.ok(b, fs.map((f) => f.kind).join(','));
+  assert.equal(b.direction, 'up');
+  assert.ok(b.evidence.buyShare >= 0.65);
+  assert.ok(b.explanation.includes('compra agresiva') || /La demanda/.test(b.explanation));
+  decisionOk(b);
+  assert.equal(volumeShocks(buy, { shockK: 100 }).length, 0); // k configurable apaga el detector
+
+  const sell = calmRun(40);
+  sell.push({ time: sell.at(-1).time + 60, open: 100, high: 100.1, low: 98.5, close: 98.8, volume: 900, takerBuyVolume: 90, trades: 500 });
+  const s = volumeShocks(sell).find((f) => f.kind === 'volume_shock_sell');
+  assert.ok(s);
+  assert.equal(s.direction, 'down');
+  assert.ok(s.evidence.buyShare <= 0.35);
+  decisionOk(s);
+  assert.equal(volumeShocks(calmRun(40)).length, 0); // sin choque real: nada
+});
+
+test('divergencia de delta alcista: mínimo más bajo con CVD más alto', () => {
+  const base = path([[0, 100], [10, 96], [22, 100], [34, 94.5], [46, 99]]);
+  const c = base.map((k, i) => {
+    const tb = (i >= 22 && i <= 34) ? 80 : (i <= 10 ? 45 : 55); // compra fuerte dentro de la caída final
+    return { ...k, takerBuyVolume: tb, trades: 20 };
+  });
+  const fs = deltaDivergence(c, findPivots(c, 3));
+  const b = fs.find((f) => f.kind === 'delta_divergence_bullish');
+  assert.ok(b, fs.map((f) => f.kind).join(','));
+  assert.equal(b.direction, 'up');
+  assert.ok(b.evidence.price2 < b.evidence.price1, 'precio debe hacer mínimo más bajo');
+  assert.ok(b.evidence.cvd2 > b.evidence.cvd1, 'CVD debe hacer mínimo más alto');
+  assert.ok(b.evidence.conviction > 0);
+  decisionOk(b);
+});
+
+test('divergencia de delta bajista: máximo más alto con CVD más bajo', () => {
+  const base = path([[0, 100], [10, 104], [22, 100], [34, 105.5], [46, 101]]);
+  const c = base.map((k, i) => {
+    const tb = (i >= 22 && i <= 34) ? 20 : (i <= 10 ? 55 : 45); // venta fuerte dentro de la subida final
+    return { ...k, takerBuyVolume: tb, trades: 20 };
+  });
+  const s = deltaDivergence(c, findPivots(c, 3)).find((f) => f.kind === 'delta_divergence_bearish');
+  assert.ok(s);
+  assert.equal(s.direction, 'down');
+  assert.ok(s.evidence.price2 > s.evidence.price1);
+  assert.ok(s.evidence.cvd2 < s.evidence.cvd1);
+  decisionOk(s);
+});
+
+test('absorción: volumen alto y rango mínimo en un mínimo', () => {
+  const c = [];
+  const push = (o, h, l, cl, v, tb) => c.push({ time: 1_700_000_000 + c.length * 60, open: o, high: h, low: l, close: cl, volume: v, takerBuyVolume: tb });
+  for (let i = 0; i < 14; i++) { const p = 120 - i * 1.2; push(p, p + 0.2, p - 0.2, p, 100, 55); }
+  push(104.3, 104.6, 103.9, 104.35, 900, 430); // vela de rango ínfimo (0.7) con volumen 9x, justo en el mínimo
+  for (let i = 0; i < 6; i++) { const p = 104.35 + i * 0.5; push(p, p + 0.2, p - 0.2, p, 100, 60); }
+  const pv = findPivots(c, 3);
+  const fs = absorption(c, pv, srZones(c, pv));
+  const a = fs.find((f) => f.kind === 'absorption' && f.direction === 'up');
+  assert.ok(a, fs.map((f) => `${f.kind}:${f.direction}`).join(','));
+  assert.ok(a.evidence.rangeAtAtr <= 0.7 && a.evidence.volumeRatio >= 3);
+  decisionOk(a);
+  assert.equal(absorption(calmRun(40), findPivots(calmRun(40), 3), []).length, 0);
+});
+
+test('clímax de compra: subida extendida, volumen y cierre de reversión', () => {
+  const c = [];
+  const push = (o, h, l, cl, v, tb) => c.push({ time: 1_700_000_000 + c.length * 60, open: o, high: h, low: l, close: cl, volume: v, takerBuyVolume: tb });
+  for (let i = 0; i < 25; i++) { const p = 100 + i * 0.6; push(p, p + 0.2, p - 0.2, p, 100, 55); }
+  push(114.5, 116, 112.5, 113.6, 900, 800); // abre alto, cierra bajo: mecha alta, compra agresiva
+  const fs = climax(c);
+  const d = fs.find((f) => f.kind === 'climax' && f.direction === 'down');
+  assert.ok(d, fs.map((f) => `${f.kind}:${f.direction}`).join(','));
+  assert.ok(d.evidence.driftAtr >= 1.5 && d.evidence.volumeRatio >= 3 && d.evidence.reversal >= 0.5);
+  decisionOk(d);
+});
+
+test('clímax de venta: bajada extendida, volumen y cierre de reversión', () => {
+  const c = [];
+  const push = (o, h, l, cl, v, tb) => c.push({ time: 1_700_000_000 + c.length * 60, open: o, high: h, low: l, close: cl, volume: v, takerBuyVolume: tb });
+  for (let i = 0; i < 25; i++) { const p = 140 - i * 0.6; push(p, p + 0.2, p - 0.2, p, 100, 45); }
+  push(124, 124.5, 116, 121.5, 900, 100); // abre bajo, cierra alto: mecha inferior, venta agresiva
+  const u = climax(c).find((f) => f.kind === 'climax' && f.direction === 'up');
+  assert.ok(u);
+  assert.ok(u.evidence.reversal >= 0.5 && u.evidence.buyShare <= 0.35);
+  decisionOk(u);
+});
+
+// Serie con varios flujos a la vez: choque agresivo + divergencia de delta.
+function richTakerSeries() {
+  const c = [];
+  const push = (o, h, l, cl, v, tb) => c.push({ time: 1_700_000_000 + c.length * 60, open: o, high: h, low: l, close: cl, volume: v, takerBuyVolume: tb, trades: 30 });
+  for (let i = 0; i < 10; i++) { const p = 100 - i * 0.3; push(p, p + 0.2, p - 0.2, p, 100, 45); }   // 100 -> 97
+  for (let i = 0; i < 12; i++) { const p = 97 + i * 0.4; push(p, p + 0.2, p - 0.2, p, 100, 55); }    // sube a ~101.4
+  for (let i = 0; i < 12; i++) { const p = 101.4 - i * 0.35; push(p, p + 0.2, p - 0.2, p, 100, 80); } // baja a ~97.5 con compra fuerte
+  for (let i = 0; i < 6; i++) { const p = 97.5 + i * 0.3; push(p, p + 0.2, p - 0.2, p, 100, 60); }
+  c.push({ time: c.at(-1).time + 60, open: 99.3, high: 100.6, low: 99.2, close: 100.4, volume: 950, takerBuyVolume: 880, trades: 400 }); // choque de compra
+  for (let i = 0; i < 4; i++) { const p = 100.4 + i * 0.2; c.push({ time: c.at(-1).time + 60, open: p, high: p + 0.2, low: p - 0.2, close: p, volume: 100, takerBuyVolume: 55, trades: 20 }); }
+  return c;
+}
+
+test('analyze expone volumeFlow y los nuevos hallazgos; el top sigue siendo diverso', async () => {
+  const c = richTakerSeries();
+  const out = analyzeSync({ symbol: 'BTCUSDT', timeframe: '15m', candles: c });
+  assert.ok(out.volumeFlow && Array.isArray(out.volumeFlow.cvd) && out.volumeFlow.cvd.length === c.length);
+  assert.ok(out.volumeFlow.delta.length === c.length && out.volumeFlow.buyShare.length === c.length);
+  assert.ok(out.findings.some((f) => /volume_shock|delta_divergence|absorption|climax/.test(f.kind)), out.findings.map((f) => f.kind).join(','));
+  for (const f of out.findings) decisionOk(f);
+  const perKind = {};
+  for (const f of out.top) perKind[f.kind] = (perKind[f.kind] || 0) + 1;
+  for (const n of Object.values(perKind)) assert.ok(n <= 2, `perKind ${JSON.stringify(perKind)}`);
+  // Ningún campo prohibido (probabilidad / tasa de acierto) en la salida completa, con flujo incluido.
+  const bad = /prob|win[_-]?rate|acierto_pct/i;
+  const walk = (v) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { assert.doesNotMatch(k, bad); walk(x); }
+  };
+  walk(await analyze({ symbol: 'BTCUSDT', timeframe: '15m', candles: c }));
 });
