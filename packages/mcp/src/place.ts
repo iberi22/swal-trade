@@ -17,7 +17,7 @@
 // close_position is the exception to the guard: closing is protective, so the
 // daily-loss lock and the position cap must not be able to trap a position open.
 
-import { ceilToStep, decimalNumber, floorToStep, shiftStep } from "./decimal.js";
+import { ceilToStep, decimalNumber, floorToStep, shiftStep, toDecimalText } from "./decimal.js";
 import { parseAccountRiskConfig, readCredentials } from "./config.js";
 import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
@@ -633,8 +633,11 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       const fillQty = entry.filledQty ?? 0;
       const avg = averagePriceOf(entry.order) ?? entryPrice;
       const effectiveAfterFill = avg * fillQty;
-      if (fillQty > 0 && effectiveAfterFill > cfg.value.maxNotionalUsd * 1.01) {
-        const excessQty = ceilToStep(effectiveAfterFill - cfg.value.maxNotionalUsd, filters.value.stepSize);
+      if (fillQty > 0 && effectiveAfterFill > Number(cfg.value.maxNotionalUsd) * 1.01) {
+        // The excess is in USD, so it is converted to a quantity at the fill price
+        // before it is rounded: rounding a USD amount to stepSize sends an order
+        // of the wrong size.
+        const excessQty = ceilToStep(toDecimalText((effectiveAfterFill - cfg.value.maxNotionalUsd) / avg), filters.value.stepSize);
         if (excessQty != null && decimalNumber(excessQty) > 0) {
           try {
             const reduction = await client.placeOrder({

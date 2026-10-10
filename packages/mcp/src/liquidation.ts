@@ -104,9 +104,13 @@ export interface StopInsideLiquidation {
 }
 
 /**
- * Requires the stop to sit inside the liquidation estimate with a cushion: a
- * stop at or beyond liquidation never triggers, the position is liquidated
- * first and the whole stop-loss was decoration.
+ * Requires the stop to sit inside the liquidation estimate with a cushion.
+ *
+ * A stop at or beyond liquidation never triggers: the position is liquidated
+ * first and the whole stop-loss was decoration. The same 80% factor the guard
+ * applies to 100/leverage is applied here to the exchange's own distance, so a
+ * stop that the simplified check allows can still be refused when the exchange
+ * says liquidation is closer than the textbook formula.
  */
 export function stopInsideLiquidation(input: {
   side: "BUY" | "SELL";
@@ -122,21 +126,24 @@ export function stopInsideLiquidation(input: {
   }
   if (!(input.entryPrice > 0) || !(input.stopPrice > 0)) return { ok: false, reason: "the entry or the stop price is not usable" };
   const onLossSide = input.side === "BUY" ? input.stopPrice < input.entryPrice : input.stopPrice > input.entryPrice;
-  const onLossSideOfEstimate =
-    input.side === "BUY" ? input.estimate.price! < input.entryPrice : input.estimate.price! > input.entryPrice;
   if (!onLossSide) {
     return { ok: false, reason: `the stop at ${input.stopPrice} is not on the loss side of the entry ${input.entryPrice}.` };
   }
-  if (!onLossSideOfEstimate) {
-    return { ok: false, reason: `the liquidation estimate ${input.estimate.price} is not on the loss side of the entry ${input.entryPrice}.` };
+  const estimateOnLossSide =
+    input.side === "BUY" ? estimate.price < input.entryPrice : estimate.price > input.entryPrice;
+  if (!estimateOnLossSide) {
+    return { ok: false, reason: `the liquidation estimate ${estimate.price} is not on the loss side of the entry ${input.entryPrice}.` };
   }
   const distance = Math.abs(input.entryPrice - input.stopPrice);
   const toLiquidation = Math.abs(input.entryPrice - estimate.price);
-  const cushion = toLiquidation - distance;
-  if (cushion < factor * toLiquidation) {
+  const safeDistance = toLiquidation * factor;
+  if (distance > safeDistance) {
     return {
       ok: false,
-      reason: `the stop at ${input.stopPrice} is ${distance.toFixed(4)} USD from the entry ${input.entryPrice}, but the exchange liquidation estimate (${estimate.source}) is only ${toLiquidation.toFixed(4)} USD away: the stop would not fire before the liquidation, tighten it`,
+      reason:
+        `the stop at ${input.stopPrice} is ${distance.toFixed(4)} USD from the entry ${input.entryPrice}, ` +
+        `but the exchange liquidation estimate (${estimate.source}) is only ${toLiquidation.toFixed(4)} USD away ` +
+        `and only ${safeDistance.toFixed(4)} USD of that (${factor * 100}%) is a safe stop distance: the stop would not fire before the liquidation, tighten it`,
     };
   }
   return { ok: true, reason: null };

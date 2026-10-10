@@ -74,6 +74,10 @@ export interface ServerDeps {
   env?: NodeJS.ProcessEnv;
   fetchFn?: FetchLike;
   now?: () => number;
+  /** Overrides for the write plumbing, so a test can inject a failing journal. */
+  append?: WriteDeps["append"];
+  writeLock?: WriteDeps["writeLock"];
+  sweep?: WriteDeps["sweep"];
 }
 
 interface ToolText {
@@ -94,6 +98,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   const fearGreedCache = createFearGreedCache();
   const plans = createGridPlanStore(now);
   const writeDeps: WriteDeps = { env, fetchFn, now, plans };
+  if (deps.append) writeDeps.append = deps.append;
+  if (deps.writeLock) writeDeps.writeLock = deps.writeLock;
+  if (deps.sweep) writeDeps.sweep = deps.sweep;
   // One base for every tool: what an order is explained with is what it is sent
   // against, and the write tools decide their own network from SWAL_MCP_NETWORK.
   const publicBase = futuresBase(env);

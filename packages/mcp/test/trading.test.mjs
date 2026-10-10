@@ -572,6 +572,150 @@ test("the emergency close does NOT cancel when the flatten is refused", async ()
 });
 
 // ---------------------------------------------------------------------------
+// Item 15: the stop is checked against the exchange's liquidation estimate.
+// ---------------------------------------------------------------------------
+
+test("the stop must sit inside the exchange liquidation estimate, not inside 100/leverage", async () => {
+  // The bracket for this notional carries a 5% maintenance margin, so at 2x the
+  // exchange puts liquidation about 47.4% away and the safe distance at 37.9%.
+  // The guard's simplified check allows a 40% stop, which the exchange says is
+  // beyond liquidation: a stop that never fires, and a position liquidated while
+  // the operator believes it is protected.
+  const exchange = makeExchange({ maintenanceMarginRatio: "0.05" });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, stop_loss_pct: 40 } }));
+    assert.match(text, /the stop would not fire before the liquidation/);
+    assert.match(text, /leverageBracket/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.ok(exchange.calls.some((call) => call.path === "/fapi/v1/leverageBracket"));
+  assert.match(JSON.stringify(journalLines(JOURNAL, "place_order")[0]), /"step":"liquidation"/);
+});
+
+test("a stop inside the exchange liquidation estimate is allowed", async () => {
+  // 0.1% away from the entry, well inside the 0.4% liquidation distance.
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(
+      textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, stop_loss_pct: 0.1 } })),
+    );
+    assert.equal(body.sent, true);
+    assert.equal(body.stop.stopPrice, "99900");
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Item 16: the fill's own notional, not the requested one.
+// ---------------------------------------------------------------------------
+
+test("a fill above the notional cap is reduced and reported", async () => {
+  // 900 USD asked for at a mark of 100000, capped at 1000 USD. The fill lands at
+  // 110000, so the account really carries 990 USD: inside the cap, nothing to do.
+  const small = makeExchange({ marketFill: { avgPrice: "110000", executedQty: "0.009" } });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: small.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(
+      textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 900 } })),
+    );
+    assert.equal(body.filledNotionalUsd, 990);
+    assert.deepEqual(body.warnings, []);
+  });
+  assert.equal(small.post("/fapi/v1/order").length, 1, "inside the cap: no reduction");
+
+  // Now the fill is 130000 for the same 900 USD: 1170 USD, more than 1% over the
+  // cap. The excess is reduced with a reduceOnly order and reported.
+  const over = makeExchange({ marketFill: { avgPrice: "130000", executedQty: "0.009" } });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: over.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(
+      textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 900 } })),
+    );
+    assert.equal(body.filledNotionalUsd, Number((130000 * 0.009).toFixed(4)));
+    assert.match(body.warnings.join(" "), /exceeded SWAL_MAX_NOTIONAL_USD by 170/);
+    assert.match(body.warnings.join(" "), /the excess was reduced/);
+  });
+  const orders = over.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+  assert.equal(orders[1].params.side, "SELL");
+  // 170 USD over the cap at 130000, rounded UP to stepSize 0.001.
+  assert.equal(orders[1].params.quantity, "0.002");
+});
+
+// ---------------------------------------------------------------------------
+// Item 13: the journal is a writable regular file, or there is no order.
+// ---------------------------------------------------------------------------
+
+test("a journal that is a directory, a FIFO or a device is refused before any order", async () => {
+  const cases = [
+    { name: "a directory", kind: "dir" },
+    { name: "a FIFO", kind: "fifo" },
+  ];
+  for (const testCase of cases) {
+    const blocked = fs.mkdtempSync(path.join(os.tmpdir(), "swal-journal-"));
+    const target = path.join(blocked, testCase.name.replace(/\W/g, ""));
+    if (testCase.kind === "dir") fs.mkdirSync(target);
+    else {
+      const { spawnSync } = await import("node:child_process");
+      spawnSync("mkfifo", [target]);
+    }
+    const exchange = makeExchange();
+    await withClient({ env: tradeEnvFile({ SWAL_MCP_JOURNAL: target }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+      const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+      assert.match(text, /not a writable regular file/, testCase.name);
+      assert.match(text, /the order was not sent/, testCase.name);
+    });
+    assert.equal(exchange.post("/fapi/v1/order").length, 0, testCase.name);
+    fs.rmSync(blocked, { recursive: true, force: true });
+  }
+});
+
+test("a missing journal file is created, with owner-only permissions", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-journal-"));
+  const journal = path.join(dir, "nested", "journal.jsonl");
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile({ SWAL_MCP_JOURNAL: journal }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "place_order", arguments: placeArgs });
+  });
+  assert.ok(fs.existsSync(journal));
+  assert.equal(fs.statSync(journal).mode & 0o777, 0o600);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("an append that fails after the order was sent surfaces as a warning", async () => {
+  // The journal is writable at preflight and broken by the time the record is
+  // appended: the order cannot be un-sent, so the result must say so.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-journal-"));
+  const journal = path.join(dir, "journal.jsonl");
+  const exchange = makeExchange();
+  const env = tradeEnvFile({ SWAL_MCP_JOURNAL: journal });
+  let failingWrites = 0;
+  const failing = {
+    env,
+    fetchFn: exchange.fetchFn,
+    now: () => NOW,
+    append: async (file, record, secrets) => {
+      // The preflight already ran; let the intent and the outcome through and
+      // then start failing, which is what a full disk or a rotated file looks
+      // like. The order cannot be un-sent, so the result has to say so.
+      failingWrites += 1;
+      if (failingWrites > 2) throw new Error("ENOSPC: no space left on device");
+      const { appendJournal } = await import("../dist/journal.js");
+      return appendJournal(file, record, secrets);
+    },
+  };
+  await withClient(failing, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true, "the order really was sent");
+    assert.match(body.journalWarning, /the order was sent but the journal/);
+    assert.match(body.journalWarning, /NOT in the audit trail/);
+    assert.ok(body.warnings.some((warning) => /NOT in the audit trail/.test(warning)));
+    assert.ok(failingWrites > 2, `the third append should have failed, ${failingWrites} ran`);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
 // Item 4: an ambiguous entry is resolved, never assumed.
 // ---------------------------------------------------------------------------
 

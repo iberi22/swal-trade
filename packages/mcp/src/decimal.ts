@@ -122,3 +122,20 @@ export function shiftStep(rawValue: DecimalInput, rawStep: DecimalInput, times: 
 export function decimalNumber(raw: DecimalInput): number {
   return typeof raw === "number" ? raw : Number(raw);
 }
+
+/**
+ * A computed number to a decimal string that `roundDecimal` accepts.
+ *
+ * Dividing two prices gives a double with up to seventeen decimals, which
+ * `parseParts` refuses on purpose. Trimming to twelve decimals is the honest
+ * version of that number: the exchange filters have at most eight, and a
+ * quantity rounded up to stepSize does not care about the twelfth decimal.
+ */
+export function toDecimalText(value: number, maxDp = 12): string {
+  if (!Number.isFinite(value)) return String(value);
+  const text = value
+    .toFixed(Math.max(0, Math.min(maxDp, MAX_DP)))
+    .replace(/0+$/, "")
+    .replace(/\.$/, "");
+  return text === "-0" || text === "" ? "0" : text;
+}

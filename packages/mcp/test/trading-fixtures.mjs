@@ -46,10 +46,14 @@ export function makeExchange(options = {}) {
     algoAnswers = {},
     /** Working orders of the symbol, for the notional cap (item 8). */
     openOrders = [],
+    /** Maintenance margin ratio the leverage bracket reports. */
+    maintenanceMarginRatio = "0.004",
     /** Amounts each reduceOnly close leaves behind, in order; past the end it is zero. */
     closeReducesTo = {},
     /** Attempt numbers (1-based) whose POST /fapi/v1/order times out instead of answering. */
     networkErrorOnOrder = [],
+    /** What the MARKET entry fills at and for how much, when it differs from the request. */
+    marketFill = null,
     /** Answer for GET /fapi/v1/order (the lookup by origClientOrderId). */
     queryOrder = null,
   } = options;
@@ -106,7 +110,9 @@ export function makeExchange(options = {}) {
     if (path === "/fapi/v1/openAlgoOrders") return json(algoOrders);
     if (path === "/fapi/v1/income") return json(income);
     if (path === "/fapi/v1/leverageBracket") {
-      return json([{ symbol: params.get("symbol"), brackets: [{ bracket: 1, initialMarginRate: "0.2", maintMarginRatio: "0.004", cum: "0" }] }]);
+      return json([
+        { symbol: params.get("symbol"), brackets: [{ bracket: 1, initialMarginRate: "0.2", maintMarginRatio: maintenanceMarginRatio, cum: "0" }] },
+      ]);
     }
     if (path === "/fapi/v1/openOrders") return json(openOrders);
 
@@ -161,9 +167,12 @@ export function makeExchange(options = {}) {
         status: type === "MARKET" ? "FILLED" : orderStatus,
         // The exchange echoes back what it was given: a fill on a LIMIT that
         // expired in the same instant is visible here and nowhere else.
-        executedQty: params.get("executedQty") ?? (type === "MARKET" ? params.get("quantity") : orderExecutedQty),
+        executedQty:
+          type === "MARKET"
+            ? (marketFill?.executedQty ?? params.get("quantity"))
+            : (params.get("executedQty") ?? orderExecutedQty),
         quantity: params.get("quantity"),
-        avgPrice: params.get("price") ?? markPrice,
+        avgPrice: type === "MARKET" ? (marketFill?.avgPrice ?? markPrice) : (params.get("price") ?? markPrice),
         price: params.get("price"),
         stopPrice: params.get("stopPrice") ?? params.get("price"),
         timeInForce: params.get("timeInForce"),

@@ -69,6 +69,13 @@ export function sanitizeForJournal(value: unknown, secrets: readonly string[]): 
 }
 
 export async function appendJournal(filePath: string, record: unknown, secrets: readonly string[]): Promise<void> {
+  // Refuse a non-regular target here as well as in the preflight: appending to a
+  // FIFO with no reader does not fail, it BLOCKS, and an audit trail that hangs
+  // the tool that is trying to record a refusal is worse than a missing line.
+  const existing = await stat(filePath).catch(() => null);
+  if (existing != null && !existing.isFile()) {
+    throw new Error(`the journal path is not a regular file (it is a ${existing.isDirectory() ? "directory" : existing.isSymbolicLink() ? "symbolic link" : "special file"}): ${filePath}`);
+  }
   await mkdir(path.dirname(filePath), { recursive: true });
   const line = `${JSON.stringify(sanitizeForJournal(record, secrets))}\n`;
   await appendFile(filePath, line, { mode: 0o600 });
