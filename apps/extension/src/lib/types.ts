@@ -27,7 +27,11 @@ export interface FindingLevel {
   [key: string]: unknown;
 }
 
-/** Vela en segundos unix, el contrato de `analyze`. */
+/**
+ * Vela en segundos unix, el contrato de `analyze`.
+ * `takerBuyVolume` y `trades` son opcionales: sin ellos el núcleo omite el
+ * flujo de volumen (delta/CVD) y sus hallazgos, pero el resto funciona igual.
+ */
 export interface Candle {
   time: number;
   open: number;
@@ -35,6 +39,10 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  /** Número de trades de la vela (índice 8 de la fila de klines). */
+  trades?: number;
+  /** Volumen de compra agresiva / taker buy base (índice 9 de la fila de klines). */
+  takerBuyVolume?: number;
 }
 
 export interface Finding {

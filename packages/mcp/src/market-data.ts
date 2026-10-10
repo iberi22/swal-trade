@@ -64,6 +64,16 @@ export function candleFromKline(row: unknown): Candle {
     close: Number(row[4]),
     volume: Number(row[5]),
   };
+  // Index 8 = number of trades; index 9 = taker buy base volume. Optional: only
+  // added when present and numeric (older/shorter rows stay backward compatible).
+  if (row.length > 8) {
+    const trades = Number(row[8]);
+    if (Number.isFinite(trades)) candle.trades = trades;
+  }
+  if (row.length > 9) {
+    const takerBuyVolume = Number(row[9]);
+    if (Number.isFinite(takerBuyVolume)) candle.takerBuyVolume = takerBuyVolume;
+  }
   if (!Number.isFinite(candle.time) || !Number.isFinite(candle.close)) throw new Error("kline row is not numeric");
   return candle;
 }

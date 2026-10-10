@@ -61,7 +61,14 @@ export function parseKlineRows(payload: unknown): Candle[] {
       continue;
     }
     const time = Math.floor(openTime / 1000);
-    byTime.set(time, { time, open, high, low, close, volume });
+    const candle: Candle = { time, open, high, low, close, volume };
+    // Índice 8 = número de trades; índice 9 = volumen de compra agresiva (taker buy base).
+    // Opcionales: sólo se añaden si el campo existe y es numérico (compatibilidad hacia atrás).
+    const trades = numberAt(item, 8);
+    const takerBuyVolume = numberAt(item, 9);
+    if (trades !== null) candle.trades = trades;
+    if (takerBuyVolume !== null) candle.takerBuyVolume = takerBuyVolume;
+    byTime.set(time, candle);
   }
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
@@ -97,17 +104,23 @@ export function parseKlineMessage(data: string): KlineEvent | null {
   if (![openTime, open, high, low, close, volume].every(Number.isFinite)) return null;
   const symbol = String(k.s ?? body.s ?? '').toUpperCase();
   if (!/^[A-Z0-9]{2,30}$/.test(symbol)) return null;
+  const candle: Candle = {
+    time: Math.floor(openTime / 1000),
+    open,
+    high,
+    low,
+    close,
+    volume,
+  };
+  // n = número de trades; V = volumen de compra agresiva (taker buy base). Opcionales.
+  const trades = Number(k.n);
+  const takerBuyVolume = Number(k.V);
+  if (Number.isFinite(trades)) candle.trades = trades;
+  if (Number.isFinite(takerBuyVolume)) candle.takerBuyVolume = takerBuyVolume;
   return {
     symbol,
     interval: String(k.i ?? ''),
     closed: k.x === true,
-    candle: {
-      time: Math.floor(openTime / 1000),
-      open,
-      high,
-      low,
-      close,
-      volume,
-    },
+    candle,
   };
 }
