@@ -43,7 +43,6 @@ import {
   filledQuantityOf,
   guardLimitsFrom,
   isFinalStatus,
-  logStep,
   ok,
   orderStatusOf,
   placeProtectiveAlgoOrder,

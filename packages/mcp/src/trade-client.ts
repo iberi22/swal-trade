@@ -6,13 +6,12 @@
 // synchronized once and shared by both halves: a signed write with a stale
 // timestamp is rejected by the exchange with -1021 before anything is placed.
 
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import { createReadOnlyClient, RECV_WINDOW } from "./binance.js";
 import type { ReadOnlyClient } from "./binance.js";
 import { BinanceError, httpError } from "./errors.js";
 import { errorMessage, isRecord, redactSecrets } from "./types.js";
-import { ORDER_NOT_FOUND_CODE } from "./errors.js";
 import type { FetchLike } from "./types.js";
 
 export { BinanceError, isAmbiguousError, isRejectedError, newClientOrderId } from "./errors.js";
@@ -95,7 +94,7 @@ export function createTradingClient(options: TradingClientOptions): TradingClien
 
   async function request(method: "POST" | "DELETE", path: string, params: WriteParams, inQuery: boolean): Promise<unknown> {
     const timestamp = now() + reader.timeOffset;
-    const { payload, signed } = sign(params as Record<string, string | number>, timestamp);
+    const { signed } = sign(params as Record<string, string | number>, timestamp);
     const url = inQuery ? `${base}${path}?${signed}` : `${base}${path}`;
     const init: RequestInit = {
       method,

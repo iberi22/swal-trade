@@ -543,9 +543,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     if (intentFailure) {
       return refused(`the intent could not be journaled (${intentFailure}): the order was not sent because an ambiguous outcome could not be reconstructed.`);
     }
-    let outcomeJournaled = false;
     const writeOutcome = async (extra: Record<string, unknown>): Promise<void> => {
-      outcomeJournaled = true;
       const failure = await writeJournalLine(deps, cfg.value.journalPath, {
         ts: new Date(deps.now()).toISOString(),
         event: "place_order_outcome",

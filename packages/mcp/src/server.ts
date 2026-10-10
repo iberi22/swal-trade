@@ -22,7 +22,7 @@ import { loadHeadlines } from "./news.js";
 import { closePosition, placeOrder } from "./place.js";
 import { PLACEMENT_NOTE, proposeFromMark } from "./propose.js";
 import { normalizeSymbol } from "./symbol.js";
-import { parseTradingConfig, readBase, tradingEnabled, TESTNET_BASE } from "./trading-config.js";
+import { parseTradingConfig, readBase, tradingEnabled } from "./trading-config.js";
 import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
 import type { WriteDeps } from "./write.js";
