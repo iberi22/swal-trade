@@ -26,6 +26,11 @@ export const BACKUP_RATE_WINDOW_MS = 60 * 60 * 1000;
 export const BACKUP_PUBKEY_URL = 'https://pay.swal.network/v1/pubkey';
 /** Prefijo del `sub` de las cuentas de desarrollo (separadas de las reales). */
 const DEV_SUB_PREFIX = 'dev:';
+/** Emisor obligatorio de la licencia: firma billing-worker. */
+export const LICENSE_ISSUER = 'swal-trade-billing';/** Tolerancia de reloj admisible en `iat` (60 s). */
+const IAT_SKEW_SEC = 60;
+/** Hosts donde se permite el modo desarrollo: local y previsualizaciones *.workers.dev. */
+const DEV_ALLOWED_SUFFIXES = ['workers.dev'];
 
 // ---------- base64 / hashing ----------
 
@@ -68,17 +73,25 @@ export async function verifyBackupLicense(token, pubkeySpki, nowSec, subtle = cr
     return { status: 'invalid', reason: 'payload_decode' };
   }
   if (typeof payload.exp !== 'number' || payload.exp <= nowSec) return { status: 'expired', payload };
+  // Emisor: solo billing.swal.network firma licencias de SWAL.
+  if (payload.iss !== LICENSE_ISSUER) return { status: 'invalid', reason: 'issuer', payload };
+  // `iat` numérica, no futura (con 60 s de tolerancia de reloj) y no posterior a `exp`.
+  if (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat)) return { status: 'invalid', reason: 'iat_type', payload };
+  if (payload.iat > nowSec + IAT_SKEW_SEC) return { status: 'invalid', reason: 'iat_future', payload };
+  if (payload.iat > payload.exp) return { status: 'invalid', reason: 'iat_after_exp', payload };
   return { status: 'ok', payload };
 }
 
-/** `sub` de la licencia = clave por cuenta. Tolera emisores que usen account_id/account. */
+/**
+ * Clave por cuenta: SOLO el `sub` de la licencia. Ni `account` ni `account_id` valen: un
+ * atacante que firme (o robe) un payload con otro campo no debe elegir la fila de otro.
+ * @param {object} payload
+ * @returns {string|null}
+ */
 export function accountSubFrom(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  for (const k of ['sub', 'account_id', 'account']) {
-    const v = payload[k];
-    if (typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return null;
+  const v = payload.sub;
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
 /** Clave pública de licencias: inyectada (tests) > fijada en env > red (con caché en modulo). */

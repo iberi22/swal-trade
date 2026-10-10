@@ -44,7 +44,9 @@ async function makeSigner() {
   async function token(payload) {
     // El contrato de licencia firma los bytes ASCII del primer segmento (base64url), no el JSON crudo
     // (igual que guardian-license.js). Ver docs del formato en static/guardian/guardian-license.js.
-    const bodyB64url = Buffer.from(new TextEncoder().encode(JSON.stringify(payload))).toString('base64url');
+    // Payload canónico de billing: iss + iat + exp + sub.
+    const body = { iss: 'swal-trade-billing', iat: NOW_SEC, ...payload };
+    const bodyB64url = Buffer.from(new TextEncoder().encode(JSON.stringify(body))).toString('base64url');
     const sig = await crypto.subtle.sign('Ed25519', kp.privateKey, new TextEncoder().encode(bodyB64url));
     return `${bodyB64url}.${Buffer.from(new Uint8Array(sig)).toString('base64url')}`;
   }

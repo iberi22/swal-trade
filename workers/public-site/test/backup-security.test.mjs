@@ -2,7 +2,7 @@
 //   1. Parámetros del sobre (iter/salt/iv) validados ANTES del KDF y ligados como AAD.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleBackupRequest } from '../src/backup.js';
+import { handleBackupRequest, verifyBackupLicense } from '../src/backup.js';
 import {
   BACKUP_ENVELOPE_VERSION,
   IV_BYTES,
@@ -206,4 +206,67 @@ test('sobre: el servidor rechaza los parámetros inválidos antes de guardar nad
     assert.equal((await res.json()).error, error, JSON.stringify(over));
     assert.equal(db.rows.size, 0, 'no se guarda nada con parámetros inválidos');
   }
+});
+
+// ---------- 3. licencia: emisor, iat y clave por cuenta ----------
+
+test('licencia: exige iss=swal-trade-billing', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const ok = await token({ sub: 'a', exp: NOW_SEC + 3600 });
+  assert.equal((await verifyBackupLicense(ok, pubkeyB64, NOW_SEC)).status, 'ok');
+  const otherIss = await token({ iss: 'otro-emisor', sub: 'a', exp: NOW_SEC + 3600 });
+  assert.equal((await verifyBackupLicense(otherIss, pubkeyB64, NOW_SEC)).status, 'invalid');
+  assert.equal((await verifyBackupLicense(otherIss, pubkeyB64, NOW_SEC)).reason, 'issuer');
+  const noIss = await token({ sub: 'a', exp: NOW_SEC + 3600, iss: undefined });
+  assert.equal((await verifyBackupLicense(noIss, pubkeyB64, NOW_SEC)).status, 'invalid');
+});
+
+test('licencia: iat numérica, no futura (60 s de holgura) y nunca posterior a exp', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const good = await token({ sub: 'a', iat: NOW_SEC - 10, exp: NOW_SEC + 3600 });
+  assert.equal((await verifyBackupLicense(good, pubkeyB64, NOW_SEC)).status, 'ok');
+  // Holgura de reloj de 60 s.
+  const slightlyFuture = await token({ sub: 'a', iat: NOW_SEC + 60, exp: NOW_SEC + 3600 });
+  assert.equal((await verifyBackupLicense(slightlyFuture, pubkeyB64, NOW_SEC)).status, 'ok');
+  // Más allá de la holgura: emitida en el futuro.
+  const future = await token({ sub: 'a', iat: NOW_SEC + 61, exp: NOW_SEC + 3600 });
+  assert.equal((await verifyBackupLicense(future, pubkeyB64, NOW_SEC)).status, 'invalid');
+  assert.equal((await verifyBackupLicense(future, pubkeyB64, NOW_SEC)).reason, 'iat_future');
+  // iat no numérica.
+  for (const iat of [true, '1700000000', null, [NOW_SEC]]) {
+    const bad = await token({ sub: 'a', iat, exp: NOW_SEC + 3600 });
+    assert.equal((await verifyBackupLicense(bad, pubkeyB64, NOW_SEC)).status, 'invalid');
+    assert.equal((await verifyBackupLicense(bad, pubkeyB64, NOW_SEC)).reason, 'iat_type');
+  }
+  // iat posterior a exp: ventana imposible (iat dentro de la holgura, exp aún vigente).
+  const inverted = await token({ sub: 'a', iat: NOW_SEC + 40, exp: NOW_SEC + 30 });
+  assert.equal((await verifyBackupLicense(inverted, pubkeyB64, NOW_SEC)).status, 'invalid');
+  assert.equal((await verifyBackupLicense(inverted, pubkeyB64, NOW_SEC)).reason, 'iat_after_exp');
+});
+
+test('licencia: la fila se busca SOLO por sub (sin account/account_id)', async () => {
+  const { token } = await makeSigner();
+  const withAccounts = await token({ sub: 'acc_sub', account: 'acc_account', account_id: 'acc_account_id', exp: NOW_SEC + 3600 });
+  const payload = JSON.parse(new TextDecoder().decode(base64ToBytes(withAccounts.split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))));
+  assert.equal(payload.account, 'acc_account');
+
+  // Solo hay `sub`.
+  const db = fakeDb();
+  const res = await handleBackupRequest(req('GET', null, withAccounts, PROD_URL), { DB: db }, {
+    pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC, nowMs: NOW,
+  });
+  // Falla la firma (otra clave), pero si llegara a autorizar usaría `sub`: comprobado abajo.
+  assert.equal(res.status, 401);
+
+  const { pubkeyB64, token: sign } = await makeSigner();
+  const t = await sign({ sub: 'fila_sub', account: 'fila_account', account_id: 'fila_account_id', exp: NOW_SEC + 3600 });
+  const put = await handleBackupRequest(req('PUT', fakeEnvelope(), t, PROD_URL), { DB: db }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
+  assert.equal(put.status, 200);
+  assert.deepEqual([...db.rows.keys()], ['fila_sub']);
+
+  // Sin `sub`, con account: no autoriza.
+  const noSub = await sign({ account: 'solo_account', exp: NOW_SEC + 3600 });
+  const res2 = await handleBackupRequest(req('PUT', fakeEnvelope(), noSub, PROD_URL), { DB: fakeDb() }, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
+  assert.equal(res2.status, 401);
+  assert.equal((await res2.json()).error, 'license_no_sub');
 });
