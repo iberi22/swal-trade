@@ -19,9 +19,11 @@ import { ceilToStep, floorToStep, decimalNumber } from "./decimal.js";
 import { isRecord } from "./types.js";
 import { netPosition } from "./account.js";
 import type { TradingConfig } from "./trading-config.js";
-import { journalPathOf } from "./trading-config.js";
+import { journalPathOf, tradingEnabled } from "./trading-config.js";
 import { createWriteMutex } from "./mutex.js";
 import type { WriteMutex } from "./mutex.js";
+import { runStartupSweep, startupFlattenEnabled } from "./sweep.js";
+import type { SweepReport } from "./sweep.js";
 
 export type ToolOutcome<T = unknown> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -40,6 +42,53 @@ export interface WriteDeps {
   append?: JournalAppender;
   /** Serializes every write tool: the guard is not atomic on its own. */
   writeLock?: WriteMutex;
+  /**
+   * The one-per-process startup sweep. The write path awaits it once, after the
+   * preflight and before the guard, so whatever a previous process left behind
+   * is known before a new position is opened. Memoized so the sweep runs once
+   * per server, not once per tool call.
+   */
+  sweep?: { report: Promise<SweepReport> | null };
+}
+
+/**
+ * Runs the startup sweep once per process and returns its report.
+ *
+ * The sweep is a read: it only flattens when the operator explicitly asked for
+ * it with SWAL_MCP_STARTUP_FLATTEN=yes. It runs after the configuration, the
+ * keys and the journal have been checked, so a misconfigured server never makes
+ * an exchange call.
+ */
+export async function ensureStartupSweep(deps: WriteDeps): Promise<SweepReport> {
+  if (!tradingEnabled(deps.env)) return { pending: [], findings: [], errors: [], flattenEnabled: false };
+  const slot = (deps.sweep ??= { report: null });
+  if (slot.report == null) {
+    slot.report = runStartupSweep({ env: deps.env, fetchFn: deps.fetchFn, now: deps.now });
+  }
+  try {
+    return await slot.report;
+  } catch (err) {
+    // A sweep that cannot run is reported, not silently dropped: the pending
+    // intents are exactly the positions nobody is watching.
+    return {
+      pending: [],
+      findings: [],
+      errors: [redactSecrets(errorMessage(err), secretsOf(deps.env))],
+      flattenEnabled: startupFlattenEnabled(deps.env),
+    };
+  }
+}
+
+/** A one-line warning for every unprotected position the sweep found. */
+export function sweepWarnings(report: SweepReport): string[] {
+  const warnings: string[] = [];
+  for (const finding of report.findings) {
+    warnings.push(
+      `STARTUP SWEEP: ${finding.symbol} has ${finding.netPosition} open from an entry (clientOrderId ${finding.clientOrderId}) whose outcome was never journaled. ${finding.detail ?? "It was reported; nothing was changed."}`,
+    );
+  }
+  for (const error of report.errors) warnings.push(`STARTUP SWEEP: ${error}`);
+  return warnings;
 }
 
 /** Runs one write tool with the shared write lock held. */

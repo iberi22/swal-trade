@@ -509,6 +509,137 @@ test("the emergency close does NOT cancel when the flatten is refused", async ()
   assert.match(emergency.cancelledOrders, /not attempted/);
 });
 
+// ---------------------------------------------------------------------------
+// Item 4: an ambiguous entry is resolved, never assumed.
+// ---------------------------------------------------------------------------
+
+test("a timed-out entry is resolved by clientOrderId and the position, then protected", async () => {
+  // A timeout is not a rejection: the order may have been accepted. The old
+  // behaviour reported "the entry order was rejected" and returned, leaving a
+  // filled position with no stop.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { clientOrderId: "whatever", status: "FILLED", executedQty: "0.002", avgPrice: "100000", side: "BUY", type: "MARKET" },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.ambiguousOutcome, true);
+    assert.equal(body.stop.stopPrice, "99500");
+    assert.match(body.warnings.join(" "), /was ambiguous/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 1, "the entry is never retried blind: retrying doubles the position");
+  const queried = exchange.calls.find((call) => call.method === "GET" && call.path === "/fapi/v1/order");
+  assert.ok(queried, "the entry must be looked up by origClientOrderId");
+  assert.match(queried.params.origClientOrderId, /^swal/);
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
+  assert.match(JSON.stringify(journalLines(JOURNAL, "place_order")[0]), /query_by_client_order_id/);
+});
+
+test("a timed-out entry with no fill anywhere sends no stop and says so", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2013, msg: "Order does not exist." },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /could not be confirmed/);
+    assert.match(text, /no fill/);
+  });
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+  // The intent line was written before the entry and the outcome line after it,
+  // so a crash in between is still visible to the startup sweep.
+  const lines = journalLines();
+  assert.equal(lines.filter((line) => line.event === "place_order_intent").length, 1);
+  assert.equal(lines.filter((line) => line.event === "place_order_outcome").length, 1);
+  assert.equal(lines[0].network, "testnet");
+  assert.equal(lines[0].clientOrderId, lines[1].clientOrderId);
+});
+
+test("a timed-out entry that filled but cannot be protected is flattened", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { clientOrderId: "whatever", status: "FILLED", executedQty: "0.002" },
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /was ambiguous/);
+    assert.match(text, /the position was closed with a MARKET reduceOnly order/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+});
+
+// ---------------------------------------------------------------------------
+// Item 4: the startup sweep.
+// ---------------------------------------------------------------------------
+
+test("the startup sweep reports an unprotected position from an intent with no outcome", async () => {
+  // The previous process died after the entry was accepted but before the
+  // outcome was journaled. The sweep has to find it and say so.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+    algoOrders: [],
+  });
+  const orphan = {
+    ts: new Date(NOW).toISOString(),
+    event: "place_order_intent",
+    network: "testnet",
+    symbol: "BTCUSDT",
+    side: "BUY",
+    clientOrderId: "swaldeadbeefdeadbeefdeadbeef",
+    quantity: "0.002",
+    notionalUsd: 200,
+    leverage: 2,
+  };
+  fs.appendFileSync(JOURNAL, `${JSON.stringify(orphan)}\n`);
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = textOf(await client.callTool({ name: "close_position", arguments: { symbol: "ETHUSDT" } }));
+    const body = JSON.parse(text);
+    assert.equal(body.startupSweep.findings.length, 1);
+    assert.equal(body.startupSweep.findings[0].symbol, "BTCUSDT");
+    assert.equal(body.startupSweep.findings[0].action, "reported");
+    assert.match(body.notes.join(" "), /STARTUP SWEEP/);
+  });
+  // Reporting only: an unprotected position is not closed without the opt-in.
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+});
+
+test("the startup sweep flattens only when SWAL_MCP_STARTUP_FLATTEN=yes", async () => {
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  const orphan = {
+    ts: new Date(NOW).toISOString(),
+    event: "place_order_intent",
+    network: "testnet",
+    symbol: "BTCUSDT",
+    side: "BUY",
+    clientOrderId: "swaldeadbeefdeadbeefdeadbeef",
+    quantity: "0.002",
+    notionalUsd: 200,
+    leverage: 2,
+  };
+  fs.appendFileSync(JOURNAL, `${JSON.stringify(orphan)}\n`);
+  await withClient(
+    { env: tradeEnvFile({ SWAL_MCP_STARTUP_FLATTEN: "yes" }), fetchFn: exchange.fetchFn, now: () => NOW },
+    async (client) => {
+      const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "ETHUSDT" } })));
+      assert.equal(body.startupSweep.findings[0].action, "flattened");
+      assert.match(body.notes.join(" "), /flattened|closed/);
+    },
+  );
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0].params.reduceOnly, "true");
+  assert.equal(orders[0].params.quantity, "0.002");
+});
+
 test("a rejected entry order sends nothing and cancels nothing", async () => {
   const exchange = makeExchange({ orderFailures: [{ code: -2010, msg: "insufficient balance" }] });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {

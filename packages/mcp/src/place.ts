@@ -44,6 +44,8 @@ import {
   ok,
   orderStatusOf,
   placeProtectiveAlgoOrder,
+  ensureStartupSweep,
+  sweepWarnings,
   refused,
   requireJournal,
   stopPriceTowardEntry,
@@ -199,6 +201,8 @@ function entryPayload(input: {
   warnings: string[];
   takeProfit?: unknown;
   ambiguous?: boolean;
+  /** What the startup sweep found, when it found anything. */
+  startupSweep?: unknown;
 }): Record<string, unknown> {
   const warnings = [...input.warnings];
   if (excessNotionalReduced != null) {
@@ -238,6 +242,7 @@ function entryPayload(input: {
       response: input.stopResponse,
     },
     takeProfit: input.takeProfit ?? null,
+    startupSweep: input.startupSweep ?? null,
     warnings,
     journal: input.cfg.journalPath,
     sent: true,
@@ -365,6 +370,13 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
 
     const journalError = await requireJournal(deps, cfg.value.journalPath);
     if (journalError) return refused(journalError);
+
+    // Whatever the previous process left behind: an entry journaled as an intent
+    // whose outcome never arrived is a position nobody is watching, and opening
+    // a new one on top of it is how an unprotected position becomes two.
+    const sweep = await ensureStartupSweep(deps);
+    const sweepAlerts = sweepWarnings(sweep);
+    for (const alert of sweepAlerts) logStep(journal, "startup_sweep", { warning: alert });
 
     const client = createTradingClient({
       apiKey: credentials.value.apiKey,
@@ -560,7 +572,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               resting: false,
               restingPrice: null,
               journal,
-              warnings: [`the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`],
+              warnings: [...(sweepAlerts.length > 0 ? sweepAlerts : []), `the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`],
+              startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
               ambiguous: true,
             }));
           }
@@ -644,7 +657,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         resting: entry.resting ?? false,
         restingPrice: entry.price ?? null,
         journal,
-        warnings: takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : [],
+        warnings: [...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []), ...sweepAlerts],
+        startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
         takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
       }),
     );
@@ -671,6 +685,12 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
 
       const journalError = await requireJournal(deps, cfg.value.journalPath);
       if (journalError) return refused(journalError);
+
+      // A close is the natural moment to look for what a previous process left
+      // behind: an entry journaled as an intent whose outcome never arrived.
+      const sweep = await ensureStartupSweep(deps);
+      const sweepAlerts = sweepWarnings(sweep);
+      for (const alert of sweepAlerts) logStep(journal, "startup_sweep", { warning: alert });
 
       const client = createTradingClient({
         apiKey: credentials.value.apiKey,
@@ -701,6 +721,7 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
       }
       if (flatten.error) notes.push(flatten.error);
       if (flatten.dustNote) notes.push(flatten.dustNote);
+      notes.push(...sweepAlerts);
 
       // The orders are cancelled only when the position is actually zero.
       // Cancelling first would remove the stop of a position that is still open.
@@ -748,6 +769,7 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
         closeOrder: flatten.orders[flatten.orders.length - 1] ?? null,
         cancelledOrders,
         cancelledAlgoOrders: cancelledAlgo,
+        startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
         notes,
         journal: cfg.value.journalPath,
         sent,

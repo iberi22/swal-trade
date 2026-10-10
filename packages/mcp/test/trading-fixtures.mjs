@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 
 const DEFAULT_FILTERS = {
   BTCUSDT: { stepSize: "0.001", minQty: "0.001", tickSize: "0.1", minNotional: "5" },
+  ETHUSDT: { stepSize: "0.001", minQty: "0.001", tickSize: "0.1", minNotional: "5" },
 };
 
 export function exchangeInfoBody(symbols = DEFAULT_FILTERS) {
@@ -47,6 +48,10 @@ export function makeExchange(options = {}) {
     openOrders = [],
     /** Amounts each reduceOnly close leaves behind, in order; past the end it is zero. */
     closeReducesTo = {},
+    /** Attempt numbers (1-based) whose POST /fapi/v1/order times out instead of answering. */
+    networkErrorOnOrder = [],
+    /** Answer for GET /fapi/v1/order (the lookup by origClientOrderId). */
+    queryOrder = null,
   } = options;
 
   const calls = [];
@@ -111,8 +116,19 @@ export function makeExchange(options = {}) {
       if (failure) return json({ code: failure.code, msg: failure.msg }, 400);
       return json({ code: 200, msg: "success" });
     }
-    if (path === "/fapi/v1/order") {
+    if (path === "/fapi/v1/order" && method === "GET") {
+      // The lookup by origClientOrderId: the only way to resolve an ambiguous
+      // entry answer, and the thing a timeout could never tell us.
+      const answer = queryOrder ?? { code: -2013, msg: "Order does not exist." };
+      return json(answer, typeof answer.code === "number" && answer.code < 0 ? 400 : 200);
+    }
+    if (path === "/fapi/v1/order" && method === "POST") {
       const failure = failFor(orderFailures, "order");
+      const attempt = orderCounts.get("order") ?? 0;
+      if (networkErrorOnOrder.includes(attempt)) {
+        // What a timeout looks like to the client: no status, no body, no answer.
+        throw new Error("the request was aborted after 10000ms");
+      }
       if (failure && params.get("reduceOnly") !== "true") return json({ code: failure.code, msg: failure.msg }, 400);
       const type = params.get("type");
       if (type === "MARKET") {
