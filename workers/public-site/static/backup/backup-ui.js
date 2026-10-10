@@ -4,8 +4,9 @@
 import { ed25519Supported, loadPubkey, checkLicense, tokenFromStored, LICENSE_KEY } from '../guardian/guardian-license.js';
 import {
   buildBackupData,
-  encryptBackup,
   decryptBackup,
+  encryptBackup,
+  passphraseProblem,
   passphraseStrength,
 } from './backup-core.js';
 
@@ -72,7 +73,8 @@ function loadJournalIntoTextarea() {
 
 async function backupNow() {
   const pass = $('pass').value;
-  if (!pass) { text($('out'), 'Escribe una frase de paso para cifrar el respaldo.', 'err'); return; }
+  const problem = passphraseProblem(pass);
+  if (problem) { text($('out'), problem, 'err'); return; }
   text($('out'), 'Cifrando en este navegador…');
   try {
     const guardian = { cfg: readJson(CFG_KEY), telegram: readJson(TG_KEY) };
@@ -102,7 +104,8 @@ async function backupNow() {
 
 async function restore() {
   const pass = $('pass').value;
-  if (!pass) { text($('out'), 'Escribe la frase con la que cifraste el respaldo.', 'err'); return; }
+  const problem = passphraseProblem(pass);
+  if (problem) { text($('out'), problem, 'err'); return; }
   text($('out'), 'Descargando y descifrando…');
   try {
     const res = await fetch('/api/backup', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -136,13 +139,17 @@ async function remove() {
   }
 }
 
-$('pass').addEventListener('input', renderStrength);
-$('backup').addEventListener('click', backupNow);
-$('restore').addEventListener('click', restore);
-$('delete').addEventListener('click', remove);
+// Cableado del DOM. Solo en navegador: así el módulo se puede importar desde los tests
+// (node --test) para probar la lógica pura sin un DOM.
+if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+  $('pass').addEventListener('input', renderStrength);
+  $('backup').addEventListener('click', backupNow);
+  $('restore').addEventListener('click', restore);
+  $('delete').addEventListener('click', remove);
 
-(async () => {
-  await initLicense();
-  renderStrength();
-  loadJournalIntoTextarea();
-})();
+  (async () => {
+    await initLicense();
+    renderStrength();
+    loadJournalIntoTextarea();
+  })();
+}
