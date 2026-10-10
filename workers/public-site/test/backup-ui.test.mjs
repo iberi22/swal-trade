@@ -131,3 +131,37 @@ test('interfaz: frase corta -> avisa del mínimo de 12 y no envía nada', async 
   assert.equal(fetchCalls.filter((c) => c.url === '/api/backup').length, 0);
 });
 
+test('interfaz: licencia válida (status pro) respalda de extremo a extremo', async () => {
+  const signer = await makeSigner();
+  pubkeyB64 = signer.pubkeyB64;
+  resetPage({
+    pass: PASS,
+    license: await signer.token({ sub: 'ui_ok', exp: Math.floor(Date.now() / 1000) + 3600 }),
+    telegram: { chat: '99', token: 'BOT-TOKEN' },
+    journal: [{ note: 'nota privada' }],
+  });
+  await loadUi(async (url, opts) => {
+    assert.equal(opts.method, 'PUT');
+    assert.match(opts.headers.Authorization, /^Bearer /);
+    // Solo viaja el sobre cifrado.
+    const sent = JSON.parse(opts.body);
+    assert.deepEqual(Object.keys(sent).sort(), ['ct', 'iter', 'iv', 'kdf', 'salt', 'v']);
+    assert.ok(!opts.body.includes('BOT-TOKEN'));
+    assert.ok(!opts.body.includes('nota privada'));
+    return { ok: true, status: 200, json: async () => ({ size: 512, dev: false }) };
+  });
+  await waitFor(() => els.get('lic-info').textContent.length > 0);
+
+  // checkLicense devuelve 'pro': la página debe tratarlo como licencia válida.
+  assert.equal(els.get('lic-info').textContent, 'Licencia Socio válida. Respaldo cifrado disponible.');
+  assert.equal(els.get('lic-info').className, 'ok');
+
+  await back();
+  assert.match(els.get('out').textContent, /^Respaldo guardado \(512 bytes\)/);
+  assert.equal(els.get('out').className, 'ok');
+  assert.equal(els.get('restore').disabled, false);
+  // El diario del textarea queda guardado en local (cifrado al respaldar).
+  const saved = JSON.parse(store.get('swal.backup.journal'));
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].note, 'nota privada');
+});

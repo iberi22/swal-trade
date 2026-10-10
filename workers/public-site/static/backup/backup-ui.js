@@ -34,14 +34,17 @@ async function initLicense() {
   }
   const pubkey = await loadPubkey({ fetchFn: fetch.bind(globalThis), storage: localStorage });
   if (!pubkey) { text($('lic-info'), 'No se pudo obtener la clave pública de licencias.', 'err'); return false; }
-  const lic = await checkLicense({ token, pubkey, subtle: crypto.subtle });
+  const lic = await checkLicense({ token, pubkeySpki: pubkey, subtle: crypto.subtle });
+  // checkLicense devuelve 'pro' cuando la firma y la caducidad son buenas: es el estado válido.
   const msg = {
-    ok: 'Licencia Socio válida. Respaldo cifrado disponible.',
+    pro: 'Licencia Socio válida. Respaldo cifrado disponible.',
+    none: 'Sin licencia Socio activa. Obtén el respaldo cifrado en /checkout/.',
     expired: 'Licencia caducada: el servidor puede rechazar el respaldo.',
     invalid: 'Licencia inválida: el servidor puede rechazar el respaldo.',
+    unsupported: 'Este navegador no puede verificar la licencia Socio.',
   }[lic.status] || 'Licencia no verificada.';
-  text($('lic-info'), msg, lic.status === 'ok' ? 'ok' : 'err');
-  return lic.status === 'ok';
+  text($('lic-info'), msg, lic.status === 'pro' ? 'ok' : 'err');
+  return lic.status === 'pro';
 }
 
 /** Pista de fuerza bajo el campo de frase. */
