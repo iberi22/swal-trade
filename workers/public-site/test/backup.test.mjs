@@ -7,7 +7,6 @@ import {
   handleBackupRequest,
   verifyBackupLicense,
 } from '../src/backup.js';
-import { explainStore } from '../src/explain.js';
 import {
   BACKUP_ENVELOPE_VERSION,
   IV_BYTES,
@@ -65,17 +64,21 @@ function fakeEnvelope() {
   };
 }
 
-/** D1 falso que entiende la tabla backups y la explain_kv (límite por cuenta). */
+/** D1 falso que entiende la tabla backups, el límite atómico y la explain_kv. */
 function fakeDb() {
   const rows = new Map();
   const kv = new Map();
+  const rl = new Map();
   const norm = (sql) => sql.replace(/\s+/g, ' ').trim();
   return {
     rows,
+    rates: rl,
     prepare(sql) {
       const text = norm(sql);
       const isBackupsSelect = /^SELECT account_sub, updated_at, size, envelope FROM backups/.test(text);
       const isExplainSelect = /^SELECT value FROM explain_kv/.test(text);
+      // Reclamo atómico del límite por cuenta: una sola sentencia, un solo resultado.
+      const isRateClaim = /^INSERT INTO backup_rate_limits/.test(text);
       return {
         bind(...args) {
           return {
@@ -88,6 +91,16 @@ function fakeDb() {
                 const row = kv.get(args[0]);
                 const expired = row && row.expires_at !== null && row.expires_at <= args[1];
                 return row && !expired ? { value: row.value } : null;
+              }
+              if (isRateClaim) {
+                // args: account_sub, window_start, cutoff (nowMs - ventana)
+                const [sub, windowStart, cutoff] = args;
+                const prev = rl.get(sub);
+                const next = !prev || prev.window_start < cutoff
+                  ? { window_start: windowStart, count: 1 }
+                  : { window_start: prev.window_start, count: prev.count + 1 };
+                rl.set(sub, next);
+                return { count: next.count, window_start: next.window_start };
               }
               return null;
             },
@@ -340,18 +353,36 @@ test('servidor: limita peticiones por cuenta (429 con Retry-After)', async () =>
   const t = await token({ sub: 'acc_rl', exp: NOW_SEC + 3600 });
   const env = { DB: fakeDb(), BACKUP_RATE_LIMIT: '3' };
   assert.equal(backupRateLimit(env), 3);
-  const store = explainStore({});
   for (let i = 0; i < 3; i += 1) {
-    const res = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + i * 1000, rateStore: store });
+    const res = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + i * 1000 });
     assert.equal(res.status, 200, `petición ${i}`);
   }
-  const blocked = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 4000, rateStore: store });
+  const blocked = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 4000 });
   assert.equal(blocked.status, 429);
   assert.ok(Number(blocked.headers.get('Retry-After')) > 0);
+  const blockedBody = await blocked.json();
+  assert.equal(blockedBody.error, 'rate_limited');
+  assert.ok(blockedBody.retryAfterS > 0);
+  // El contador vive en D1 (reclamo atómico), no en memoria del isolate.
+  assert.equal(env.DB.rates.get('acc_rl').count, 4);
   // Otra cuenta no se ve afectada.
   const t2 = await token({ sub: 'acc_rl2', exp: NOW_SEC + 3600 });
-  const ok = await handleBackupRequest(req('PUT', fakeEnvelope(), t2), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 5000, rateStore: store });
+  const ok = await handleBackupRequest(req('PUT', fakeEnvelope(), t2), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 5000 });
   assert.equal(ok.status, 200);
+});
+
+test('servidor: el límite se reinicia al caducar la ventana', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const t = await token({ sub: 'acc_window', exp: NOW_SEC + 3600 });
+  const env = { DB: fakeDb(), BACKUP_RATE_LIMIT: '1' };
+  const first = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
+  assert.equal(first.status, 200);
+  // Dentro de la misma hora: bloqueado.
+  const inside = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 60 * 1000 });
+  assert.equal(inside.status, 429);
+  // Pasada la ventana, el contador vuelve a empezar.
+  const after = await handleBackupRequest(req('PUT', fakeEnvelope(), t), env, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW + 61 * 60 * 1000 });
+  assert.equal(after.status, 200);
 });
 
 // ---------- servidor: modo desarrollo ("gratis durante desarrollo") ----------

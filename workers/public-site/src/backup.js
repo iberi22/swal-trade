@@ -10,7 +10,6 @@
 // token no vacío ("gratis durante desarrollo") y la cuenta se deriva de su hash con el
 // prefijo "dev:", en un espacio separado de las cuentas reales.
 
-import { explainStore } from './explain.js';
 import {
   MAX_BACKUP_BYTES,
   base64ToBytes,
@@ -198,27 +197,51 @@ export async function authorizeBackup(request, env, deps = {}) {
   return { ok: false, status: 401, error: 'license_invalid' };
 }
 
-// ---------- límite por cuenta ----------
+// ---------- límite por cuenta (atómico en D1; si no hay D1, falla cerrado) ----------
 
-/** Contador en ventana móvil por `sub`, con el mismo store que el explicador. */
-export async function checkAccountBudget(store, sub, nowMs, limit, windowMs) {
-  if (!store) return { allowed: true, remaining: limit };
-  const key = `backup:rl:${sub}`;
-  let stamps = [];
-  try {
-    const parsed = JSON.parse((await store.get(key, nowMs)) || '[]');
-    if (Array.isArray(parsed)) stamps = parsed.filter((t) => Number.isFinite(t) && nowMs - t < windowMs);
-  } catch {
-    stamps = [];
-  }
-  if (stamps.length >= limit) {
-    await store.put(key, JSON.stringify(stamps), windowMs * 2, nowMs);
-    const oldest = Math.min(...stamps);
-    return { allowed: false, remaining: 0, retryAfterS: Math.max(1, Math.ceil((windowMs - (nowMs - oldest)) / 1000)) };
-  }
-  stamps.push(nowMs);
-  await store.put(key, JSON.stringify(stamps), windowMs * 2, nowMs);
-  return { allowed: true, remaining: Math.max(0, limit - stamps.length) };
+/**
+ * Reclamo atómico del cupo por cuenta: UNA sola sentencia SQL, sin leer-y-escribir.
+ *   - Inserta la ventana (count = 1) si la cuenta no existe.
+ *   - Si la ventana guardada ya caducó, la reinicia a `nowMs` con count = 1.
+ *   - Si no, incrementa el contador.
+ * Devuelve el recuento resultante de la ventana vigente (RETURNING): quien compara con el
+ * límite es el llamador, con el valor que ha escrito la propia base de datos.
+ * @param {object} db
+ * @param {string} sub
+ * @param {number} nowMs
+ * @param {number} windowMs
+ */
+const SQL_RATE_CLAIM =
+  'INSERT INTO backup_rate_limits (account_sub, window_start, count) VALUES (?1, ?2, 1) ' +
+  'ON CONFLICT(account_sub) DO UPDATE SET ' +
+  'window_start = CASE WHEN backup_rate_limits.window_start < ?3 THEN ?2 ELSE backup_rate_limits.window_start END, ' +
+  'count = CASE WHEN backup_rate_limits.window_start < ?3 THEN 1 ELSE backup_rate_limits.count + 1 END ' +
+  'RETURNING count, window_start';
+
+/**
+ * Reclama una unidad del cupo por cuenta. `null` si no hay binding de D1: en ese caso el
+ * llamador responde 503 (falla cerrado) en lugar de rebajar el límite a la memoria del isolate,
+ * que se reinicia en cada invocación y no protege nada.
+ * @param {object} env
+ * @param {string} sub
+ * @param {number} nowMs
+ * @param {{limit?: number, windowMs?: number}} [opts]
+ * @returns {Promise<{allowed: boolean, remaining: number, retryAfterS: number}|null>}
+ */
+export async function claimBackupRateLimit(env, sub, nowMs, opts = {}) {
+  const db = env && env.DB;
+  if (!db || typeof db.prepare !== 'function') return null;
+  const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? Math.floor(opts.limit) : backupRateLimit(env);
+  const windowMs = Number.isFinite(opts.windowMs) && opts.windowMs > 0 ? opts.windowMs : BACKUP_RATE_WINDOW_MS;
+  const row = await db.prepare(SQL_RATE_CLAIM).bind(sub, nowMs, nowMs - windowMs).first();
+  const count = row && Number.isFinite(row.count) ? row.count : 1;
+  const windowStart = row && Number.isFinite(row.window_start) ? row.window_start : nowMs;
+  const allowed = count <= limit;
+  return {
+    allowed,
+    remaining: Math.max(0, limit - count),
+    retryAfterS: allowed ? 0 : Math.max(1, Math.ceil((windowStart + windowMs - nowMs) / 1000)),
+  };
 }
 
 // ---------- almacén de sobres (D1; memoria en desarrollo) ----------
@@ -232,45 +255,27 @@ const SQL_DELETE = 'DELETE FROM backups WHERE account_sub = ?1';
 const memoryStores = new WeakMap();
 
 /**
- * Almacén de sobres. D1 si existe el binding `DB`; memoria del isolate como respaldo para
- * desarrollo sin D1 (no persiste entre invocaciones). La memoria vive en un WeakMap por
- * `env` para no filtrar estado entre pruebas.
+ * Almacén de sobres. D1 si existe el binding `DB`. Sin binding no hay almacén: el respaldo es
+ * persistente por definición, así que guardar en la memoria del isolate (que se pierde entre
+ * invocaciones) sería peor que fallar. `handleBackupRequest` responde 503 en ese caso.
+ * @param {object} env
  */
 export function backupStore(env) {
-  if (env && env.DB && typeof env.DB.prepare === 'function') {
-    const db = env.DB;
-    return {
-      kind: 'd1',
-      async get(sub) {
-        const row = await db.prepare(SQL_GET).bind(sub).first();
-        return row
-          ? { account_sub: row.account_sub, updated_at: row.updated_at, size: row.size, envelope: row.envelope }
-          : null;
-      },
-      async put(sub, envelope, size, nowSec) {
-        await db.prepare(SQL_PUT).bind(sub, nowSec, size, envelope).run();
-      },
-      async del(sub) {
-        await db.prepare(SQL_DELETE).bind(sub).run();
-      },
-    };
-  }
-  let memory = memoryStores.get(env);
-  if (!memory) {
-    memory = { kind: 'memory', rows: new Map() };
-    memoryStores.set(env, memory);
-  }
+  const db = env && env.DB;
+  if (!db || typeof db.prepare !== 'function') return null;
   return {
-    kind: 'memory',
+    kind: 'd1',
     async get(sub) {
-      const row = memory.rows.get(sub);
-      return row ? { ...row } : null;
+      const row = await db.prepare(SQL_GET).bind(sub).first();
+      return row
+        ? { account_sub: row.account_sub, updated_at: row.updated_at, size: row.size, envelope: row.envelope }
+        : null;
     },
     async put(sub, envelope, size, nowSec) {
-      memory.rows.set(sub, { account_sub: sub, updated_at: nowSec, size, envelope });
+      await db.prepare(SQL_PUT).bind(sub, nowSec, size, envelope).run();
     },
     async del(sub) {
-      memory.rows.delete(sub);
+      await db.prepare(SQL_DELETE).bind(sub).run();
     },
   };
 }
@@ -306,7 +311,7 @@ function wwwAuth(status) {
  * PUT / GET / DELETE /api/backup. Autenticado por licencia; guarda solo el sobre cifrado.
  * @param {Request} request
  * @param {object} env
- * @param {{nowMs?: number, nowSec?: number, pubkeySpki?: string, fetchFn?: typeof fetch, rateStore?: object}} [deps]
+ * @param {{nowMs?: number, nowSec?: number, pubkeySpki?: string, fetchFn?: typeof fetch}} [deps]
  */
 export async function handleBackupRequest(request, env, deps = {}) {
   const nowMs = deps.nowMs ?? Date.now();
@@ -317,13 +322,19 @@ export async function handleBackupRequest(request, env, deps = {}) {
     return json({ error: 'method_not_allowed' }, 405, { Allow: 'PUT, GET, DELETE' });
   }
 
-  // 1. Autorización por licencia (o token de desarrollo si BACKUP_DEV_OPEN=true).
+  // 0. Sin binding de D1 no hay dónde guardar el respaldo: falla cerrado (503).
+  if (!env || !env.DB || typeof env.DB.prepare !== 'function') {
+    return json({ error: 'storage_unavailable' }, 503);
+  }
+
+  // 1. Autorización por licencia (o token de desarrollo si BACKUP_DEV_OPEN=true en un host local).
   const auth = await authorizeBackup(request, env, { ...deps, nowMs, nowSec });
   if (!auth.ok) return json({ error: auth.error }, auth.status, wwwAuth(auth.status));
 
   // 2. Límite por cuenta para proteger el cupo de escrituras de D1 (100k/día gratis).
-  const rateStore = deps.rateStore ?? explainStore(env);
-  const budget = await checkAccountBudget(rateStore, auth.sub, nowMs, backupRateLimit(env), BACKUP_RATE_WINDOW_MS);
+  //    Reclamo atómico en una sola sentencia; si la base falla, falla cerrado (503).
+  const budget = await claimBackupRateLimit(env, auth.sub, nowMs, { limit: backupRateLimit(env), windowMs: BACKUP_RATE_WINDOW_MS });
+  if (budget === null) return json({ error: 'rate_limit_unavailable' }, 503);
   if (!budget.allowed) {
     return json({ error: 'rate_limited', retryAfterS: budget.retryAfterS }, 429, {
       'Retry-After': String(budget.retryAfterS),
@@ -352,6 +363,11 @@ export async function handleBackupRequest(request, env, deps = {}) {
   }
 
   // 3c. PUT: valida el sobre y lo guarda exactamente como viene.
+  //     El tope se mira ANTES de bufferizar el cuerpo (Content-Length), no después.
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BACKUP_BYTES) {
+    return json({ error: 'too_large', max_bytes: MAX_BACKUP_BYTES }, 413);
+  }
   const bodyText = await request.text();
   if (new TextEncoder().encode(bodyText).length > MAX_BACKUP_BYTES) {
     return json({ error: 'too_large', max_bytes: MAX_BACKUP_BYTES }, 413);

@@ -185,7 +185,16 @@ es el `sub` de la licencia.
 | `DELETE` | `/api/backup` | `{sub, dev, deleted:true}` | Borra el respaldo de la cuenta. |
 
 Migración `0004_backup.sql`, tabla `backups(account_sub, updated_at, size, envelope)` (una fila
-por cuenta). El límite por cuenta usa la tabla `explain_kv` como almacén clave/valor.
+por cuenta) y migración `0005_backup_rate_limits.sql` para el límite por cuenta.
+
+Licencia: además de la firma Ed25519 y de `exp`, el servidor exige `iss = swal-trade-billing`,
+`iat` numérica, no futura (60 s de holgura) y no posterior a `exp`, y usa **solo** `sub` como
+clave de fila (ni `account` ni `account_id`).
+
+Límite por cuenta: **atómico en una sola sentencia D1** (`INSERT ... ON CONFLICT ... RETURNING`,
+tabla `backup_rate_limits`), sin leer-y-escribir desde el isolate. Sin binding `DB` el endpoint
+responde 503 (falla cerrado) en lugar de rebajar el límite a memoria. En `PUT`, un
+`Content-Length` por encima de 256 KB se rechaza antes de bufferizar el cuerpo.
 
 Variables (`wrangler.toml`, todas opcionales):
 

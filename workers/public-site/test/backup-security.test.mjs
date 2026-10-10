@@ -2,7 +2,14 @@
 //   1. Parámetros del sobre (iter/salt/iv) validados ANTES del KDF y ligados como AAD.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authorizeBackup, devOpenHostAllowed, handleBackupRequest, verifyBackupLicense } from '../src/backup.js';
+import {
+  authorizeBackup,
+  backupStore,
+  claimBackupRateLimit,
+  devOpenHostAllowed,
+  handleBackupRequest,
+  verifyBackupLicense,
+} from '../src/backup.js';
 import {
   BACKUP_ENVELOPE_VERSION,
   IV_BYTES,
@@ -321,4 +328,76 @@ test('dev-open: authorizeBackup no marca dev fuera de un host local', async () =
     { pubkeySpki: (await makeSigner()).pubkeyB64, nowSec: NOW_SEC },
   );
   assert.deepEqual(auth, { ok: false, status: 401, error: 'license_invalid' });
+});
+
+// ---------- 8. límite por cuenta atómico, falla cerrado y Content-Length ----------
+
+test('límite: se reclama con una sola sentencia atómica sobre D1', async () => {
+  const db = fakeDb();
+  const env = { DB: db };
+  for (let i = 1; i <= 3; i += 1) {
+    const r = await claimBackupRateLimit(env, 'acc', NOW, { limit: 3, windowMs: 60 * 60 * 1000 });
+    assert.equal(r.allowed, true);
+    assert.equal(r.remaining, 3 - i);
+    assert.equal(r.retryAfterS, 0);
+  }
+  const blocked = await claimBackupRateLimit(env, 'acc', NOW + 1000, { limit: 3, windowMs: 60 * 60 * 1000 });
+  assert.equal(blocked.allowed, false);
+  assert.ok(blocked.retryAfterS > 0);
+  // El recuento está en la base, no en memoria del isolate.
+  assert.equal(db.rates.get('acc').count, 4);
+});
+
+test('límite: sin binding de D1 el respaldo falla cerrado (503), sin memoria de respaldo', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const t = await token({ sub: 'acc_nodbo', exp: NOW_SEC + 3600 });
+  // GET, PUT y DELETE: ninguno debe servirse desde memoria.
+  for (const method of ['GET', 'PUT', 'DELETE']) {
+    const res = await handleBackupRequest(req(method, method === 'PUT' ? fakeEnvelope() : null, t, PROD_URL), {}, { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW });
+    assert.equal(res.status, 503, method);
+    assert.equal((await res.json()).error, 'storage_unavailable', method);
+  }
+  // Y el límite no tiene store que consultar.
+  assert.equal(await claimBackupRateLimit({}, 'acc', NOW), null);
+  assert.equal(await claimBackupRateLimit({ DB: {} }, 'acc', NOW), null);
+  assert.equal(backupStore({}), null);
+});
+
+test('límite: un cuerpo que declara más de 256 KB se rechaza antes de bufferizar', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const t = await token({ sub: 'acc_cl', exp: NOW_SEC + 3600 });
+  const db = fakeDb();
+  const envelope = fakeEnvelope();
+  // Cuerpo pequeño pero Content-Length falseado: se corta por la cabecera.
+  const res = await handleBackupRequest(
+    req('PUT', envelope, t, PROD_URL, { 'Content-Length': String(MAX_BACKUP_BYTES + 1) }),
+    { DB: db },
+    { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW },
+  );
+  assert.equal(res.status, 413);
+  assert.equal((await res.json()).error, 'too_large');
+  // No se llega a escribir la fila.
+  assert.equal(db.rows.size, 0);
+  // Una cabecera dentro del tope deja pasar la petición (que sí se valida).
+  const ok = await handleBackupRequest(
+    req('PUT', envelope, t, PROD_URL, { 'Content-Length': String(1000) }),
+    { DB: db },
+    { pubkeySpki: pubkeyB64, nowSec: NOW_SEC, nowMs: NOW },
+  );
+  assert.equal(ok.status, 200);
+});
+
+test('límite: 429 con Retry-After cuando una cuenta se pasa del cupo', async () => {
+  const { pubkeyB64, token } = await makeSigner();
+  const t = await token({ sub: 'acc_429', exp: NOW_SEC + 3600 });
+  const env = { DB: fakeDb(), BACKUP_RATE_LIMIT: '2' };
+  const deps = { pubkeySpki: pubkeyB64, nowSec: NOW_SEC };
+  for (let i = 0; i < 2; i += 1) {
+    const res = await handleBackupRequest(req('PUT', fakeEnvelope(), t, PROD_URL), env, { ...deps, nowMs: NOW + i });
+    assert.equal(res.status, 200);
+  }
+  const blocked = await handleBackupRequest(req('PUT', fakeEnvelope(), t, PROD_URL), env, { ...deps, nowMs: NOW + 2 });
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, 'rate_limited');
+  assert.ok(Number(blocked.headers.get('Retry-After')) > 0);
 });
