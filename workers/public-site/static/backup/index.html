@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Respaldo cifrado — SWAL Trade</title>
+  <meta name="description" content="Respaldo cifrado de extremo a extremo (Socio SWAL): tus ajustes y tu diario se cifran en este navegador y el servidor solo guarda el sobre cifrado. Ni la frase ni el contenido viajan en claro.">
+  <link rel="canonical" href="https://trade.swal.network/backup/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="backup.css">
+</head>
+<body>
+  <h1>Respaldo cifrado <small class="muted">Socio SWAL</small></h1>
+  <p class="muted">Guarda una copia cifrada de tus ajustes del guardián, tus ajustes de análisis y tu diario local. El cifrado ocurre aquí, en tu navegador, antes de enviar nada: el servidor solo almacena el sobre cifrado y <strong>nunca</strong> ve tu frase de paso ni el contenido. Para restaurar necesitas la misma frase.</p>
+  <p id="lic-info" class="muted"></p>
+
+  <section>
+    <h2>Frase de paso</h2>
+    <div class="warn-box strong">
+      Si pierdes la frase, nadie puede recuperar tus datos: ni SWAL ni el servidor tienen forma de descifrarlos. Guárdala en un gestor de contraseñas.
+    </div>
+    <label>Frase de paso (mínimo 12 caracteres recomendados)
+      <input id="pass" type="password" autocomplete="new-password" spellcheck="false">
+    </label>
+    <div id="meter" class="meter"><div></div></div>
+    <p id="strength" class="muted"></p>
+    <p class="muted">La clave se deriva con PBKDF2 (600.000 iteraciones) y el contenido se cifra con AES-256-GCM. La frase y la clave no salen de este navegador.</p>
+  </section>
+
+  <section>
+    <h2>Qué se incluye</h2>
+    <p class="muted">Ajustes del guardián (límite de pérdida, nocional, apalancamiento, zona horaria), el chat de Telegram, ajustes de análisis y tu diario. <strong>Las claves de API de Binance nunca se incluyen</strong> en ningún caso.</p>
+    <div class="check">
+      <input id="include-tg-token" type="checkbox">
+      <label for="include-tg-token" style="font-weight:400;margin:0">Incluir el token del bot de Telegram (avanzado; queda cifrado junto al resto).</label>
+    </div>
+    <label for="journal">Diario local (una nota por línea)
+      <textarea id="journal" spellcheck="false" placeholder="Notas privadas que se respaldan cifradas…"></textarea>
+    </label>
+  </section>
+
+  <section>
+    <h2>Acciones</h2>
+    <button id="backup" type="button">Respaldar ahora</button>
+    <button id="restore" type="button" class="secondary" disabled>Restaurar respaldo</button>
+    <button id="delete" type="button" class="danger" disabled>Eliminar respaldo</button>
+    <p id="out"></p>
+  </section>
+
+  <p class="muted"><a href="/guardian/">Guardián de riesgo</a> · <a href="/checkout/">Obtener Socio</a> · Código abierto AGPL</p>
+  <footer class="muted small">
+    <a href="/">Inicio</a> · <a href="/risk/">Aviso de riesgo</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a>
+  </footer>
+  <script type="module" src="backup-ui.js"></script>
+</body>
+</html>
