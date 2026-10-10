@@ -41,6 +41,86 @@ test("lists the read-only tools and keeps the write tools out when the flag is o
   });
 });
 
+test("every write tool is marked destructive", async () => {
+  await withClient({ env: { SWAL_MCP_TRADING: "enabled", SWAL_MCP_SYMBOLS: "BTCUSDT", SWAL_MAX_NOTIONAL_USD: "10", SWAL_DAILY_LOSS_USD: "5" }, fetchFn: async () => jsonResponse({}) }, async (client) => {
+    const listed = await client.listTools();
+    for (const tool of listed.tools) {
+      if (["place_order", "close_position", "grid_place"].includes(tool.name)) {
+        assert.equal(tool.annotations.destructiveHint, true, `${tool.name} must be destructiveHint`);
+        assert.equal(tool.annotations.readOnlyHint, false, `${tool.name} must not be readOnly`);
+      } else {
+        assert.notEqual(tool.annotations.destructiveHint, true, `${tool.name} must not be destructive`);
+      }
+    }
+  });
+});
+
+test("the server instructions are built from the trading configuration", async () => {
+  // Read-only: the flag is off, so the instructions say so and name the base.
+  await withClient({ env: {}, fetchFn: async () => jsonResponse({}) }, async (client) => {
+    const instructions = client.getInstructions();
+    assert.match(instructions, /disabled unless SWAL_MCP_TRADING=enabled/);
+    assert.match(instructions, /Reads use https:\/\/fapi.binance.com/);
+    assert.doesNotMatch(instructions, /order guard enforces/);
+  });
+  // Enabled: the instructions carry the caps actually in force.
+  await withClient(
+    {
+      env: {
+        SWAL_MCP_TRADING: "enabled",
+        SWAL_MCP_SYMBOLS: "BTCUSDT,ETHUSDT",
+        SWAL_MAX_NOTIONAL_USD: "250",
+        SWAL_MAX_LEVERAGE: "3",
+        SWAL_MCP_MAX_POSITIONS: "2",
+        SWAL_DAILY_LOSS_USD: "75",
+        SWAL_TZ_OFFSET_HOURS: "0",
+      },
+      fetchFn: async () => jsonResponse({}),
+    },
+    async (client) => {
+      const instructions = client.getInstructions();
+      assert.match(instructions, /They trade on https:\/\/testnet.binancefuture.com \(testnet\)/);
+      assert.match(instructions, /symbols BTCUSDT, ETHUSDT/);
+      assert.match(instructions, /notional at most 250 USD/);
+      assert.match(instructions, /leverage at most 3x/);
+      assert.match(instructions, /at most 2 open position\(s\)/);
+      assert.match(instructions, /reaches -75 USD/);
+    },
+  );
+  // Enabled but broken: the instructions say the configuration refuses everything.
+  await withClient(
+    { env: { SWAL_MCP_TRADING: "enabled", SWAL_MCP_SYMBOLS: "BTCUSDT", SWAL_DAILY_LOSS_USD: "75" }, fetchFn: async () => jsonResponse({}) },
+    async (client) => {
+      const instructions = client.getInstructions();
+      assert.match(instructions, /refuses every order/);
+      assert.match(instructions, /SWAL_MAX_NOTIONAL_USD is required/);
+    },
+  );
+});
+
+test("the read tools use the same base as the writes when trading is enabled", async () => {
+  const urls = [];
+  const fetchFn = async (url) => {
+    urls.push(String(url));
+    return jsonResponse({ symbol: "BTCUSDT", markPrice: "100" });
+  };
+  await withClient(
+    { env: { SWAL_MCP_TRADING: "enabled", SWAL_MCP_NETWORK: "testnet", SWAL_MCP_SYMBOLS: "BTCUSDT" }, fetchFn },
+    async (client) => {
+      await client.callTool({ name: "propose_order", arguments: { symbol: "BTCUSDT", side: "BUY", notional_usd: 10, stop_loss_pct: 1 } });
+    },
+  );
+  assert.ok(urls.length > 0);
+  assert.equal(new URL(urls[0]).origin, "https://testnet.binancefuture.com", urls[0]);
+
+  urls.length = 0;
+  await withClient({ env: {}, fetchFn }, async (client) => {
+    await client.callTool({ name: "propose_order", arguments: { symbol: "BTCUSDT", side: "BUY", notional_usd: 10, stop_loss_pct: 1 } });
+  });
+  // Without the flag, the reads keep the user's public-read base.
+  assert.equal(new URL(urls[0]).origin, "https://fapi.binance.com", urls[0]);
+});
+
 test("rejects invalid analyze_chart and propose_order inputs before any fetch", async () => {
   let calls = 0;
   const fetchFn = async () => {

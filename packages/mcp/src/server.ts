@@ -22,7 +22,7 @@ import { loadHeadlines } from "./news.js";
 import { closePosition, placeOrder } from "./place.js";
 import { PLACEMENT_NOTE, proposeFromMark } from "./propose.js";
 import { normalizeSymbol } from "./symbol.js";
-import { tradingEnabled, TESTNET_BASE, MAINNET_BASE } from "./trading-config.js";
+import { parseTradingConfig, readBase, tradingEnabled, TESTNET_BASE } from "./trading-config.js";
 import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
 import type { WriteDeps } from "./write.js";
@@ -38,6 +38,37 @@ const EXPLAIN_NOTE =
   "Explain what you are about to send to the user in plain language before calling this tool (for an order: symbol, side, notional, leverage, stop, take profit and why). The user decides; nothing is sent until this tool is called.";
 const NO_STRATEGY_NOTE =
   "This server provides no strategy, no signal and no recommendation: it only executes the explicit instruction it is given.";
+
+/**
+ * The instructions the client is shown, built from the configuration that is
+ * actually in force.
+ *
+ * They are derived from parseTradingConfig rather than from a hardcoded string,
+ * because instructions that describe a different configuration than the one the
+ * server will enforce are worse than no instructions at all.
+ */
+export function serverInstructions(env: NodeJS.ProcessEnv, base: string): string {
+  const parts = [
+    "swal-trade MCP serves chart analysis, market context, account risk and order proposals.",
+    `Reads use ${base}.`,
+  ];
+  const cfg = parseTradingConfig(env);
+  if (!cfg.ok) {
+    parts.push(
+      tradingEnabled(env)
+        ? `Write tools (place_order, close_position, grid_place) are registered, but the current configuration refuses every order: ${cfg.error} Fix the configuration before sending anything.`
+        : "Write tools (place_order, close_position, grid_place) are disabled unless SWAL_MCP_TRADING=enabled; grid_plan is read-only and always available.",
+    );
+  } else {
+    const value = cfg.value;
+    parts.push(
+      `Write tools are registered because SWAL_MCP_TRADING=enabled. They trade on ${value.base} (${value.network}): explain every order to the user before sending it, and never assume a strategy or a signal from this server.`,
+      `The order guard enforces: symbols ${value.symbols.join(", ")}; notional at most ${value.maxNotionalUsd} USD per position; leverage at most ${value.maxLeverage}x; at most ${value.maxOpenPositions} open position(s); a stop on every order; and no new order once today's PnL reaches -${value.dailyLossUsd} USD (${value.tz >= 0 ? "+" : ""}${value.tz}h day boundary).`,
+    );
+  }
+  parts.push(STRENGTH_NOTE, "There are no withdrawal tools. API keys must not have withdrawal permission.", "The daily-loss lock cannot be bypassed from this server.");
+  return parts.join(" ");
+}
 
 export interface ServerDeps {
   env?: NodeJS.ProcessEnv;
@@ -63,6 +94,10 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   const fearGreedCache = createFearGreedCache();
   const plans = createGridPlanStore(now);
   const writeDeps: WriteDeps = { env, fetchFn, now, plans };
+  // One base for every tool: what an order is explained with is what it is sent
+  // against, and the write tools decide their own network from SWAL_MCP_NETWORK.
+  const publicBase = futuresBase(env);
+  const base = readBase(env, publicBase.ok ? publicBase.value : "https://fapi.binance.com");
   const secrets = [env.BINANCE_API_KEY, env.BINANCE_API_SECRET].flatMap((value) => (value ? [value, value.trim()] : []));
   const canTrade = tradingEnabled(env);
 
@@ -74,22 +109,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     content: [{ type: "text", text: JSON.stringify(value) }],
   });
 
-  const server = new McpServer(
-    { name: "swal-trade", version: "0.1.0" },
-    {
-      instructions: [
-        "swal-trade MCP serves chart analysis, market context, account risk and order proposals.",
-        canTrade
-          ? `Write tools are registered because SWAL_MCP_TRADING=enabled. They trade on ${
-              env.SWAL_MCP_NETWORK === "mainnet" && env.SWAL_MCP_MAINNET_CONFIRM === "yes" ? MAINNET_BASE : TESTNET_BASE
-            }: explain every order to the user before sending it, and never assume a strategy or a signal from this server.`
-          : "Write tools (place_order, close_position, grid_place) are disabled unless SWAL_MCP_TRADING=enabled; grid_plan is read-only and always available.",
-        STRENGTH_NOTE,
-        "There are no withdrawal tools. API keys must not have withdrawal permission.",
-        "The daily-loss lock cannot be bypassed from this server.",
-      ].join(" "),
-    },
-  );
+  const server = new McpServer({ name: "swal-trade", version: "0.1.0" }, { instructions: serverInstructions(env, base) });
 
   server.registerTool(
     "analyze_chart",
@@ -112,13 +132,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async (args) => {
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
+      if (!publicBase.ok) return fail(publicBase.error);
       const loaded = await loadAnalysisCore(env);
       if (!loaded.ok) return fail(ANALYSIS_CORE_MISSING);
       try {
         const candles = await fetchCandles({
-          base: base.value,
+          base,
           symbol,
           timeframe: args.timeframe,
           limit: args.limit ?? DEFAULT_KLINE_LIMIT,
@@ -147,8 +166,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async (args) => {
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
+      if (!publicBase.ok) return fail(publicBase.error);
       try {
         const [fearGreed, core, headlines] = await Promise.all([
           fearGreedCache.get(fetchFn, now),
@@ -171,7 +189,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           MARKET_TIMEFRAMES.map(async (timeframe) => {
             try {
               const candles = await fetchCandles({
-                base: base.value,
+                base,
                 symbol,
                 timeframe,
                 limit: MARKET_KLINE_LIMIT,
@@ -214,15 +232,13 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!credentials.ok) return fail(credentials.error);
       const cfg = parseAccountRiskConfig(env);
       if (!cfg.ok) return fail(cfg.error);
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
       try {
         const client = createReadOnlyClient({
           apiKey: credentials.value.apiKey,
           apiSecret: credentials.value.apiSecret,
           fetchFn,
           now,
-          base: base.value,
+          base,
         });
         const snapshot = await loadAccountRiskView({ client, cfg: cfg.value, now });
         return ok({
@@ -259,14 +275,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async (args) => {
       const limits = parseProposalLimits(env);
       if (!limits.ok) return fail(limits.error);
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
       try {
         const [markPrice, filters] = await Promise.all([
-          fetchMarkPrice(base.value, symbol, fetchFn),
-          fetchSymbolFilters(base.value, symbol, fetchFn),
+          fetchMarkPrice(base, symbol, fetchFn),
+          fetchSymbolFilters(base, symbol, fetchFn),
         ]);
         const built = proposeFromMark({
           symbol,
@@ -350,7 +364,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           leverage: z.number().finite().min(1).max(125).optional().describe("Leverage. Default 1. Capped by SWAL_MAX_LEVERAGE."),
           type: z.enum(["market", "post_only"]).optional().describe("market (default) or post_only (LIMIT GTX)."),
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       },
       async (args) => {
         const outcome = await placeOrder(writeDeps, args);
@@ -366,7 +380,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         inputSchema: {
           symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       },
       async (args) => {
         const outcome = await closePosition(writeDeps, args);
@@ -388,7 +402,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           total_notional_usd: z.number().finite().positive().optional().describe("Total notional spread across the levels, in USD."),
           stop_loss_price: z.number().finite().positive().optional().describe("Protective stop price, below a long range or above a short range."),
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       },
       async (args) => {
         const outcome = await gridPlace(writeDeps, args);

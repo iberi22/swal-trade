@@ -160,6 +160,22 @@ export function parseTradingConfig(env: NodeJS.ProcessEnv): ConfigResult<Trading
   };
 }
 
+/**
+ * The base every tool in the server reads from and writes to.
+ *
+ * The write tools decide their own network from SWAL_MCP_NETWORK, so the read
+ * tools have to decide it the same way when trading is on: reading mainnet while
+ * writing testnet is how an order gets explained with one price and sent against
+ * another. Without the flag, the reads keep BINANCE_FUTURES_URL, which is the
+ * user's choice for a read-only server.
+ */
+export function readBase(env: NodeJS.ProcessEnv, futuresBase: string): string {
+  if (!tradingEnabled(env)) return futuresBase;
+  const raw = (env.SWAL_MCP_NETWORK ?? "").trim().toLowerCase();
+  if (raw === "mainnet" && (env.SWAL_MCP_MAINNET_CONFIRM ?? "").trim().toLowerCase() === "yes") return MAINNET_BASE;
+  return TESTNET_BASE;
+}
+
 export interface GridLimits {
   symbols: string[];
   maxNotionalUsd: number | null;

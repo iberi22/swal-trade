@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { createReadOnlyClient } from "../dist/binance.js";
+import { createReadOnlyClient, IncompleteIncomeError } from "../dist/binance.js";
 
 const SECRET = "s3cretvalue";
 
@@ -93,4 +93,73 @@ test("http and network errors do not include the secret", async () => {
     assert.equal(err.message.includes("signature="), false);
     return true;
   });
+});
+
+// ---------------------------------------------------------------------------
+// Item 9: the day's income is summed completely, or the day is not summed at all.
+// ---------------------------------------------------------------------------
+
+function incomeExchange(pages) {
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes("/fapi/v1/time")) return { ok: true, status: 200, json: async () => ({ serverTime: 1_000_500 }), text: async () => "" };
+    if (String(url).includes("/fapi/v1/income")) {
+      const n = calls.filter((call) => call.includes("/income")).length;
+      const page = pages[Math.min(n, pages.length) - 1] ?? [];
+      return { ok: true, status: 200, json: async () => page, text: async () => "" };
+    }
+    return { ok: true, status: 200, json: async () => [], text: async () => "" };
+  };
+  return { fetchFn, calls };
+}
+
+function client(fetchFn) {
+  return createReadOnlyClient({ apiKey: "AK-test-key", apiSecret: SECRET, fetchFn, now: () => 1_000_000 });
+}
+
+const fullPage = (count, timeFrom, tranFrom) =>
+  Array.from({ length: count }, (_, i) => ({ time: timeFrom + i, tranId: tranFrom + i, incomeType: "REALIZED_PNL", asset: "USDT", income: "-1" }));
+
+test("income pagination walks every page and dedupes by tranId", async () => {
+  const { fetchFn, calls } = incomeExchange([fullPage(1000, 1000, 1), fullPage(500, 5000, 1001)]);
+  const rows = await client(fetchFn).incomeSince(0);
+  assert.equal(rows.length, 1500);
+  // The cursor advances by tranId, so two rows sharing a millisecond are both read.
+  assert.equal(calls.filter((call) => call.includes("/income")).length, 2);
+  assert.ok(calls[1].includes("fromId=1001"));
+  // The same tranId twice is counted once: the cursor is inclusive.
+  const duplicated = await client(incomeExchange([[...fullPage(1000, 1000, 1), { time: 1000, tranId: 1 }], fullPage(10, 5000, 1001)]).fetchFn).incomeSince(0);
+  assert.equal(duplicated.length, 1010);
+});
+
+test("income pagination fails closed on a full page whose rows cannot be advanced past", async () => {
+  // A full page with no tranId: a timestamp cursor would skip every row that
+  // shares the millisecond of the last one.
+  await assert.rejects(
+    client(incomeExchange([Array.from({ length: 1000 }, (_, i) => ({ time: 1000 })), fullPage(5, 5000, 5000)]).fetchFn).incomeSince(0),
+    /rows have no tranId/,
+  );
+  // A full page whose last row has no time: there is no cursor at all.
+  await assert.rejects(
+    client(
+      incomeExchange([
+        [...fullPage(999, 1000, 1), { tranId: 9999, income: "0" }],
+        fullPage(5, 5000, 5000),
+      ]).fetchFn,
+    ).incomeSince(0),
+    /last row has no time/,
+  );
+  // A page that repeats itself: the cursor cannot advance, so the day would be
+  // summed forever or not at all.
+  const stuck = fullPage(1000, 1000, 1);
+  await assert.rejects(client(incomeExchange([stuck, stuck, fullPage(5, 9000, 9000)]).fetchFn).incomeSince(0), /cannot advance/);
+  // More full pages than the cap: the day is not summed.
+  const forever = Array.from({ length: 60 }, () => fullPage(1000, 1000, 1));
+  await assert.rejects(client(incomeExchange(forever).fetchFn).incomeSince(0), IncompleteIncomeError);
+});
+
+test("a short income page is the exchange saying that was the last one", async () => {
+  const rows = await client(incomeExchange([fullPage(999, 1000, 1)]).fetchFn).incomeSince(0);
+  assert.equal(rows.length, 999);
 });
