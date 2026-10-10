@@ -1,0 +1,334 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+//
+// Respaldo cifrado de extremo a extremo: PUT / GET / DELETE /api/backup.
+//
+// El cliente cifra con backup-core.js (PBKDF2 + AES-256-GCM) y manda SOLO el sobre
+// {v, kdf, iter, salt, iv, ct}. El servidor NUNCA ve la frase, la clave derivada ni el
+// texto en claro (contrato E2EE de docs/SWAL/GOAL.md): guarda el sobre tal cual en D1,
+// una fila por cuenta. La clave por cuenta es el `sub` de la licencia Ed25519 (la misma
+// que verifica /guardian/). En desarrollo, con BACKUP_DEV_OPEN=true, se acepta cualquier
+// token no vacío ("gratis durante desarrollo") y la cuenta se deriva de su hash con el
+// prefijo "dev:", en un espacio separado de las cuentas reales.
+
+import { explainStore } from './explain.js';
+import {
+  MAX_BACKUP_BYTES,
+  base64ToBytes,
+  envelopeJson,
+  measureEnvelopeBytes,
+  parseEnvelope,
+} from '../static/backup/backup-core.js';
+
+/** Límite por cuenta: peticiones por ventana. Generoso: el respaldo es manual. */
+export const BACKUP_RATE_LIMIT_DEFAULT = 60;
+export const BACKUP_RATE_WINDOW_MS = 60 * 60 * 1000;
+/** URL de la clave pública de licencias; campo spki_base64. Igual que /guardian/. */
+export const BACKUP_PUBKEY_URL = 'https://pay.swal.network/v1/pubkey';
+/** Prefijo del `sub` de las cuentas de desarrollo (separadas de las reales). */
+const DEV_SUB_PREFIX = 'dev:';
+
+// ---------- base64 / hashing ----------
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------- verificación de licencia Ed25519 (servidor) ----------
+
+/**
+ * Verifica el token Ed25519 `base64url(payload).base64url(sig)` contra la clave SPKI.
+ * Espejo de guardian-license.js checkLicense, del lado del servidor. No depende de red.
+ * @returns {Promise<{status:'ok'|'invalid'|'expired', payload?: object, reason?: string}>}
+ */
+export async function verifyBackupLicense(token, pubkeySpki, nowSec, subtle = crypto.subtle) {
+  if (typeof token !== 'string' || !token.trim()) return { status: 'invalid', reason: 'missing' };
+  const parts = token.trim().split('.');
+  if (parts.length !== 2) return { status: 'invalid', reason: 'malformed' };
+  if (typeof pubkeySpki !== 'string' || !pubkeySpki.trim()) return { status: 'invalid', reason: 'no_pubkey' };
+
+  let key;
+  try {
+    key = await subtle.importKey('spki', base64ToBytes(pubkeySpki), { name: 'Ed25519' }, false, ['verify']);
+  } catch {
+    return { status: 'invalid', reason: 'pubkey_import' };
+  }
+  let ok;
+  try {
+    ok = await subtle.verify({ name: 'Ed25519' }, key, base64ToBytes(parts[1]), new TextEncoder().encode(parts[0]));
+  } catch {
+    return { status: 'invalid', reason: 'sig_decode' };
+  }
+  if (!ok) return { status: 'invalid', reason: 'bad_signature' };
+
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64ToBytes(parts[0])));
+  } catch {
+    return { status: 'invalid', reason: 'payload_decode' };
+  }
+  if (typeof payload.exp !== 'number' || payload.exp <= nowSec) return { status: 'expired', payload };
+  return { status: 'ok', payload };
+}
+
+/** `sub` de la licencia = clave por cuenta. Tolera emisores que usen account_id/account. */
+export function accountSubFrom(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  for (const k of ['sub', 'account_id', 'account']) {
+    const v = payload[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/** Clave pública de licencias: inyectada (tests) > fijada en env > red (con caché en modulo). */
+let pubkeyCache = null;
+export async function resolveBackupPubkey(env, deps = {}) {
+  if (typeof deps.pubkeySpki === 'string' && deps.pubkeySpki.trim()) return deps.pubkeySpki.trim();
+  if (env && typeof env.BACKUP_LICENSE_PUBKEY === 'string' && env.BACKUP_LICENSE_PUBKEY.trim()) {
+    return env.BACKUP_LICENSE_PUBKEY.trim();
+  }
+  if (pubkeyCache) return pubkeyCache;
+  const fetchFn = deps.fetchFn ?? fetch;
+  let text = '';
+  try {
+    const res = await fetchFn(BACKUP_PUBKEY_URL);
+    if (!res || res.ok === false) return null;
+    text = (await res.text()).trim();
+  } catch {
+    return null;
+  }
+  let value = text;
+  try {
+    const j = JSON.parse(text);
+    value = j.spki_base64 || j.public_key || j.pubkey || j.spki || '';
+  } catch {
+    /* texto plano */
+  }
+  if (typeof value !== 'string' || !value) return null;
+  pubkeyCache = value;
+  return value;
+}
+
+/** El interruptor "gratis durante desarrollo". Acepta true, "true" o "1". */
+export function devOpenEnabled(env) {
+  const v = env && env.BACKUP_DEV_OPEN;
+  return v === true || v === 'true' || v === '1';
+}
+
+function bearerToken(request) {
+  const auth = request.headers.get('Authorization') || '';
+  return auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+}
+
+/**
+ * Autoriza una petición de respaldo. Devuelve {ok:true, sub, dev} o {ok:false, status, error}.
+ */
+export async function authorizeBackup(request, env, deps = {}) {
+  const nowSec = deps.nowSec ?? Math.floor((deps.nowMs ?? Date.now()) / 1000);
+  const token = bearerToken(request);
+  if (!token) return { ok: false, status: 401, error: 'license_required' };
+
+  const devOpen = devOpenEnabled(env);
+  let pubkey = null;
+  try {
+    pubkey = await resolveBackupPubkey(env, deps);
+  } catch {
+    pubkey = null;
+  }
+
+  if (pubkey) {
+    const lic = await verifyBackupLicense(token, pubkey, nowSec);
+    if (lic.status === 'ok') {
+      const sub = accountSubFrom(lic.payload);
+      if (sub) return { ok: true, sub, dev: false };
+      return { ok: false, status: 401, error: 'license_no_sub' };
+    }
+    if (lic.status === 'expired') return { ok: false, status: 402, error: 'license_expired' };
+    // inválida: si dev-open está activo, se trata como token de desarrollo más abajo.
+  } else if (!devOpen) {
+    return { ok: false, status: 503, error: 'pubkey_unavailable' };
+  }
+
+  if (devOpen) {
+    const sub = DEV_SUB_PREFIX + (await sha256Hex(token)).slice(0, 32);
+    return { ok: true, sub, dev: true };
+  }
+  return { ok: false, status: 401, error: 'license_invalid' };
+}
+
+// ---------- límite por cuenta ----------
+
+/** Contador en ventana móvil por `sub`, con el mismo store que el explicador. */
+export async function checkAccountBudget(store, sub, nowMs, limit, windowMs) {
+  if (!store) return { allowed: true, remaining: limit };
+  const key = `backup:rl:${sub}`;
+  let stamps = [];
+  try {
+    const parsed = JSON.parse((await store.get(key, nowMs)) || '[]');
+    if (Array.isArray(parsed)) stamps = parsed.filter((t) => Number.isFinite(t) && nowMs - t < windowMs);
+  } catch {
+    stamps = [];
+  }
+  if (stamps.length >= limit) {
+    await store.put(key, JSON.stringify(stamps), windowMs * 2, nowMs);
+    const oldest = Math.min(...stamps);
+    return { allowed: false, remaining: 0, retryAfterS: Math.max(1, Math.ceil((windowMs - (nowMs - oldest)) / 1000)) };
+  }
+  stamps.push(nowMs);
+  await store.put(key, JSON.stringify(stamps), windowMs * 2, nowMs);
+  return { allowed: true, remaining: Math.max(0, limit - stamps.length) };
+}
+
+// ---------- almacén de sobres (D1; memoria en desarrollo) ----------
+
+const SQL_GET = 'SELECT account_sub, updated_at, size, envelope FROM backups WHERE account_sub = ?1';
+const SQL_PUT =
+  'INSERT INTO backups (account_sub, updated_at, size, envelope) VALUES (?1, ?2, ?3, ?4) ' +
+  'ON CONFLICT(account_sub) DO UPDATE SET updated_at = excluded.updated_at, size = excluded.size, envelope = excluded.envelope';
+const SQL_DELETE = 'DELETE FROM backups WHERE account_sub = ?1';
+
+const memoryStores = new WeakMap();
+
+/**
+ * Almacén de sobres. D1 si existe el binding `DB`; memoria del isolate como respaldo para
+ * desarrollo sin D1 (no persiste entre invocaciones). La memoria vive en un WeakMap por
+ * `env` para no filtrar estado entre pruebas.
+ */
+export function backupStore(env) {
+  if (env && env.DB && typeof env.DB.prepare === 'function') {
+    const db = env.DB;
+    return {
+      kind: 'd1',
+      async get(sub) {
+        const row = await db.prepare(SQL_GET).bind(sub).first();
+        return row
+          ? { account_sub: row.account_sub, updated_at: row.updated_at, size: row.size, envelope: row.envelope }
+          : null;
+      },
+      async put(sub, envelope, size, nowSec) {
+        await db.prepare(SQL_PUT).bind(sub, nowSec, size, envelope).run();
+      },
+      async del(sub) {
+        await db.prepare(SQL_DELETE).bind(sub).run();
+      },
+    };
+  }
+  let memory = memoryStores.get(env);
+  if (!memory) {
+    memory = { kind: 'memory', rows: new Map() };
+    memoryStores.set(env, memory);
+  }
+  return {
+    kind: 'memory',
+    async get(sub) {
+      const row = memory.rows.get(sub);
+      return row ? { ...row } : null;
+    },
+    async put(sub, envelope, size, nowSec) {
+      memory.rows.set(sub, { account_sub: sub, updated_at: nowSec, size, envelope });
+    },
+    async del(sub) {
+      memory.rows.delete(sub);
+    },
+  };
+}
+
+// ---------- configuración ----------
+
+/** @param {object} env */
+export function backupRateLimit(env) {
+  const v = Number(env && env.BACKUP_RATE_LIMIT);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : BACKUP_RATE_LIMIT_DEFAULT;
+}
+
+// ---------- respuesta HTTP ----------
+
+function json(payload, status, extra = {}) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...extra,
+    },
+  });
+}
+
+function wwwAuth(status) {
+  if (status === 401) return { 'WWW-Authenticate': 'Bearer' };
+  if (status === 402) return { 'X-License-Expired': '1' };
+  return {};
+}
+
+/**
+ * PUT / GET / DELETE /api/backup. Autenticado por licencia; guarda solo el sobre cifrado.
+ * @param {Request} request
+ * @param {object} env
+ * @param {{nowMs?: number, nowSec?: number, pubkeySpki?: string, fetchFn?: typeof fetch, rateStore?: object}} [deps]
+ */
+export async function handleBackupRequest(request, env, deps = {}) {
+  const nowMs = deps.nowMs ?? Date.now();
+  const nowSec = deps.nowSec ?? Math.floor(nowMs / 1000);
+  const method = request.method;
+
+  if (method !== 'PUT' && method !== 'GET' && method !== 'DELETE') {
+    return json({ error: 'method_not_allowed' }, 405, { Allow: 'PUT, GET, DELETE' });
+  }
+
+  // 1. Autorización por licencia (o token de desarrollo si BACKUP_DEV_OPEN=true).
+  const auth = await authorizeBackup(request, env, { ...deps, nowMs, nowSec });
+  if (!auth.ok) return json({ error: auth.error }, auth.status, wwwAuth(auth.status));
+
+  // 2. Límite por cuenta para proteger el cupo de escrituras de D1 (100k/día gratis).
+  const rateStore = deps.rateStore ?? explainStore(env);
+  const budget = await checkAccountBudget(rateStore, auth.sub, nowMs, backupRateLimit(env), BACKUP_RATE_WINDOW_MS);
+  if (!budget.allowed) {
+    return json({ error: 'rate_limited', retryAfterS: budget.retryAfterS }, 429, {
+      'Retry-After': String(budget.retryAfterS),
+    });
+  }
+
+  const store = backupStore(env);
+
+  // 3a. GET: devuelve el sobre cifrado (nunca el texto en claro; el cliente lo descifra).
+  if (method === 'GET') {
+    const row = await store.get(auth.sub);
+    if (!row) return json({ error: 'no_backup' }, 404);
+    let envelope;
+    try {
+      envelope = JSON.parse(row.envelope);
+    } catch {
+      return json({ error: 'corrupt_backup' }, 500);
+    }
+    return json({ sub: auth.sub, dev: auth.dev, updated_at: row.updated_at, size: row.size, envelope }, 200);
+  }
+
+  // 3b. DELETE: borra el respaldo de la cuenta.
+  if (method === 'DELETE') {
+    await store.del(auth.sub);
+    return json({ sub: auth.sub, dev: auth.dev, deleted: true }, 200);
+  }
+
+  // 3c. PUT: valida el sobre y lo guarda exactamente como viene.
+  const bodyText = await request.text();
+  if (new TextEncoder().encode(bodyText).length > MAX_BACKUP_BYTES) {
+    return json({ error: 'too_large', max_bytes: MAX_BACKUP_BYTES }, 413);
+  }
+  let raw;
+  try {
+    raw = JSON.parse(bodyText);
+  } catch {
+    return json({ error: 'invalid_json' }, 400);
+  }
+  const parsed = parseEnvelope(raw);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+  const envelope = envelopeJson(parsed.value); // serialización canónica: solo 6 campos
+  const size = measureEnvelopeBytes(parsed.value);
+  if (size > MAX_BACKUP_BYTES) {
+    return json({ error: 'too_large', max_bytes: MAX_BACKUP_BYTES }, 413);
+  }
+  await store.put(auth.sub, envelope, size, nowSec);
+  return json({ sub: auth.sub, dev: auth.dev, size, updated_at: nowSec }, 200);
+}
