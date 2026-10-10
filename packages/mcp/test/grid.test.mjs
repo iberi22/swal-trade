@@ -292,6 +292,27 @@ test("grid_place places the plan as post-only limits with one protective stop", 
   assert.equal(raw.includes(TRADE_KEY), false);
 });
 
+test("the grid liquidation estimate is read from the worst level, not from the average entry", async () => {
+  // The stop is measured from the worst level, so the liquidation estimate has to
+  // be too: at the average entry the estimate is further away, and a grid stop
+  // that fails against the closest level is approved.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({ symbols: GRID_SYMBOLS });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } });
+  });
+  const line = journalLines(JOURNAL, "grid_place")[0];
+  const liquidation = line.exchange.find((item) => item.step === "liquidation");
+  assert.equal(liquidation.source, "leverageBracket");
+  assert.equal(liquidation.maintenanceMarginRatio, 0.004);
+  // 1/5 leverage with a 0.004 maintenance margin ratio.
+  const fraction = (1 / 5 - 0.004) / (1 - 0.004);
+  const fromWorstLevel = 97000 * (1 - fraction);
+  const fromAverageEntry = 98000 * (1 - fraction);
+  assert.ok(Math.abs(liquidation.price - fromWorstLevel) < 0.01, `${liquidation.price} vs ${fromWorstLevel}`);
+  assert.ok(Math.abs(liquidation.price - fromAverageEntry) > 10, `${liquidation.price} must not be measured from the average entry`);
+});
+
 test("grid_place accepts the parameters instead of a plan id", async () => {
   fs.rmSync(JOURNAL, { force: true });
   const exchange = makeExchange({ symbols: GRID_SYMBOLS });
