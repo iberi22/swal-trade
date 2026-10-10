@@ -30,7 +30,7 @@
 
   <section>
     <h2>Qué se incluye</h2>
-    <p class="muted">Ajustes del guardián (límite de pérdida, nocional, apalancamiento, zona horaria), el chat de Telegram, ajustes de análisis y tu diario. <strong>Las claves de API de Binance nunca se incluyen</strong> en ningún caso.</p>
+    <p class="muted">Ajustes del guardián (límite de pérdida, nocional, apalancamiento, zona horaria), el chat de Telegram, ajustes de análisis y tu diario. <strong>Nunca se incluye ninguna clave ni secreto</strong>: se descartan, tanto en los ajustes como en las notas del diario, las claves de API de Binance (<code>apiKey</code>, <code>secret</code>, <code>hmac</code>, <code>X-MBX-*</code>), los campos llamados <code>token</code>, <code>secret</code> o <code>apikey</code>, cualquier nombre que contenga <code>binance</code> o <code>fapi</code>, las contraseñas y frases semilla, y cualquier valor de 64 caracteres alfanuméricos (la forma de una clave de Binance). El token de tu bot de Telegram solo entra si marcas la casilla de abajo.</p>
     <div class="check">
       <input id="include-tg-token" type="checkbox">
       <label for="include-tg-token" style="font-weight:400;margin:0">Incluir el token del bot de Telegram (avanzado; queda cifrado junto al resto).</label>

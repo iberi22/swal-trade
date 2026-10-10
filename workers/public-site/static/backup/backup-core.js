@@ -60,10 +60,18 @@ export function randomBytes(n) {
 const DENIED_NAMES = new Set([
   'api_key', 'apikey', 'api_secret', 'apisecret', 'secret', 'secret_key',
   'hmac', 'hmac_key', 'private_key', 'privatekey', 'mnemonic', 'seed', 'seed_phrase',
-  'passphrase', 'password', 'x-mbx-apikey', 'signature',
+  'passphrase', 'password', 'x-mbx-apikey', 'signature', 'token',
 ]);
-// Subcadenas que delatan una clave de exchange o un secreto (Binance: apiKey/secret/hmac/X-MBX).
-const DENIED_MARKERS = ['apikey', 'api_secret', 'apisecret', 'hmac', 'mbx', 'privatekey', 'mnemonic', 'seedphrase', 'bottoken_secret'];
+// Subcadenas que delatan una clave de exchange o un secreto (Binance: apiKey/secret/hmac/X-MBX,
+// endpoints fapi). Ojo: NO incluye "token" a secas, porque `botToken` es el opt-in explícito
+// del usuario para el token de su bot de Telegram.
+const DENIED_MARKERS = ['apikey', 'api_secret', 'apisecret', 'hmac', 'mbx', 'privatekey', 'mnemonic', 'seedphrase', 'bottoken_secret', 'binance', 'fapi'];
+// Valor con forma de clave de Binance: exactamente 64 caracteres alfanuméricos (apiKey/secret).
+// Se busca como tramo delimitado por no alfanuméricos, así también pilla una clave escrita
+// dentro de una nota del diario.
+const BINANCE_KEY_SHAPE = /(?:^|[^A-Za-z0-9])[A-Za-z0-9]{64}(?:[^A-Za-z0-9]|$)/;
+/** Marca interna de "este valor se descarta". Nunca sale de scrubDenied. */
+const DROPPED = Symbol('dropped');
 
 /** true si el nombre de una propiedad debe excluirse por parecer una clave o secreto. */
 export function isDeniedKey(key) {
@@ -73,22 +81,46 @@ export function isDeniedKey(key) {
 }
 
 /**
- * Elimina de forma recursiva toda propiedad cuyo nombre esté en la lista de exclusión.
- * Defensa en profundidad: aunque el armador solo copie campos permitidos, cualquier clave
- * de Binance que se cuele en los ajustes o en el diario se descarta antes de cifrar.
+ * Valor con forma de clave de Binance: un tramo de exactamente 64 caracteres alfanuméricos
+ * (apiKey/secret de Binance), suelto o incrustado en una nota. Cubre el caso en el que la
+ * clave viaja bajo un nombre inofensivo (`nota`, `key`, `valor`…).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isDeniedValue(value) {
+  return typeof value === 'string' && BINANCE_KEY_SHAPE.test(value);
+}
+
+/**
+ * Elimina de forma recursiva toda propiedad cuyo nombre esté en la lista de exclusión y todo
+ * valor con forma de clave de Binance. Defensa en profundidad: aunque el armador solo copie
+ * campos permitidos, cualquier clave de Binance que se cuele en los ajustes o en una nota del
+ * diario se descarta antes de cifrar.
  * @param {unknown} value
  * @returns {unknown}
  */
 export function scrubDenied(value) {
-  if (Array.isArray(value)) return value.map(scrubDenied);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => scrubDenied(item))
+      .filter((item) => item !== DROPPED);
+  }
   if (value && typeof value === 'object') {
     const out = {};
+    let hadEntries = false;
     for (const [k, v] of Object.entries(value)) {
+      hadEntries = true;
       if (isDeniedKey(k)) continue;
-      out[k] = scrubDenied(v);
+      const scrubbed = scrubDenied(v);
+      if (scrubbed === DROPPED) continue;
+      out[k] = scrubbed;
     }
+    // Un objeto que se queda vacío PORQUE se le han quitado los secretos no aporta nada:
+    // se descarta entero en lugar de dejar un cascarón vacío.
+    if (hadEntries && Object.keys(out).length === 0) return DROPPED;
     return out;
   }
+  if (isDeniedValue(value)) return DROPPED;
   return value;
 }
 

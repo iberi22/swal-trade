@@ -218,3 +218,78 @@ test('interfaz: restaurar sí sustituye el token cuando el respaldo lo incluye',
   await waitFor(() => els.get('out').textContent.startsWith('Respaldo restaurado'));
   assert.deepEqual(JSON.parse(store.get(TG_KEY)), { chat: '7', token: 'TOKEN-NUEVO' });
 });
+
+// ---------- 6. lista de exclusión: nombres Y valores ----------
+
+test('exclusión: descarta valores con forma de clave de Binance (64 alfanuméricos)', async () => {
+  const { scrubDenied, isDeniedValue } = await import('../static/backup/backup-core.js');
+  const key64 = 'a'.repeat(64);
+  const key64b = 'AbCd0123'.repeat(8);
+  assert.equal(isDeniedValue(key64), true);
+  assert.equal(isDeniedValue(key64b), true);
+  assert.equal(isDeniedValue('a'.repeat(63)), false);
+  assert.equal(isDeniedValue('a'.repeat(65)), false);
+  assert.equal(isDeniedValue(42), false);
+  assert.equal(isDeniedValue('clave aaa bbb ccc'), false);
+
+  const clean = scrubDenied({
+    nota: key64,
+    ajustes: { nivel2: { valor: key64b, nombre: 'vale' } },
+    journal: [{ note: `clave ${key64} anotada` }, { note: 'vale' }, 'texto', 7, key64],
+    texto: 'una nota normal, con signos y espacios, que no lleva ninguna clave dentro',
+    lista: [key64, 'ok'],
+  });
+  assert.equal(clean.nota, undefined);
+  assert.equal(clean.ajustes.nivel2.valor, undefined);
+  assert.equal(clean.ajustes.nivel2.nombre, 'vale');
+  // La nota que contenía la clave se descarta entera; las demás se conservan.
+  assert.deepEqual(clean.journal, [{ note: 'vale' }, 'texto', 7]);
+  assert.equal(clean.texto.includes('espacios'), true);
+  assert.deepEqual(clean.lista, ['ok']);
+  // Nada de la clave sobrevive.
+  assert.ok(!JSON.stringify(clean).includes(key64));
+  assert.ok(!JSON.stringify(clean).includes(key64b));
+});
+
+test('exclusión: descarta claves token/secret/apikey/binance*/fapi* a cualquier profundidad', async () => {
+  const { scrubDenied, isDeniedKey, buildBackupData } = await import('../static/backup/backup-core.js');
+  for (const k of ['token', 'Token', 'secret', 'apikey', 'binance', 'binanceApiKey', 'BINANCE_SECRET', 'fapi', 'fapi_key', 'hmac']) {
+    assert.equal(isDeniedKey(k), true, k);
+  }
+  // Lo permitido sigue pasando.
+  for (const k of ['botToken', 'chat', 'limit', 'note', 'public_field', 'myTokens']) {
+    assert.equal(isDeniedKey(k), false, k);
+  }
+
+  const data = buildBackupData({
+    guardian: {
+      cfg: { limit: 10, binanceApiKey: 'FUGA_X', fapi_key: 'FUGA_Y', nested: { deep: { token: 'FUGA_T', secret: 'FUGA_S' } } },
+      telegram: { chat: '5', token: 'NO-DEBE-SALIR' },
+    },
+    analysis: { theme: 'dark', creds: { token: 'FUGA_T2', apikey: 'FUGA_K', other: 'ok' } },
+    journal: [{ note: 'ok', token: 'FUGA_JT', binanceSecret: 'FUGA_BS', payload: { fapi: 'FUGA_F' } }],
+  });
+  const flat = JSON.stringify(data);
+  for (const bad of ['FUGA_X', 'FUGA_Y', 'FUGA_T', 'FUGA_S', 'FUGA_T2', 'FUGA_K', 'FUGA_JT', 'FUGA_BS', 'FUGA_F', 'NO-DEBE-SALIR']) {
+    assert.ok(!flat.includes(bad), bad);
+  }
+  // El cascarón que se queda vacío al quitarle los secretos se descarta entero.
+  assert.equal(data.guardian.cfg.nested, undefined);
+  assert.equal(data.guardian.cfg.limit, 10);
+  assert.equal(data.analysis.creds.other, 'ok');
+  assert.deepEqual(data.journal, [{ note: 'ok' }]);
+
+  // El token del bot solo entra con opt-in explícito.
+  const withToken = buildBackupData({ guardian: { telegram: { chat: '1', token: 'TB' } }, includeBotToken: true });
+  assert.equal(withToken.guardian.telegram.botToken, 'TB');
+});
+
+test('interfaz: la página cuenta exactamente qué queda fuera del respaldo', () => {
+  assert.match(HTML, /Frase de paso \(mínimo 12 caracteres\)/);
+  assert.match(HTML, /Nunca se incluye ninguna clave ni secreto/);
+  for (const frag of ['apiKey', 'secret', 'hmac', 'X-MBX-*', 'token', 'binance', 'fapi', '64 caracteres alfanuméricos']) {
+    assert.ok(HTML.includes(frag), `falta explicar ${frag}`);
+  }
+  // También lo dice el diario, no solo los ajustes.
+  assert.match(HTML, /tanto en los ajustes como en las notas del diario/);
+});
