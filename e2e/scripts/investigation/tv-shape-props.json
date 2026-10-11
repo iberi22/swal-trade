@@ -1,0 +1,153 @@
+{
+  "readBack": [
+    {
+      "label": "hline-solid",
+      "id": "7WWeZA",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    },
+    {
+      "label": "hline-dashed",
+      "id": "3lGPJJ",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    },
+    {
+      "label": "text",
+      "id": "zikEQl",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    },
+    {
+      "label": "arrow",
+      "id": "SqQagF",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    },
+    {
+      "label": "zone",
+      "id": "lOMVRs",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    },
+    {
+      "label": "trend",
+      "id": "C6NBOP",
+      "found": true,
+      "keys": [
+        "_source",
+        "_undoModel",
+        "_model",
+        "_pointsConverter"
+      ],
+      "props": null
+    }
+  ],
+  "allShapes": [
+    {
+      "id": "7WWeZA",
+      "name": "horizontal_line",
+      "props": null
+    },
+    {
+      "id": "3lGPJJ",
+      "name": "horizontal_line",
+      "props": null
+    },
+    {
+      "id": "zikEQl",
+      "name": "text",
+      "props": null
+    },
+    {
+      "id": "SqQagF",
+      "name": "arrow_down",
+      "props": null
+    },
+    {
+      "id": "lOMVRs",
+      "name": "rectangle",
+      "props": null
+    },
+    {
+      "id": "C6NBOP",
+      "name": "trend_line",
+      "props": null
+    }
+  ],
+  "texts": [
+    {
+      "name": "horizontal_line",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    },
+    {
+      "name": "horizontal_line",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    },
+    {
+      "name": "text",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    },
+    {
+      "name": "arrow_down",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    },
+    {
+      "name": "rectangle",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    },
+    {
+      "name": "trend_line",
+      "text": null,
+      "linestyle": null,
+      "locked": null,
+      "disableSelection": null
+    }
+  ],
+  "finalCount": 0
+}

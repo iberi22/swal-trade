@@ -1,0 +1,286 @@
+{
+  "shapeResults": [
+    {
+      "label": "single:horizontal_line",
+      "before": 0,
+      "id": "IGFeT6",
+      "idType": "string",
+      "afterCreate": 1,
+      "shapes": [
+        {
+          "id": "IGFeT6",
+          "name": "horizontal_line"
+        }
+      ]
+    },
+    {
+      "label": "single:horizontal_ray",
+      "before": 1,
+      "id": "VOImi9",
+      "idType": "string",
+      "afterCreate": 2,
+      "shapes": [
+        {
+          "id": "IGFeT6",
+          "name": "horizontal_line"
+        },
+        {
+          "id": "VOImi9",
+          "name": "horizontal_ray"
+        }
+      ]
+    },
+    {
+      "label": "single:vertical_line",
+      "before": 2,
+      "id": "nrhqHL",
+      "idType": "string",
+      "afterCreate": 3,
+      "shapes": [
+        {
+          "id": "VOImi9",
+          "name": "horizontal_ray"
+        },
+        {
+          "id": "nrhqHL",
+          "name": "vertical_line"
+        }
+      ]
+    },
+    {
+      "label": "single:text",
+      "before": 3,
+      "id": "cd0RFy",
+      "idType": "string",
+      "afterCreate": 4,
+      "shapes": [
+        {
+          "id": "nrhqHL",
+          "name": "vertical_line"
+        },
+        {
+          "id": "cd0RFy",
+          "name": "text"
+        }
+      ]
+    },
+    {
+      "label": "single:price_label",
+      "before": 4,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "single:arrow_up",
+      "before": 4,
+      "id": "emJ87z",
+      "idType": "string",
+      "afterCreate": 5,
+      "shapes": [
+        {
+          "id": "cd0RFy",
+          "name": "text"
+        },
+        {
+          "id": "emJ87z",
+          "name": "arrow_up"
+        }
+      ]
+    },
+    {
+      "label": "single:arrow_down",
+      "before": 5,
+      "id": "J7RoP2",
+      "idType": "string",
+      "afterCreate": 6,
+      "shapes": [
+        {
+          "id": "emJ87z",
+          "name": "arrow_up"
+        },
+        {
+          "id": "J7RoP2",
+          "name": "arrow_down"
+        }
+      ]
+    },
+    {
+      "label": "single:icon",
+      "before": 6,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "single:emoji",
+      "before": 6,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "single:balloon",
+      "before": 6,
+      "id": "DARsEH",
+      "idType": "string",
+      "afterCreate": 7,
+      "shapes": [
+        {
+          "id": "J7RoP2",
+          "name": "arrow_down"
+        },
+        {
+          "id": "DARsEH",
+          "name": "balloon"
+        }
+      ]
+    },
+    {
+      "label": "single:comment",
+      "before": 7,
+      "id": "nx8M0r",
+      "idType": "string",
+      "afterCreate": 8,
+      "shapes": [
+        {
+          "id": "DARsEH",
+          "name": "balloon"
+        },
+        {
+          "id": "nx8M0r",
+          "name": "comment"
+        }
+      ]
+    },
+    {
+      "label": "multi:trend_line",
+      "before": 8,
+      "error": "Error: Wrong points count for trend_line. Required 2"
+    },
+    {
+      "label": "multi:ray",
+      "before": 9,
+      "error": "Error: Wrong points count for ray. Required 2"
+    },
+    {
+      "label": "multi:rectangle",
+      "before": 10,
+      "error": "Error: Wrong points count for rectangle. Required 2"
+    },
+    {
+      "label": "multi:path",
+      "before": 11,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "multi:polygon",
+      "before": 11,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "multi:arrow",
+      "before": 11,
+      "error": "Error: Wrong points count for arrow. Required 2"
+    },
+    {
+      "label": "multi:arrow_line",
+      "before": 12,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "multi:parallel_channel",
+      "before": 12,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "multi:triangle",
+      "before": 12,
+      "error": "Error: Value is undefined"
+    },
+    {
+      "label": "multi:arrow_line-1pt",
+      "before": 12,
+      "id": "YRG8KQ",
+      "idType": "string",
+      "afterCreate": 13,
+      "shapes": [
+        {
+          "id": "xAXYX0",
+          "name": "arrow"
+        },
+        {
+          "id": "YRG8KQ",
+          "name": "flag"
+        }
+      ]
+    },
+    {
+      "label": "locked:horizontal_line",
+      "before": 13,
+      "id": "40W3cp",
+      "idType": "string",
+      "afterCreate": 14,
+      "shapes": [
+        {
+          "id": "YRG8KQ",
+          "name": "flag"
+        },
+        {
+          "id": "40W3cp",
+          "name": "horizontal_line"
+        }
+      ]
+    },
+    {
+      "label": "locked:rectangle",
+      "before": 14,
+      "id": "GUunwa",
+      "idType": "string",
+      "afterCreate": 15,
+      "shapes": [
+        {
+          "id": "40W3cp",
+          "name": "horizontal_line"
+        },
+        {
+          "id": "GUunwa",
+          "name": "rectangle"
+        }
+      ]
+    }
+  ],
+  "overridesResults": [],
+  "listenerProbe": {
+    "onSymbolChanged": "function",
+    "onIntervalChanged": "function",
+    "onDataLoaded": "function",
+    "onVisibleRangeChanged": "function",
+    "onTick": "undefined"
+  },
+  "misc": {
+    "iframeSelfApi": "object",
+    "range": {
+      "from": 1778371200,
+      "to": 1792540800
+    },
+    "symbol": "BTCUSDT@PRICETYPE=LAST",
+    "resolution": "1D",
+    "subscribedFromPageWorld": true,
+    "seenBeforeChange": [],
+    "price": 82977.7,
+    "countBeforeCleanup": 15,
+    "removableIds": [
+      "IGFeT6",
+      "VOImi9",
+      "nrhqHL",
+      "cd0RFy",
+      "emJ87z"
+    ],
+    "removableIdCount": 15,
+    "countAfterCleanup": 0,
+    "shapesSurviveSymbolChange": {
+      "beforeSwitch": 1,
+      "afterSwitch": 1,
+      "stillThere": true,
+      "seen": []
+    },
+    "finalCount": 0
+  },
+  "title": "82,977.8 | BTCUSDT USDⓈ-Margined Perpetual Chart | Binance Futures",
+  "pageErrors": []
+}
