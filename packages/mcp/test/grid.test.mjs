@@ -700,6 +700,13 @@ test("checkGridPlan refuses a grid that would take the account past the exposure
 test("grid_place refuses a grid that sits on top of a resting entry order", async () => {
   // The resting BUY of 200 USD is committed money, and the ladder adds 300 USD:
   // 500 USD of exposure against a 400 USD cap. Neither order breaks the cap alone.
+  //
+  // Round 6: that resting entry is now refused one step earlier, by the
+  // flat-symbol rule. A grid OPENS a position, so it is not placed on a symbol
+  // that already has a resting entry: the fail-closed exit flattens the symbol
+  // and cancels its orders, which on a symbol the user is holding by hand would
+  // close THEIR position and strip THEIR stops. The cap arithmetic itself stays
+  // covered by checkGridPlan's own test below, which is pure.
   fs.rmSync(JOURNAL, { force: true });
   const exchange = makeExchange({
     symbols: GRID_SYMBOLS,
@@ -718,16 +725,14 @@ test("grid_place refuses a grid that sits on top of a resting entry order", asyn
           arguments: { symbol: "BTCUSDT", lower: 100, upper: 102, levels: 3, total_notional_usd: 300, stop_loss_price: 95 },
         }),
       );
-      assert.match(text, /the order guard rejected this grid/);
-      assert.match(text, /already has 200 USD committed/);
-      assert.match(text, /adds 299.95 USD/);
+      assert.match(text, /BTCUSDT already has an open position or orders; this tool only opens a position on a flat symbol/);
     },
   );
   assert.equal(exchange.post("/fapi/v1/order").length, 0, "no level may be placed over the cap");
   assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
   const line = journalLines(JOURNAL, "grid_place")[0];
   assert.equal(line.guard.allow, false);
-  assert.ok(line.guard.reasons.some((reason) => /already has 200 USD committed/.test(reason)), JSON.stringify(line.guard));
+  assert.ok(line.guard.reasons.some((reason) => /only opens a position on a flat symbol/.test(reason)), JSON.stringify(line.guard));
 });
 
 // ---------------------------------------------------------------------------

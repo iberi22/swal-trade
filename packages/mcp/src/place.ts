@@ -21,7 +21,7 @@ import { ceilToStep, decimalNumber, floorToStep, shiftStep, toDecimalText } from
 import { parseAccountRiskConfig, readCredentials } from "./config.js";
 import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
-import { loadAccountRiskView, netPosition, readExposure } from "./account.js";
+import { loadAccountRiskView, netPosition, flatSymbolRefusal, readExposure } from "./account.js";
 import { checkOrder } from "./order-guard.js";
 import type { GuardDecision } from "./order-guard.js";
 import { normalizeSide } from "./propose.js";
@@ -644,6 +644,21 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       return refused(
         `the exposure could not be read (${exposure.errors.join(" ")}): refusing the order instead of trading against an unknown exposure.`,
       );
+    }
+    // The flat-symbol invariant, checked with the exposure that was just read:
+    // this tool OPENS a position, so it refuses on a symbol that already has one,
+    // or a resting order that would create one. Everything after this point
+    // assumes the position it is looking at is its own.
+    const flatRefusal = flatSymbolRefusal(exposure, symbol);
+    if (flatRefusal) {
+      journal.guard = { allow: false, reasons: [flatRefusal] };
+      logStep(journal, "flat_symbol_refused", {
+        openPosition: exposure.positionSymbols.includes(symbol),
+        restingOrders: exposure.restingOrders
+          .filter((order) => order.symbol === symbol)
+          .map((order) => ({ source: order.source, id: order.id, side: order.side, type: order.type, reduces: order.reduces })),
+      });
+      return refused(flatRefusal);
     }
     const guard: GuardDecision = checkOrder(
       { symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType },

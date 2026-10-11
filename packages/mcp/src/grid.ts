@@ -35,7 +35,7 @@ import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
 import { isAmbiguousError, isRepriceable, isRepriceableStatus, newClientOrderId } from "./trade-client.js";
 import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
-import { loadAccountRiskView, readExposure } from "./account.js";
+import { loadAccountRiskView, flatSymbolRefusal, readExposure } from "./account.js";
 import { parseAccountRiskConfig } from "./config.js";
 import {
   applyLeverageAndMargin,
@@ -602,6 +602,23 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
       return refused(
         `the exposure could not be read (${exposure.errors.join(" ")}): refusing the grid instead of placing it against an unknown exposure.`,
       );
+    }
+    // The flat-symbol invariant, checked with the exposure that was just read:
+    // a grid OPENS a position, so it is refused on a symbol that already has one,
+    // or a resting order that would create one. The fail-closed exit flattens the
+    // symbol and cancels its orders, which on a symbol the user is holding by
+    // hand would close THEIR position and strip THEIR stops.
+    const flatRefusal = flatSymbolRefusal(exposure, symbol);
+    if (flatRefusal) {
+      record.guard = { allow: false, reasons: [flatRefusal] };
+      record.exchange.push({
+        step: "flat_symbol_refused",
+        openPosition: exposure.positionSymbols.includes(symbol),
+        restingOrders: exposure.restingOrders
+          .filter((order) => order.symbol === symbol)
+          .map((order) => ({ source: order.source, id: order.id, side: order.side, type: order.type, reduces: order.reduces })),
+      });
+      return refused(flatRefusal);
     }
     const guard = checkGridPlan(plan, guardLimitsFrom(cfg.value), {
       dayPnl: view.dayPnl,
