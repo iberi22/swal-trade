@@ -40,6 +40,7 @@ import {
   flattenPosition,
   guardLimitsFrom,
   isFinalStatus,
+  isOrderNotFound,
   logStep,
   ok,
   orderStatusOf,
@@ -295,36 +296,55 @@ async function cancelEntry(client: TradingClient, clientOrderId: string | null, 
  * Resolves an ambiguous entry answer: look the order up by clientOrderId, then
  * read the net position. Either one proving a fill is enough, because an order
  * can be filled and cancelled from the query window but still leave a position.
+ *
+ * `resolved` is true when at least one of the two reads gave a DEFINITIVE
+ * answer (an order status, a definitive "order does not exist", or a position
+ * amount). When neither read could be made (a 5xx, a timeout on both), the
+ * result is unknown and the caller must NOT write a resolving outcome: leaving
+ * the intent pending is what makes the startup sweep report it. `resting` is
+ * true when the lookup found the order on the book with no fill.
  */
 async function resolveEntry(
   client: TradingClient,
   input: { symbol: string; side: "BUY" | "SELL"; clientOrderId: string; entryPrice: number; quantity: string },
   journal: JournalRecord,
-): Promise<{ filledQty: number; order: unknown }> {
+): Promise<{ filledQty: number; order: unknown; resolved: boolean; resting: boolean }> {
   let order: unknown = null;
+  let resolved = false;
+  let resting = false;
   try {
     const found = await client.queryOrder(input.symbol, input.clientOrderId);
     logStep(journal, "query_by_client_order_id", found);
     order = found;
+    // The lookup answered: that is a definitive read, whatever it said.
+    resolved = true;
     const status = orderStatusOf(found);
     const filled = filledQuantityOf(found);
-    if (filled > 0 || status === "FILLED") return { filledQty: filled > 0 ? filled : Number(input.quantity), order: found };
-    if (isFinalStatus(status)) return { filledQty: filled, order: found };
+    if (filled > 0 || status === "FILLED") return { filledQty: filled > 0 ? filled : Number(input.quantity), order: found, resolved: true, resting: false };
+    if (status === "NEW" || status === "PARTIALLY_FILLED") resting = true;
+    if (isFinalStatus(status)) return { filledQty: filled, order: found, resolved: true, resting: false };
   } catch (err) {
     logStep(journal, "query_by_client_order_id", { error: redactSecrets(errorMessage(err), []) });
+    // A definitive "order does not exist" (-2013) IS a resolved read: the order
+    // is gone, so there is nothing to protect or cancel. Any other lookup failure
+    // (a 5xx, a timeout) is not a read that succeeded.
+    if (isOrderNotFound(err)) resolved = true;
   }
   // Not settled by the lookup: read the position, which is the ground truth.
   try {
     const risk = await client.positionRisk();
     const net = netPosition(risk, input.symbol);
     logStep(journal, "position_after_ambiguous_entry", { net: net.amount, rows: net.rows, error: net.error });
-    if (net.error == null && net.amount != null && net.amount !== 0) {
-      return { filledQty: Math.abs(net.amount), order };
+    if (net.error == null && net.amount != null) {
+      resolved = true;
+      if (net.amount !== 0) {
+        return { filledQty: Math.abs(net.amount), order, resolved: true, resting: false };
+      }
     }
   } catch (err) {
     logStep(journal, "position_after_ambiguous_entry", { error: redactSecrets(errorMessage(err), []) });
   }
-  return { filledQty: 0, order };
+  return { filledQty: 0, order, resolved, resting };
 }
 
 async function placeProtectiveStop(
@@ -662,6 +682,14 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               ambiguous: true,
               excessNotionalReduced,
             }));
+          }
+          if (!resolution.resolved) {
+            // Neither the clientOrderId lookup nor the position read could be
+            // read: the result is unknown. Write NO resolving outcome, so the
+            // intent stays PENDING and the startup sweep reports the position.
+            return refused(
+              `the entry answer was ambiguous (${message}) and neither the clientOrderId lookup nor the position read could be read, so the result is unknown. No resolving outcome was journaled: the startup sweep will report it.`,
+            );
           }
           await writeOutcome({ filled: false, error: message });
           return refused(`the entry order could not be confirmed (${message}); the lookup by clientOrderId and the position read found no fill, so no stop was armed.`);

@@ -58,6 +58,10 @@ export function makeExchange(options = {}) {
     marketFill = null,
     /** Answer for GET /fapi/v1/order (the lookup by origClientOrderId). */
     queryOrder = null,
+    /** HTTP status the clientOrderId lookup answers (for example 500): an unreadable resolution. */
+    queryOrderHttpError = null,
+    /** HTTP status positionRisk answers once an order POST has been sent (for example 500). */
+    positionRiskHttpError = null,
   } = options;
 
   const calls = [];
@@ -103,6 +107,9 @@ export function makeExchange(options = {}) {
     if (path === "/fapi/v3/account") return json({ positions });
     if (path === "/fapi/v2/positionRisk") {
       const opened = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/order");
+      // Fail only once an order POST has been sent: the pre-estimate positionRisk
+      // reads (the account snapshot, the liquidation estimate) must still work.
+      if (opened && positionRiskHttpError != null) return json({ code: -1000, msg: "positionRisk read failed" }, positionRiskHttpError);
       const after = opened ? positionsAfterOrder : [];
       const rows = [...positions, ...after]
         .filter((row) => !reducedSymbols.has(row.symbol))
@@ -128,6 +135,7 @@ export function makeExchange(options = {}) {
       return json({ code: 200, msg: "success" });
     }
     if (path === "/fapi/v1/order" && method === "GET") {
+      if (queryOrderHttpError != null) return json({ code: -1000, msg: "lookup failed" }, queryOrderHttpError);
       // The lookup by origClientOrderId: the only way to resolve an ambiguous
       // entry answer, and the thing a timeout could never tell us.
       const answer = queryOrder ?? { code: -2013, msg: "Order does not exist." };

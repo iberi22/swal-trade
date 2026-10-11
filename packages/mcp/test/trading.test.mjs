@@ -900,6 +900,22 @@ test("a timed-out entry with no fill anywhere sends no stop and says so", async 
   assert.equal(lines[0].clientOrderId, lines[1].clientOrderId);
 });
 
+test("a timed-out MARKET entry whose lookup AND position reads both fail leaves the intent pending for the sweep", async () => {
+  // The entry timed out AND neither the clientOrderId lookup nor the position
+  // read could answer (both 500). The result is genuinely unknown, so writing a
+  // resolving outcome would tell the startup sweep the entry is done when a
+  // position may be open. The intent is left pending and no outcome is written.
+  const exchange = makeExchange({ networkErrorOnOrder: [1], queryOrderHttpError: 500, positionRiskHttpError: 500 });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /the result is unknown/);
+    assert.match(text, /startup sweep will report it/);
+  });
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed on an unknown result");
+  assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+  assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
+});
+
 test("a timed-out entry that filled but cannot be protected is flattened", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
