@@ -348,7 +348,7 @@
     {#if settings.paintOnChart}
       <p class="hint" data-testid="paint-hint">
         {tvStateHint(tvState) ??
-          'Pintando los niveles sobre el gráfico de Binance. Se borran al apagar el interruptor.'}
+          `Pintando ${symbol} · ${timeframe} sobre el gráfico de Binance. Se borran al apagar el interruptor.`}
       </p>
     {/if}
   </header>
