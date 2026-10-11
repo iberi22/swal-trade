@@ -43,6 +43,16 @@ Si en otra NixOS el dynamic linker rechaza ese binario:
 
 La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersistentContext`) y `ignoreDefaultArgs: ['--disable-extensions']`.
 
+## Qué cubre
+
+- Cada página (`/`, `/pricing/`, `/analisis/`, `/guardian/`, `/guardian/self-host/`, `/checkout/`, `/operativa/`, `/terms/`, `/privacy/`, `/risk/`, `/contact/`) responde 200, con las mismas directivas CSP que `cspFor` en `workers/public-site/src/worker.js` (el orden puede diferir: en local, `_headers` coloca `connect-src` antes de `base-uri` en las rutas sin bloque propio). Sin errores de consola ni `securitypolicyviolation`. Los enlaces visibles de nav y pie navegan (en `/guardian/` el enlace Self-host del plan Pro está oculto; se pulsa el visible).
+- Afirmaciones de rentabilidad: la misma expresión que `workers/public-site/test/site-pages.test.mjs`. `/risk/` puede decir «rentabilidad pasada». `/operativa/` conserva la etiqueta de KPI «Win Rate» (ese test de páginas no escanea el panel).
+- `/analisis/`: velas con un doble suelo conocido, canvas, lista con «fuerza» y sin «probabilidad», clic que enfoca, cambio de temporalidad que pide `interval=1h&limit=500`, miedo y codicia mockeado.
+- `/checkout/`: contrato de `billing-worker` (`/v1/plans`, alta, factura, poll pending→paid, `/v1/license`). El secreto se muestra una vez y el botón sigue al checkbox. Importe `10.0037`, QR SVG, `localStorage['swal.license']`.
+- `/guardian/`: cuenta firmada (mock) que rompe el límite diario y tiene BTC sin stop. El plan gratis vigila solo la posición grande. Pro entra con un token Ed25519 generado en el test (`node:crypto`) y la SPKI servida en el mock de `/v1/pubkey`.
+- Extensión: panel lateral `sidepanel.html`, gráfico y hallazgos.
+- MCP: `listTools` solo tiene `account_risk`, `analyze_chart`, `market_context`, `propose_order`. `analyze_chart` y `propose_order` (`sent: false`). Ningún POST.
+
 ## Cobertura
 
 | Área | Archivo | Qué comprueba |
