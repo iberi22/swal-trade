@@ -118,7 +118,7 @@ export function createReadOnlyClient(options: ReadOnlyClientOptions): ReadOnlyCl
       }
       // A short page is the exchange saying "that was the last one": completeness
       // is proven, not assumed.
-      if (batch.length < 1000) break;
+      if (batch.length < 1000) return rows;
       const last: unknown = batch[batch.length - 1];
       const time = isRecord(last) ? Number(last.time) : Number.NaN;
       const lastId = tranIdOf(last);
@@ -136,7 +136,13 @@ export function createReadOnlyClient(options: ReadOnlyClientOptions): ReadOnlyCl
       cursor = time;
       fromId = lastId + 1;
     }
-    return rows;
+    // The cap was reached without a short page: there may be rows the day's sum
+    // never saw. Returning the rows collected so far would sum an incomplete day
+    // as if it were the whole one, which is the number the daily-loss lock and
+    // the daily PnL report are computed from.
+    throw new IncompleteIncomeError(
+      `the income pagination reached the ${MAX_INCOME_PAGES} page cap (${MAX_INCOME_PAGES * 1000} rows) without a short page: the day cannot be summed exactly`,
+    );
   }
 
   return {

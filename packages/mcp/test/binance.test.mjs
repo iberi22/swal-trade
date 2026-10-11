@@ -163,3 +163,20 @@ test("a short income page is the exchange saying that was the last one", async (
   const rows = await client(incomeExchange([fullPage(999, 1000, 1)]).fetchFn).incomeSince(0);
   assert.equal(rows.length, 999);
 });
+
+test("income pagination fails closed when the page cap is reached", async () => {
+  // Fifty full pages of DISTINCT, advancing rows: every check inside the loop
+  // passes, so the only thing standing between the loop and a silently truncated
+  // day is the cap itself. Returning those rows summed the day as if it were
+  // complete, and the daily PnL is what the daily-loss lock is computed from.
+  const pages = Array.from({ length: 50 }, (_, page) => fullPage(1000, 1000 + page * 10000, page * 1000 + 1));
+  await assert.rejects(client(incomeExchange(pages).fetchFn).incomeSince(0), IncompleteIncomeError);
+
+  // One page fewer than the cap is still fine: the short page proves completeness.
+  const under = [...pages.slice(0, 49), fullPage(1, 1_000_000, 1_000_000)];
+  const rows = await client(incomeExchange(under).fetchFn).incomeSince(0);
+  assert.equal(rows.length, 49001);
+
+  // The error names the cap, so the operator can widen it or narrow the day.
+  await assert.rejects(client(incomeExchange(pages).fetchFn).incomeSince(0), /50 page cap/);
+});
