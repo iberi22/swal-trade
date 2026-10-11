@@ -437,18 +437,47 @@ test("place_order refuses to send when the journal cannot be written", async () 
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
 });
 
-test("place_order refuses to leave a position bare when the algo order answer carries no trigger", async () => {
-  // The exchanger answers 200 with an algoId but no triggerPrice. On the old
-  // behaviour that counted as "placed", and the position had a stop that could
-  // never fire.
+test("place_order accepts the real Algo shape (algoId, status NEW) with no echoed trigger, and warns", async () => {
+  // The real Algo Service answers {algoId, status: NEW} WITHOUT echoing
+  // triggerPrice. Refusing that shape flattened every order the exchange had
+  // actually accepted, so a live algoId plus a live status is accepted now, with a
+  // warning that the trigger could not be verified.
   const exchange = makeExchange({ algoNoTrigger: true, positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }] });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true, "a live algoId is not flattened");
+    assert.equal(body.stop.response.algoId, 5001);
+    assert.match(body.warnings.join(" "), /did not echo a triggerPrice/);
+  });
+  // No flatten: the entry order and nothing else.
+  assert.equal(exchange.post("/fapi/v1/order").length, 1, "a live algoId sends no reduceOnly");
+  const stopStep = journalLines(JOURNAL, "place_order")[0].exchange.find((item) => item.step === "protective_stop_1");
+  assert.match(JSON.stringify(stopStep), /did not echo a triggerPrice/);
+});
+
+test("place_order still flattens when the algo answer has neither an echoed trigger nor a live status", async () => {
+  // An algoId alone proves nothing: no trigger and a dead status is not a stop.
+  const exchange = makeExchange({ algoNoTrigger: true, algoAnswers: { 1: { status: "REJECTED" }, 2: { status: "REJECTED" } }, positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }] });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
-    assert.match(text, /carries no triggerPrice/);
+    assert.match(text, /no triggerPrice and no live status/);
     assert.match(text, /the position was closed with a MARKET reduceOnly order/);
   });
   const orders = exchange.post("/fapi/v1/order");
   assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+});
+
+test("place_order flattens when the echoed stop trigger differs from the one sent", async () => {
+  // Echoed on the loss side but a different distance than requested (99000 vs the
+  // 99500 sent): the stop that is armed is not the stop that was explained.
+  const exchange = makeExchange({ algoAnswers: { 1: { triggerPrice: "99000" }, 2: { triggerPrice: "99000" } }, positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }] });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /differs from the 99500 sent/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2, "a differing trigger flattens the position");
   assert.equal(orders[1].params.reduceOnly, "true");
 });
 

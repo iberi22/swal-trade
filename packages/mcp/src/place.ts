@@ -182,6 +182,7 @@ interface StopOutcome {
   response?: unknown;
   algoId?: number;
   error?: string;
+  warning?: string;
 }
 
 /** The success payload of place_order, in one shape for every path that reaches it. */
@@ -324,13 +325,15 @@ async function placeProtectiveStop(
     journal: input.journal,
     label: "protective_stop",
   });
-  return outcome.ok ? { ok: true, response: outcome.response, algoId: outcome.algoId } : { ok: false, error: outcome.error };
+  return outcome.ok
+    ? { ok: true, response: outcome.response, algoId: outcome.algoId, warning: outcome.warning }
+    : { ok: false, error: outcome.error };
 }
 
 async function placeTakeProfit(
   client: TradingClient,
   input: { symbol: string; side: "BUY" | "SELL"; takeProfitPrice: string; entryPrice: number; journal: JournalRecord },
-): Promise<{ ok: boolean; response?: unknown; algoId?: number; error?: string }> {
+): Promise<{ ok: boolean; response?: unknown; algoId?: number; error?: string; warning?: string }> {
   return placeProtectiveAlgoOrder(client, {
     symbol: input.symbol,
     side: input.side,
@@ -626,7 +629,11 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               resting: false,
               restingPrice: null,
               journal,
-              warnings: [...(sweepAlerts.length > 0 ? sweepAlerts : []), `the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`],
+              warnings: [
+                ...(stop.warning ? [stop.warning] : []),
+                ...(sweepAlerts.length > 0 ? sweepAlerts : []),
+                `the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`,
+              ],
               startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
               ambiguous: true,
               excessNotionalReduced,
@@ -680,6 +687,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
 
     let takeProfitResponse: unknown = null;
     let takeProfitWarning: string | null = null;
+    let takeProfitNote: string | null = null;
     if (takeProfitPrice != null) {
       const tp = await placeTakeProfit(client, {
         symbol,
@@ -690,6 +698,10 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       });
       if (tp.ok) {
         takeProfitResponse = tp.response;
+        // Accepted on an algoId, but the exchange did not echo back the trigger:
+        // the order exists, its trigger is unverified. That is a note, not a
+        // failure: the TP was placed.
+        if (tp.warning) takeProfitNote = tp.warning;
       } else {
         takeProfitWarning = tp.error ?? "the take profit was not placed";
       }
@@ -715,9 +727,14 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         resting: entry.resting ?? false,
         restingPrice: entry.price ?? null,
         journal,
-        warnings: [...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []), ...sweepAlerts],
+        warnings: [
+          ...(stop.warning ? [stop.warning] : []),
+          ...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []),
+          ...(takeProfitNote ? [takeProfitNote] : []),
+          ...sweepAlerts,
+        ],
         startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
-        takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
+        takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning ?? takeProfitNote } : null,
         excessNotionalReduced,
       }),
     );

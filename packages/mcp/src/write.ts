@@ -285,7 +285,7 @@ export function algoIdOf(response: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-export type StopValidation = { accepted: true; algoId: number } | { accepted: false; reason: string };
+export type StopValidation = { accepted: true; algoId: number; warning?: string } | { accepted: false; reason: string };
 
 export type ProtectiveKind = "STOP_MARKET" | "TAKE_PROFIT_MARKET";
 
@@ -296,6 +296,8 @@ export interface ProtectiveOutcome {
   /** The algoId the exchange echoed back, when it did. */
   algoId?: number;
   error?: string;
+  /** Set when the order was accepted on an algoId but its trigger was not verified. */
+  warning?: string;
 }
 
 /** Appends one labeled exchange response to a journaled record. */
@@ -340,10 +342,11 @@ export async function placeProtectiveAlgoOrder(
         side: input.side,
         referencePrice: input.referencePrice,
         kind: input.kind,
+        sentTrigger: decimalNumber(input.triggerPrice),
       });
       if (verdict.accepted) {
-        logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response });
-        return { ok: true, kind: input.kind, response, algoId: verdict.algoId };
+        logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response, ...(verdict.warning ? { warning: verdict.warning } : {}) });
+        return { ok: true, kind: input.kind, response, algoId: verdict.algoId, ...(verdict.warning ? { warning: verdict.warning } : {}) };
       }
       lastError = verdict.reason;
       logStep(input.journal, `${input.label}_${attempt}`, { rejected: verdict.reason, response });
@@ -355,12 +358,27 @@ export async function placeProtectiveAlgoOrder(
   return { ok: false, kind: input.kind, error: lastError };
 }
 
+/** Statuses the Algo Service reports for an order that is live but has not fired. */
+const LIVE_ALGO_STATUSES = new Set(["NEW", "PENDING", "UNTRIGGERED"]);
+
+function algoStatusOf(response: unknown): string | null {
+  if (!isRecord(response)) return null;
+  for (const key of ["status", "algoStatus"]) {
+    const value = response[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
 /**
  * A protective algo order counts as placed only when the exchange answered with
- * an algoId AND echoed a trigger on the side of the reference price that this
- * order has to fire on. Anything else (no algoId, no trigger, or a trigger on
- * the wrong side) is a stop that is not protecting anything, and the position
- * has to be closed rather than left bare.
+ * an algoId and either echoed the trigger it was sent with or reported a live
+ * status. An echoed trigger on the wrong side of the reference price, or one that
+ * DISAGREES with the trigger sent, is a stop that is not the one requested.
+ * An answer with no echoed trigger at all is accepted only on a valid algoId plus
+ * a NEW-like status: that is the real Algo Service shape, and flattening on it
+ * would close every order. Anything else is a stop that is not protecting
+ * anything, and the position has to be closed rather than left bare.
  */
 export function validateStopResponse(input: {
   response: unknown;
@@ -368,29 +386,54 @@ export function validateStopResponse(input: {
   side: "BUY" | "SELL";
   referencePrice: number;
   kind: ProtectiveKind;
+  /** The trigger this order was SENT with: an echo that differs is a rejection. */
+  sentTrigger: number;
 }): StopValidation {
   const algoId = algoIdOf(input.response);
   if (algoId == null) {
     return { accepted: false, reason: `the algo order answer for ${input.kind} carries no algoId, so no stop is live on the exchange` };
   }
   const trigger = echoedTrigger(input.response);
-  if (trigger == null) {
+  if (trigger != null) {
+    // The wrong side first: a stop above a long entry fires after the profit, and
+    // that is the failure the operator has to see named, before any equality test.
+    const belowReference = input.side === "SELL";
+    const required = input.kind === "STOP_MARKET" ? belowReference : !belowReference;
+    const onRequiredSide = required ? trigger < input.referencePrice : trigger > input.referencePrice;
+    if (!onRequiredSide) {
+      const wanted = input.kind === "STOP_MARKET" ? "loss" : "profit";
+      return {
+        accepted: false,
+        reason: `the algo order answer for ${input.kind} echoed a trigger of ${trigger}, which is not on the ${wanted} side of the reference ${input.referencePrice}`,
+      };
+    }
+    // On the right side, but a different trigger than requested: the stop the user
+    // asked for is not the stop that is armed, so the position is not protected
+    // the way it was explained.
+    if (Math.abs(trigger - input.sentTrigger) > 1e-9) {
+      return {
+        accepted: false,
+        reason: `the algo order answer for ${input.kind} echoed a trigger of ${trigger}, which differs from the ${input.sentTrigger} sent: the stop is not the one requested`,
+      };
+    }
+    return { accepted: true, algoId };
+  }
+  // No echoed trigger. The real Algo Service answers {algoId, status: NEW}
+  // without echoing triggerPrice; refusing that shape would flatten every order.
+  // Accept it on a valid algoId plus a live status, with a warning: an algoId the
+  // exchange handed back is a stop that exists, even if its trigger is unverified.
+  const status = algoStatusOf(input.response);
+  if (status != null && LIVE_ALGO_STATUSES.has(status.toUpperCase())) {
     return {
-      accepted: false,
-      reason: `the algo order answer for ${input.kind} carries no triggerPrice, so the exchange has no price to fire on`,
+      accepted: true,
+      algoId,
+      warning: `the algo order answer for ${input.kind} did not echo a triggerPrice; it was accepted on a valid algoId (${algoId}) and a ${status} status, but the trigger it will fire on could not be verified`,
     };
   }
-  const belowReference = input.side === "SELL";
-  const required = input.kind === "STOP_MARKET" ? belowReference : !belowReference;
-  const onRequiredSide = required ? trigger < input.referencePrice : trigger > input.referencePrice;
-  if (!onRequiredSide) {
-    const wanted = input.kind === "STOP_MARKET" ? "loss" : "profit";
-    return {
-      accepted: false,
-      reason: `the algo order answer for ${input.kind} echoed a trigger of ${trigger}, which is not on the ${wanted} side of the reference ${input.referencePrice}`,
-    };
-  }
-  return { accepted: true, algoId };
+  return {
+    accepted: false,
+    reason: `the algo order answer for ${input.kind} carries no triggerPrice and no live status (${status ?? "none"}), so no stop is confirmed on the exchange`,
+  };
 }
 
 // ---------------------------------------------------------------------------
