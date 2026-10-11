@@ -11,6 +11,7 @@
 
 import { browser } from 'wxt/browser';
 import { coerceShapes } from './tv-bridge/schema';
+import type { TvChartDetail } from './messages';
 import { PAINTABLE_URL, TV_GET_STATE, TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from './tv-paint';
 
 interface PaintMessage {
@@ -43,25 +44,43 @@ export async function sendPaintCommand(command: PaintCommand | null): Promise<nu
   return sent;
 }
 
+/** Estado del gráfico tal como lo devuelve el background. */
+export interface TvStateSnapshot {
+  state: TvChartState | null;
+  chart: TvChartDetail | null;
+}
+
+function parseChartDetail(value: unknown): TvChartDetail | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { symbol?: unknown; tf?: unknown };
+  if (typeof record.symbol !== 'string' || typeof record.tf !== 'string') return null;
+  return { symbol: record.symbol, tf: record.tf };
+}
+
 /** Pregunta al background en qué pestaña está el gráfico. */
-export async function requestTvState(): Promise<TvChartState | null> {
+export async function requestTvState(): Promise<TvStateSnapshot | null> {
   try {
     const response = await browser.runtime.sendMessage({ type: TV_GET_STATE });
     if (!response || typeof response !== 'object') return null;
-    const state = (response as { state?: unknown }).state;
-    return typeof state === 'string' ? (state as TvChartState) : null;
+    const record = response as { state?: unknown; chart?: unknown };
+    const state = typeof record.state === 'string' ? (record.state as TvChartState) : null;
+    return { state, chart: parseChartDetail(record.chart) };
   } catch {
     return null;
   }
 }
 
 /** Escucha los cambios de estado que empuja el content script. */
-export function onTvState(listener: (state: TvChartState) => void): () => void {
+export function onTvState(
+  listener: (state: TvChartState, chart?: TvChartDetail | null) => void,
+): () => void {
   const handler = (message: unknown) => {
     if (!message || typeof message !== 'object') return;
-    const record = message as { type?: unknown; state?: unknown };
+    const record = message as { type?: unknown; state?: unknown; chart?: unknown };
     if (record.type !== TV_STATE) return;
-    if (typeof record.state === 'string') listener(record.state as TvChartState);
+    if (typeof record.state === 'string') {
+      listener(record.state as TvChartState, parseChartDetail(record.chart));
+    }
   };
   browser.runtime.onMessage.addListener(handler);
   return () => browser.runtime.onMessage.removeListener(handler);

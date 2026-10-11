@@ -21,9 +21,11 @@ let latest: MarketContext | null = null;
 
 /**
  * Estado del gráfico de Binance abierto por última vez. No es dato de cuenta:
- * solo dice si la pestaña del gráfico es la de Trading View.
+ * solo dice si la pestaña del gráfico es la de Trading View y, si no casa, qué
+ * símbolo y temporalidad muestra.
  */
 let tvState: TvChartState | null = null;
+let tvChart: { symbol: string; tf: string } | null = null;
 
 async function remember(context: MarketContext): Promise<void> {
   latest = context;
@@ -72,10 +74,11 @@ export default defineBackground(() => {
     }
     if (parsed.type === 'tv-state') {
       tvState = parsed.state;
+      tvChart = parsed.chart ?? null;
       return;
     }
     if (parsed.type === 'get-tv-state') {
-      sendResponse({ type: 'tv-state-result', state: tvState });
+      sendResponse({ type: 'tv-state-result', state: tvState, chart: tvChart ?? undefined });
       return;
     }
     if (parsed.type === 'get-context') {

@@ -29,6 +29,9 @@ export const SWAL_READY = 'swal:ready';
 export const SHAPE_KINDS = ['level', 'trend', 'label', 'arrow', 'zone'] as const;
 export type BridgeShapeKind = (typeof SHAPE_KINDS)[number];
 
+/** Motivos válidos que el puente puede reportar como estado. */
+export const READY_REASONS = ['absent', 'booting', 'ready', 'mismatch'] as const;
+
 export const SHAPE_STYLES = ['solid', 'dashed'] as const;
 export type BridgeShapeStyle = (typeof SHAPE_STYLES)[number];
 
@@ -88,7 +91,17 @@ export interface BridgeReadyMessage {
   nonce: string;
   /** true cuando el puente tiene el gráfico con rango visible. */
   ready: boolean;
+  /**
+   * Por qué está (o no) listo. `mismatch` = hay gráfico, pero muestra otro
+   * símbolo u otra temporalidad que el análisis: no se pinta.
+   */
+  reason: BridgeReadyReason;
+  /** Solo cuando `reason === 'mismatch'`: qué muestra el gráfico. */
+  chart?: { symbol: string; tf: string };
 }
+
+/** Motivo que reporta el puente sobre el estado del gráfico. */
+export type BridgeReadyReason = 'absent' | 'booting' | 'ready' | 'mismatch';
 
 export type BridgeMessage = BridgeDrawMessage | BridgeClearMessage;
 
@@ -184,7 +197,22 @@ export function parseBridgeMessage(
   if (raw.nonce !== expectedNonce) return null;
   if (type === SWAL_CLEAR) return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION, nonce: raw.nonce };
   if (type === SWAL_READY) {
-    return { type: SWAL_READY, version: SWAL_MESSAGE_VERSION, nonce: raw.nonce, ready: raw.ready === true };
+    const reason = READY_REASONS.includes(raw.reason as BridgeReadyReason)
+      ? (raw.reason as BridgeReadyReason)
+      : 'absent';
+    const ready: BridgeReadyMessage = {
+      type: SWAL_READY,
+      version: SWAL_MESSAGE_VERSION,
+      nonce: raw.nonce,
+      ready: reason === 'ready',
+      reason,
+    };
+    if (reason === 'mismatch' && isPlainRecord(raw.chart)) {
+      const symbol = typeof raw.chart.symbol === 'string' ? raw.chart.symbol.slice(0, 32) : '';
+      const tf = typeof raw.chart.tf === 'string' ? raw.chart.tf.slice(0, 8) : '';
+      ready.chart = { symbol, tf };
+    }
+    return ready;
   }
   const shapes = coerceShapes(raw.shapes);
   const key = typeof raw.key === 'string' ? raw.key.slice(0, 64) : '';
@@ -206,6 +234,18 @@ export function buildClearMessage(nonce: string): BridgeClearMessage {
   return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION, nonce };
 }
 
-export function buildReadyMessage(nonce: string, ready: boolean): BridgeReadyMessage {
-  return { type: SWAL_READY, version: SWAL_MESSAGE_VERSION, nonce, ready };
+export function buildReadyMessage(
+  nonce: string,
+  reason: BridgeReadyReason,
+  chart?: { symbol: string; tf: string },
+): BridgeReadyMessage {
+  const message: BridgeReadyMessage = {
+    type: SWAL_READY,
+    version: SWAL_MESSAGE_VERSION,
+    nonce,
+    ready: reason === 'ready',
+    reason,
+  };
+  if (reason === 'mismatch' && chart) message.chart = chart;
+  return message;
 }

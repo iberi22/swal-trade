@@ -81,13 +81,15 @@ export function chartFromWindow(win: unknown): TvChartLike | null {
 }
 
 /**
- * Busca la ventana del gráfico: esta misma si somos el iframe del chart, o el
+ * Busca la ventana del gráfico: `selfWindow` si es el iframe del chart, o el
  * primer iframe del mismo origen que publique la API. Los iframes de otros
  * orígenes (accounts.binance.com) se saltan sin tocar nada.
  */
-export function findChartWindow(doc: Document): ChartWindow | null {
-  const self = chartFromWindow(window);
-  if (self) return window as ChartWindow;
+export function findChartWindow(doc: Document, selfWindow?: unknown): ChartWindow | null {
+  if (selfWindow != null) {
+    const self = chartFromWindow(selfWindow);
+    if (self) return selfWindow as ChartWindow;
+  }
   let frames: HTMLIFrameElement[] = [];
   try {
     frames = [...doc.querySelectorAll('iframe')];

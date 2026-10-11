@@ -24,7 +24,7 @@ import {
   type BridgeMessage,
 } from '../lib/tv-bridge/schema';
 import { readNonce } from '../lib/tv-bridge/nonce';
-import { ChartSession, type BridgeStatus } from '../lib/tv-bridge/tv-session';
+import { ChartSession, type BridgeReport } from '../lib/tv-bridge/tv-session';
 import { chartFromWindow } from '../lib/tv-bridge/tv-chart';
 
 /** Marca de "hay un puente en la página que se encarga del gráfico". */
@@ -77,11 +77,12 @@ export default defineContentScript({
 
     const session = new ChartSession({
       document,
-      onStatus: (status: BridgeStatus) => {
+      selfWindow: window,
+      onStatus: (report: BridgeReport) => {
         const nonce = readNonce(document);
         if (!nonce) return;
         try {
-          window.postMessage(buildReadyMessage(nonce, status === 'ready'), location.origin);
+          window.postMessage(buildReadyMessage(nonce, report.status, report.chart), location.origin);
         } catch {
           // Sin destino mismo origen no hay nada que decir.
         }

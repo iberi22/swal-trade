@@ -188,21 +188,27 @@ export default defineContentScript({
       }
     };
 
-    const publishTvState = (state: TvChartState) => {
+    const publishTvState = (state: TvChartState, chart?: { symbol: string; tf: string }) => {
       try {
-        void browser.runtime.sendMessage({ type: TV_STATE, state }).catch(() => {});
+        void browser.runtime.sendMessage({ type: TV_STATE, state, chart }).catch(() => {});
       } catch {
         // La extensión se recargó: este content script quedó viejo.
       }
     };
 
     let lastTvState: TvChartState | null = null;
+    let lastTvChart: { symbol: string; tf: string } | null = null;
+    /** Estado que refleja la sonda del DOM (sin puente que lo refinen). */
+    const probedState = (): TvChartState =>
+      probeTvChart(document).present ? 'tradingview' : 'original';
     const probeChart = () => {
-      // ready lo dice el puente, que es quien sabe si el chart tiene rango.
-      if (lastTvState === 'ready') return;
-      const state: TvChartState = probeTvChart(document).present ? 'tradingview' : 'original';
+      // El puente manda sobre la sonda cuando sabe si el chart está listo o no
+      // casa: no lo pisamos mientras estemos en ready o mismatch.
+      if (lastTvState === 'ready' || lastTvState === 'mismatch') return;
+      const state = probedState();
       if (state === lastTvState) return;
       lastTvState = state;
+      lastTvChart = null;
       publishTvState(state);
     };
 
@@ -213,11 +219,21 @@ export default defineContentScript({
       if (!message || message.type !== 'swal:ready') return;
       if (message.ready) {
         lastTvState = 'ready';
+        lastTvChart = null;
         publishTvState('ready');
-      } else if (lastTvState === 'ready') {
-        lastTvState = probeTvChart(document).present ? 'tradingview' : 'original';
-        publishTvState(lastTvState);
+        return;
       }
+      if (message.reason === 'mismatch' && message.chart) {
+        lastTvState = 'mismatch';
+        lastTvChart = message.chart;
+        publishTvState('mismatch', message.chart);
+        return;
+      }
+      // absent/booting: el puente no tiene chart listo. Refleja la sonda.
+      const probed = probedState();
+      lastTvState = probed;
+      lastTvChart = null;
+      publishTvState(probed);
     };
     window.addEventListener('message', onWindowMessage);
 

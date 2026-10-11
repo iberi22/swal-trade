@@ -20,9 +20,17 @@ export const TV_GET_STATE = 'get-tv-state';
  * - `ready`: el puente tiene el chart de Trading View con rango visible;
  * - `tradingview`: el iframe está, pero el puente todavía no lo ha cogido;
  * - `original`: la pestaña Original, el lienzo propio de Binance (sin API);
- * - `none`: no hay gráfico de este tipo en la página.
+ * - `none`: no hay gráfico de este tipo en la página;
+ * - `mismatch`: hay chart, pero muestra otro símbolo u otra temporalidad;
+ * - `unavailable`: el puente MAIN-world no está (no se puede pintar).
  */
-export type TvChartState = 'ready' | 'tradingview' | 'original' | 'none';
+export type TvChartState =
+  | 'ready'
+  | 'tradingview'
+  | 'original'
+  | 'none'
+  | 'mismatch'
+  | 'unavailable';
 
 /** Aviso que se le enseña al usuario según el estado. */
 export function tvStateHint(state: TvChartState | null | undefined): string | null {
@@ -35,6 +43,10 @@ export function tvStateHint(state: TvChartState | null | undefined): string | nu
   if (state === 'tradingview') {
     return 'El gráfico de Trading View está cargando. En cuanto tenga datos se pinta.';
   }
+  if (state === 'unavailable') {
+    return 'El puente con el gráfico no está disponible: no se puede pintar en esta página.';
+  }
+  // `ready`: no estorba. `mismatch`: lo compone el panel con los dos símbolos.
   return null;
 }
 

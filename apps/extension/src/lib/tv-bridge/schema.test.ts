@@ -106,7 +106,7 @@ describe('parseBridgeMessage', () => {
 
   it('acepta el limpiado y el saludo', () => {
     expect(parseBridgeMessage(buildClearMessage(NONCE), NONCE)?.type).toBe(SWAL_CLEAR);
-    const ready = buildReadyMessage(NONCE, true);
+    const ready = buildReadyMessage(NONCE, 'ready');
     expect(parseBridgeMessage(ready, NONCE)).toEqual(ready);
   });
 
@@ -155,8 +155,17 @@ describe('parseBridgeMessage', () => {
     if (parsed?.type === SWAL_DRAW) expect(parsed.shapes).toHaveLength(SWAL_MAX_SHAPES);
   });
 
+  it('el saludo lleva el motivo y, en desajuste, qué muestra el gráfico', () => {
+    const mismatch = buildReadyMessage(NONCE, 'mismatch', { symbol: 'ETHUSDT', tf: '4h' });
+    const parsed = parseBridgeMessage(mismatch, NONCE);
+    expect(parsed).toMatchObject({ type: SWAL_READY, ready: false, reason: 'mismatch', chart: { symbol: 'ETHUSDT', tf: '4h' } });
+    // Sin reason conocido, se degrada a absent (nunca listo).
+    const bogus = { ...buildReadyMessage(NONCE, 'ready'), reason: 'quien-sabe' };
+    expect(parseBridgeMessage(bogus, NONCE)).toMatchObject({ reason: 'absent', ready: false });
+  });
+
   it('ignora el saludo como orden', () => {
-    const ready = buildReadyMessage(NONCE, true) as unknown as Record<string, unknown>;
+    const ready = buildReadyMessage(NONCE, 'ready') as unknown as Record<string, unknown>;
     expect(parseBridgeMessage(ready, NONCE)).toMatchObject({ type: SWAL_READY, ready: true });
   });
 });

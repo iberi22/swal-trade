@@ -54,6 +54,8 @@
   let nowMs = $state(Date.now());
   /** Estado del gráfico de Binance: para saber si se puede pintar. */
   let tvState = $state<TvChartState | null>(null);
+  /** Símbolo y tf del gráfico, solo cuando no casan con el análisis. */
+  let tvChart = $state<{ symbol: string; tf: string } | null>(null);
   /** Velas cargadas: el pintado las usa para anclar flechas a precios reales. */
   let rows: Candle[] = [];
   /** true en cuanto se ha mandado algo al gráfico, para no repetir el limpiado. */
@@ -136,12 +138,16 @@
     void browser.runtime.sendMessage({ type: 'get-context' }).then(applyContext).catch(() => {});
     // Estado del gráfico: lo empuja el content script y se refresca por si la
     // pestaña cambia mientras el panel está abierto.
-    const unsubscribeTv = onTvState((state) => {
+    const unsubscribeTv = onTvState((state, chart) => {
       tvState = state;
+      tvChart = chart ?? null;
     });
     const refreshTv = () => {
-      void requestTvState().then((state) => {
-        if (state !== null) tvState = state;
+      void requestTvState().then((snapshot) => {
+        if (snapshot !== null) {
+          tvState = snapshot.state;
+          tvChart = snapshot.chart;
+        }
       });
     };
     void browser.storage.local
@@ -350,10 +356,16 @@
       <span>Pintar en el gráfico de Binance (pestaña Trading View)</span>
     </label>
     {#if settings.paintOnChart}
-      <p class="hint" data-testid="paint-hint">
-        {tvStateHint(tvState) ??
-          `Pintando ${symbol} · ${timeframe} sobre el gráfico de Binance. Se borran al apagar el interruptor.`}
-      </p>
+      {#if tvState === 'mismatch' && tvChart}
+        <p class="hint" data-testid="paint-hint">
+          El gráfico muestra {tvChart.symbol} · {tvChart.tf}; el análisis es {symbol} · {timeframe}.
+        </p>
+      {:else}
+        <p class="hint" data-testid="paint-hint">
+          {tvStateHint(tvState) ??
+            `Pintando ${symbol} · ${timeframe} sobre el gráfico de Binance. Se borran al apagar el interruptor.`}
+        </p>
+      {/if}
     {/if}
   </header>
 
