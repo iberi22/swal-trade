@@ -25,23 +25,13 @@
   Cache-Control: public, max-age=300, must-revalidate
 /*.js
   Cache-Control: public, max-age=300, must-revalidate
-/*/*.js
-  Cache-Control: public, max-age=300, must-revalidate
-/*/*/*.js
-  Cache-Control: public, max-age=300, must-revalidate
 /favicon.svg
   Cache-Control: public, max-age=86400
 /*.html
   Cache-Control: no-cache
+/*/
+  Cache-Control: no-cache
 /
-  Cache-Control: no-cache
-/checkout/
-  Cache-Control: no-cache
-/guardian/
-  Cache-Control: no-cache
-/analisis/
-  Cache-Control: no-cache
-/backup/
   Cache-Control: no-cache
 /sitemap.xml
   Cache-Control: public, max-age=3600
