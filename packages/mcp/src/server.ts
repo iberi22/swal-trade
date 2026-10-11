@@ -104,7 +104,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   // One base for every tool: what an order is explained with is what it is sent
   // against, and the write tools decide their own network from SWAL_MCP_NETWORK.
   const publicBase = futuresBase(env);
-  const base = readBase(env, publicBase.ok ? publicBase.value : "https://fapi.binance.com");
+  // An invalid BINANCE_FUTURES_URL is a configuration error, never a silent
+  // fallback: reading mainnet because a URL was mistyped is how a proposal gets
+  // priced against a network the user never chose. When trading is on, readBase
+  // derives the base from SWAL_MCP_NETWORK and ignores this value; when it is off,
+  // every read tool checks publicBase.ok and returns this error instead of reading.
+  const base = readBase(env, publicBase.ok ? publicBase.value : "");
   const secrets = [env.BINANCE_API_KEY, env.BINANCE_API_SECRET].flatMap((value) => (value ? [value, value.trim()] : []));
   const canTrade = tradingEnabled(env);
 
@@ -235,6 +240,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async () => {
+      if (!publicBase.ok) return fail(publicBase.error);
       const credentials = readCredentials(env);
       if (!credentials.ok) return fail(credentials.error);
       const cfg = parseAccountRiskConfig(env);
@@ -280,6 +286,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async (args) => {
+      if (!publicBase.ok) return fail(publicBase.error);
       const limits = parseProposalLimits(env);
       if (!limits.ok) return fail(limits.error);
       const symbol = normalizeSymbol(args.symbol);

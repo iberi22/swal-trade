@@ -121,6 +121,26 @@ test("the read tools use the same base as the writes when trading is enabled", a
   assert.equal(new URL(urls[0]).origin, "https://fapi.binance.com", urls[0]);
 });
 
+test("an invalid BINANCE_FUTURES_URL is an error, never a silent fallback to mainnet", async () => {
+  // A mistyped read URL used to be replaced by the mainnet default, so every read
+  // tool priced its answer against a network the user never chose. It must be an
+  // error, and nothing may be fetched.
+  const fetches = [];
+  const fetchFn = async (url) => {
+    fetches.push(String(url));
+    return jsonResponse({ symbol: "BTCUSDT", markPrice: "100" });
+  };
+  await withClient({ env: { BINANCE_FUTURES_URL: "not-a-url" }, fetchFn }, async (client) => {
+    const propose = errorText(await callOrCatch(client, "propose_order", { symbol: "BTCUSDT", side: "BUY", notional_usd: 10, stop_loss_pct: 1 }));
+    assert.match(propose, /BINANCE_FUTURES_URL/);
+    const risk = errorText(await callOrCatch(client, "account_risk", {}));
+    assert.match(risk, /BINANCE_FUTURES_URL/);
+    const analyze = errorText(await callOrCatch(client, "analyze_chart", { symbol: "BTCUSDT", timeframe: "1h" }));
+    assert.match(analyze, /BINANCE_FUTURES_URL/);
+  });
+  assert.equal(fetches.length, 0, "nothing is fetched when the read base is invalid");
+});
+
 test("rejects invalid analyze_chart and propose_order inputs before any fetch", async () => {
   let calls = 0;
   const fetchFn = async () => {
