@@ -1,5 +1,6 @@
 // analisis.js — UI de /analisis/. Toda la logica de deteccion vive en analysis-core.js (pura).
 import { analyzeSync, trendOf, NO_HISTORY_TEXT } from './analysis-core.js';
+import { cvdHistogramData, cvdLineData, flowLegend, volumeShockMarkers } from './volume-flow-view.js';
 import {
   EXPLAIN_DISCLAIMER,
   EXPLAIN_ENDPOINT,
@@ -40,8 +41,82 @@ const series = chart.addCandlestickSeries({
   borderVisible: true, priceLineVisible: false,
 });
 
+// ---------- panel de flujo de volumen (CVD) ----------
+// Un gráfico aparte debajo del de velas (la v4 vendorizada no tiene paneles):
+// línea de CVD en el tono principal, histograma del delta en pasos del mismo
+// tono y escala de tiempo sincronizada con la del precio. Sin rojo ni verde.
+const cvdChart = LightweightCharts.createChart($('cvd-pane'), {
+  autoSize: true,
+  layout: { background: { type: 'solid', color: 'rgba(0,0,0,0)' }, textColor: fg(0.6), fontFamily: 'ui-sans-serif, system-ui, sans-serif' },
+  grid: { vertLines: { color: fg(0.05) }, horzLines: { color: fg(0) } },
+  rightPriceScale: { visible: false },
+  timeScale: { visible: false, timeVisible: true, secondsVisible: false },
+  crosshair: {
+    vertLine: { color: fg(0.25), labelBackgroundColor: fg(0.8), labelVisible: false },
+    horzLine: { color: fg(0.25), labelBackgroundColor: fg(0.8) },
+  },
+});
+const cvdSeries = cvdChart.addLineSeries({ color: fg(0.95), lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerRadius: 3 });
+// El delta va en su propia escala, oculta: comparte el lienzo sin inventar números.
+const deltaSeries = cvdChart.addHistogramSeries({ priceScaleId: 'delta', color: fg(0.35), priceLineVisible: false, lastValueVisible: false });
+cvdChart.priceScale('delta').applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+
+// La escala de tiempo manda la del precio; el guard corta el rebote entre ambas.
+let timeSyncing = false;
+const syncTime = (from, to) => {
+  if (timeSyncing) return;
+  timeSyncing = true;
+  try { const range = from.timeScale().getVisibleLogicalRange(); if (range) to.timeScale().setVisibleLogicalRange(range); } catch { /* rango aún no válido */ }
+  timeSyncing = false;
+};
+chart.timeScale().subscribeVisibleLogicalRangeChange(() => syncTime(chart, cvdChart));
+cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => syncTime(cvdChart, chart));
+
+// La cruceta viaja con el cursor: moverla sobre las velas marca la misma vela abajo.
+let crossSyncing = false;
+const mirrorCrosshair = (to, ref) => (param) => {
+  if (crossSyncing) return;
+  crossSyncing = true;
+  try {
+    if (!param || !param.time) to.clearCrosshairPosition();
+    else to.setCrosshairPosition(0, param.time, ref);
+  } catch { /* vela fuera de rango */ }
+  finally { crossSyncing = false; }
+};
+chart.subscribeCrosshairMove(mirrorCrosshair(cvdChart, cvdSeries));
+cvdChart.subscribeCrosshairMove(mirrorCrosshair(chart, series));
+
+function setFlowData(candles) {
+  const line = cvdLineData(candles);
+  const bars = cvdHistogramData(candles);
+  $('cvd-legend').textContent = flowLegend(candles);
+  // Estado real del panel, no un gancho de prueba: cuántos puntos hay pintados.
+  const pane = $('cvd-pane');
+  pane.dataset.cvdPoints = String(line.length);
+  pane.dataset.deltaBars = String(bars.length);
+  if (!line.length) { cvdSeries.setData([]); deltaSeries.setData([]); return; }
+  cvdSeries.setData(line);
+  deltaSeries.setData(bars);
+  cvdChart.timeScale().fitContent();
+  syncTime(chart, cvdChart);
+}
+
+function updateFlowData(candles) {
+  const line = cvdLineData(candles);
+  const bars = cvdHistogramData(candles);
+  if (!line.length) { setFlowData(candles); return; }
+  // Solo cambia la última vela: el CVD acumulado de las anteriores no se mueve.
+  try { cvdSeries.update(line[line.length - 1]); deltaSeries.update(bars[bars.length - 1]); } catch { setFlowData(candles); }
+}
+
 // ---------- datos ----------
-const toCandle = (r) => ({ time: Math.floor(r[0] / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] });
+// Índice 8 = número de trades, índice 9 = volumen de compra agresiva (taker buy base).
+// Opcionales: sin ellos no hay flujo de volumen (delta/CVD), pero el resto del análisis sigue.
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
+const toCandle = (r) => ({
+  time: Math.floor(r[0] / 1000), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5],
+  trades: num(r[8]), takerBuyVolume: num(r[9]),
+});
 async function fetchKlines(symbol, tf, limit = 500) {
   const res = await fetch(`${FAPI}?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(tf)}&limit=${limit}`);
   if (!res.ok) throw new Error(`klines ${res.status}`);
@@ -63,7 +138,11 @@ function connectWs() {
     gotMessage = true;
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     const k = m && m.k; if (!k) return;
-    onLiveCandle({ time: Math.floor(k.t / 1000), open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v }, !!k.x);
+    // n = trades, V = taker buy base: el panel de CVD se alimenta de ellos.
+    onLiveCandle({
+      time: Math.floor(k.t / 1000), open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v,
+      trades: num(k.n), takerBuyVolume: num(k.V),
+    }, !!k.x);
   };
   ws.onclose = () => {
     if (gen !== state.gen) return;
@@ -78,6 +157,7 @@ function onLiveCandle(c, closed) {
   const cs = state.candles, last = cs[cs.length - 1];
   if (last && last.time === c.time) cs[cs.length - 1] = c; else { cs.push(c); if (cs.length > 1000) cs.shift(); }
   series.update(c);
+  updateFlowData(cs);
   const now = Date.now();
   if (closed || now - state.lastAnalysis > 5000) runAnalysis(false);
 }
@@ -118,6 +198,8 @@ function drawPriceLinesAndMarkers(res) {
   for (const f of res.findings.filter((x) => x.kind === 'shock')) {
     markers.push({ time: f.from, position: f.direction === 'up' ? 'aboveBar' : 'belowBar', shape: f.direction === 'up' ? 'arrowDown' : 'arrowUp', color: fg(0.8), text: '!' });
   }
+  // Choques de volumen con agresión: ▲ compra agresiva, ▼ venta agresiva.
+  for (const m of volumeShockMarkers(res.findings, { color: fg(0.85), candleTimes: state.candles.map((c) => c.time) })) markers.push(m);
   markers.sort((a, b) => a.time - b.time);
   series.setMarkers(markers);
 }
@@ -467,6 +549,7 @@ async function load() {
     if (gen !== state.gen) return;
     state.candles = c;
     series.setData(c);
+    setFlowData(c);
     runAnalysis(true);
     connectWs();
     refreshTrends();

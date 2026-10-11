@@ -8,6 +8,7 @@ import './guardian-io.test.mjs';
 import './csp.test.mjs';
 import './license-contract.test.mjs';
 import './analisis-core.test.mjs';
+import './volume-flow-view.test.mjs';
 import './analisis-csp.test.mjs';
 import './news.test.mjs';
 import './explain.test.mjs';

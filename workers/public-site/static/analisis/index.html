@@ -30,8 +30,14 @@
 
   <main class="layout">
     <section class="chart-card">
-      <div id="chart" class="chart" aria-label="Gráfico de velas"></div>
-      <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
+      <div class="chart-main">
+        <div id="chart" class="chart" aria-label="Gráfico de velas"></div>
+        <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
+      </div>
+      <div class="flow">
+        <div id="cvd-pane" class="cvd-pane" role="img" aria-label="Panel de flujo de volumen: línea de CVD y delta por vela"></div>
+        <p id="cvd-legend" class="small muted">CVD = compra agresiva acumulada − venta agresiva acumulada (volumen taker)</p>
+      </div>
     </section>
 
     <aside class="side">
