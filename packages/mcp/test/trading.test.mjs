@@ -669,6 +669,63 @@ test("place_order post_only refuses a reprice that would cross its own protectiv
   assert.equal(cross.post("/fapi/v1/algoOrder").length, 0, "no stop is armed when the entry never rested");
 });
 
+
+test("place_order post_only protects a fill found in the cancel answer after a timeout", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    cancelOrderAnswer: { status: "CANCELED", executedQty: "0.002", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const res = await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }); if(res.isError) throw new Error(res.content[0].text); const text = textOf(res);
+    const body = JSON.parse(text);
+    assert.equal(body.orderType, "post_only");
+    assert.equal(body.filledQuantity, 0.002);
+    assert.equal(body.stop.stopPrice, "99500");
+  });
+});
+
+test("place_order post_only treats a not-found cancel with an open position as a fill", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    cancelOrderAnswer: { code: -2011, msg: "Unknown order sent." },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+    positionsAfterCancel: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }]
+  });
+  exchange.positions = [];
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const res = await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only", notional_usd: 200 } }); if(res.isError) throw new Error(res.content[0].text); const body = JSON.parse(textOf(res));
+    assert.equal(body.filledQuantity, 0.002);
+    assert.equal(body.stop.stopPrice, "99500");
+  });
+});
+
+test("place_order post_only with a 200 cancel, 0 executed, and 0 position resolves as no fill", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /the resting order was cancelled by clientOrderId/);
+  });
+});
+
+test("place_order post_only leaves the intent pending when both reads fail and the cancel is confirmed 0", async () => {
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrderHttpError: 500,
+    positionRiskHttpError: 500,
+    cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /the net position could not be read/);
+  });
+});
+
 test("place_order post_only cancels the order it actually sent after an ambiguous timeout, and never calls a resting order not sent", async () => {
   // EXPIRED -> reprice -> the 2nd POST times out -> the lookup answers NEW with
   // no fill (a RESTING GTX). It must be cancelled by attempt-2's clientOrderId,
@@ -1113,6 +1170,42 @@ test("the startup sweep reports an unprotected position from an intent with no o
   });
   // Reporting only: an unprotected position is not closed without the opt-in.
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
+});
+
+
+test("the startup sweep reports an unprotected position from a refused emergency close without a resolving outcome", async () => {
+  const exchange = makeExchange({
+    orderStatus: "FILLED",
+    algoFailures: [{ code: -1001, msg: "stop failure" }, { code: -1001, msg: "stop failure" }],
+    positions: [], // Initially flat so guard passes
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }]
+  });
+
+  const originalFetch = exchange.fetchFn;
+  let orderCount = 0;
+  exchange.fetchFn = async (url, init) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    if (urlStr.includes("/fapi/v1/order") && init && init.method === "POST") {
+      orderCount++;
+      if (orderCount === 2) {
+        return new Response(JSON.stringify({ code: -2010, msg: "margin is insufficient" }), { status: 400 });
+      }
+    }
+    return originalFetch(url, init);
+  };
+
+  let error = null;
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+     error = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+  });
+  assert.match(error, /The protective stop failed after|the protective stop failed after/);
+
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "ETHUSDT" } })));
+    assert.equal(body.startupSweep.findings.length, 1);
+    assert.equal(body.startupSweep.findings[0].symbol, "BTCUSDT");
+    assert.match(body.notes.join(" "), /STARTUP SWEEP/);
+  });
 });
 
 test("the startup sweep flattens only when SWAL_MCP_STARTUP_FLATTEN=yes", async () => {

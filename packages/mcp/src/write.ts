@@ -713,7 +713,7 @@ export function guardLimitsFrom(cfg: TradingConfig) {
 
 /** True when a lookup by clientOrderId answered "no such order". */
 export function isOrderNotFound(err: unknown): boolean {
-  return err instanceof BinanceError && err.code === ORDER_NOT_FOUND_CODE;
+  return err instanceof BinanceError && (err.code === ORDER_NOT_FOUND_CODE || err.code === -2011);
 }
 
 /**

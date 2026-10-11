@@ -706,7 +706,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     const failure = rejected[0];
     if (failure) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
-      await writeOutcome({ placed: placed.length, filledQuantity, error: failure.error });
+      if (aborted.flatten.flat) await writeOutcome({ placed: placed.length, filledQuantity, error: failure.error });
       return refused(
         `level ${failure.level} at ${failure.price} could not be rested as a post-only order (${failure.error}). The grid was not placed. ${describeFlatten(aborted)}.`,
       );
@@ -715,7 +715,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     const stop = await placeProtectiveStop(client, plan, record);
     if (!stop.ok) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
-      await writeOutcome({ placed: placed.length, filledQuantity, error: stop.error });
+      if (aborted.flatten.flat) await writeOutcome({ placed: placed.length, filledQuantity, error: stop.error });
       return refused(
         `the protective stop ${plan.direction === "long" ? "below" : "above"} the grid failed after ${STOP_ATTEMPTS} attempts (${stop.error}). The grid was cancelled. ${describeFlatten(aborted)}.`,
       );
