@@ -105,11 +105,8 @@ Cómo funciona:
    núcleo) y los convierte en formas: `src/lib/tv-bridge/shapes.ts`.
 2. Manda un mensaje de runtime al content script aislado de cada pestaña de
    futuros abierta (`src/lib/tv-paint-send.ts`).
-3. El content script aislado (`src/entrypoints/content.ts`) publica un nonce por
-   carga de página en `<html data-swal-tv-nonce>` y reenvía la orden por
-   `window.postMessage`.
-4. El puente MAIN-world (`src/entrypoints/binance-tv-bridge.content.ts`) valida el
-   mensaje (tipo, versión, nonce, tope de 60 formas, puntos numéricos), busca
+3. El content script aislado (`src/entrypoints/content.ts`) establece un canal privado (`MessageChannel`) en `document_start` (ver modelo de confianza) y reenvía la orden solo por ese puerto.
+4. El puente MAIN-world (`src/entrypoints/binance-tv-bridge.content.ts`) escucha únicamente por el puerto privado y valida el mensaje (tipo, versión, límite de tasa, tope de 60 formas, puntos numéricos), busca
    `tradingViewApi` en el iframe del mismo origen de la pestaña **Trading View**,
    espera a que el chart tenga rango visible y dibuja.
 
@@ -150,3 +147,9 @@ banner de cookies, cambia a la pestaña Trading View, enciende el interruptor y
 comprueba con `tradingViewApi.activeChart().getAllShapes()` que las formas
 aparecen y que desaparecen al apagarlo. Las velas van mockeadas
 (`e2e/fixtures/candles.mjs`), así que el resultado no depende del mercado de hoy.
+
+### Modelo de confianza (MAIN-world bridge)
+
+La API del gráfico está en el mundo de la página (`MAIN`). Nuestro puente tiene que vivir ahí, pero un content script `MAIN` comparte ventana con cualquier script de la página (incluyendo anuncios o tag managers), lo que abría la puerta a que otro script fabricara un mensaje de dibujo y pintara en el gráfico del usuario inventando análisis.
+
+Para solucionarlo, los dos scripts (el aislado y el puente) se saludan en la fase `document_start` (antes de que la página ejecute nada) mediante un `MessageChannel`. El puente entrega un puerto privado que el script aislado atrapa. A partir de ahí, el puente ignora por completo `window.postMessage` y atiende solo los mensajes que lleguen por ese puerto. La autenticidad la da el canal, no una clave o un nonce en el mensaje.

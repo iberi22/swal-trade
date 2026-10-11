@@ -67,7 +67,7 @@ describe('tvStateHint', () => {
   });
 
   it('sin puente MAIN-world dice que no está disponible (F1)', () => {
-    expect(tvStateHint('unavailable')).toContain('no está disponible');
+    expect(tvStateHint('unavailable')).toBe('no disponible en esta pestaña.');
   });
 
   it('el desajuste lo compone el panel, no el hint', () => {

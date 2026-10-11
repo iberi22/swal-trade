@@ -4,20 +4,23 @@
  * El puente vive en el mundo de la página (MAIN) porque es el único que alcanza
  * el iframe de TradingView que Binance monta en la pestaña "Trading View". El
  * panel no habla con el gráfico: manda un mensaje de runtime al content script
- * aislado y este lo reenvía por `window.postMessage`. Nada de eso cruza la red.
+ * aislado y este lo reenvía por un puerto privado de MessageChannel que el
+ * puente le entrega en el saludo de `document_start` (ver `tv-bridge/handshake`).
+ * Nada de eso cruza la red ni pasa por `window`, así que un script de la página
+ * no puede fabricarlo.
  *
  * Reglas duras del validador:
  * - solo pasa `swal:draw`, `swal:clear` y `swal:ready`;
  * - la versión tiene que coincidir;
- * - el nonce tiene que ser el que publicó el content script en esta página;
  * - como máximo `SWAL_MAX_SHAPES` formas;
  * - cada forma valida sus puntos uno a uno: número finito o se descarta.
  *
- * Cualquier otra cosa se ignora en silencio: un mensaje rogue no dibuja.
+ * La autenticación no está aquí: la da el puerto privado. Cualquier otra cosa
+ * se ignora en silencio: un mensaje rogue no dibuja.
  */
 
 /** Versión del contrato. Subirla invalida los mensajes antiguos. */
-export const SWAL_MESSAGE_VERSION = 1;
+export const SWAL_MESSAGE_VERSION = 2;
 
 /** Tope de formas por mensaje. Más estorba al gráfico, no lo mejora. */
 export const SWAL_MAX_SHAPES = 60;
@@ -66,14 +69,13 @@ export interface BridgeShape {
   /** Texto en español que se pinta. Puede ir vacío. */
   text: string;
   points: BridgePoint[];
-  /** Solo en `arrow`: ▲ compra agresiva o ▼ venta agresiva. */
+  /** Solo en `arrow`: dirección neutra del hallazgo (al alza o a la baja). */
   direction?: BridgeArrowDirection;
 }
 
 export interface BridgeDrawMessage {
   type: typeof SWAL_DRAW;
   version: number;
-  nonce: string;
   /** Símbolo y temporalidad del análisis, para no redibujar lo mismo. */
   key: string;
   shapes: BridgeShape[];
@@ -82,13 +84,11 @@ export interface BridgeDrawMessage {
 export interface BridgeClearMessage {
   type: typeof SWAL_CLEAR;
   version: number;
-  nonce: string;
 }
 
 export interface BridgeReadyMessage {
   type: typeof SWAL_READY;
   version: number;
-  nonce: string;
   /** true cuando el puente tiene el gráfico con rango visible. */
   ready: boolean;
   /**
@@ -181,21 +181,15 @@ export function coerceShapes(raw: unknown): BridgeShape[] {
 }
 
 /**
- * Valida un mensaje recibido por `postMessage`. `expectedNonce` es el que publicó
- * el content script aislado en esta página; si no existe todavía, se rechaza.
+ * Valida un mensaje recibido por el puerto privado. La confianza la da el
+ * transporte (MessageChannel), no el contenido: aquí solo se comprueba forma.
  */
-export function parseBridgeMessage(
-  raw: unknown,
-  expectedNonce: string | null | undefined,
-): BridgeMessage | BridgeReadyMessage | null {
+export function parseBridgeMessage(raw: unknown): BridgeMessage | BridgeReadyMessage | null {
   if (!isPlainRecord(raw)) return null;
   const type = raw.type;
   if (type !== SWAL_DRAW && type !== SWAL_CLEAR && type !== SWAL_READY) return null;
   if (raw.version !== SWAL_MESSAGE_VERSION) return null;
-  if (typeof raw.nonce !== 'string' || raw.nonce.length === 0) return null;
-  if (typeof expectedNonce !== 'string' || expectedNonce.length === 0) return null;
-  if (raw.nonce !== expectedNonce) return null;
-  if (type === SWAL_CLEAR) return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION, nonce: raw.nonce };
+  if (type === SWAL_CLEAR) return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION };
   if (type === SWAL_READY) {
     const reason = READY_REASONS.includes(raw.reason as BridgeReadyReason)
       ? (raw.reason as BridgeReadyReason)
@@ -203,7 +197,6 @@ export function parseBridgeMessage(
     const ready: BridgeReadyMessage = {
       type: SWAL_READY,
       version: SWAL_MESSAGE_VERSION,
-      nonce: raw.nonce,
       ready: reason === 'ready',
       reason,
     };
@@ -216,33 +209,30 @@ export function parseBridgeMessage(
   }
   const shapes = coerceShapes(raw.shapes);
   const key = typeof raw.key === 'string' ? raw.key.slice(0, 64) : '';
-  return { type: SWAL_DRAW, version: SWAL_MESSAGE_VERSION, nonce: raw.nonce, key, shapes };
+  return { type: SWAL_DRAW, version: SWAL_MESSAGE_VERSION, key, shapes };
 }
 
-/** Construye el mensaje de dibujo. El nonce lo pone el content script aislado. */
-export function buildDrawMessage(shapes: readonly BridgeShape[], nonce: string, key = ''): BridgeDrawMessage {
+/** Construye el mensaje de dibujo para enviarlo por el puerto privado. */
+export function buildDrawMessage(shapes: readonly BridgeShape[], key = ''): BridgeDrawMessage {
   return {
     type: SWAL_DRAW,
     version: SWAL_MESSAGE_VERSION,
-    nonce,
     key,
     shapes: shapes.slice(0, SWAL_MAX_SHAPES),
   };
 }
 
-export function buildClearMessage(nonce: string): BridgeClearMessage {
-  return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION, nonce };
+export function buildClearMessage(): BridgeClearMessage {
+  return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION };
 }
 
 export function buildReadyMessage(
-  nonce: string,
   reason: BridgeReadyReason,
   chart?: { symbol: string; tf: string },
 ): BridgeReadyMessage {
   const message: BridgeReadyMessage = {
     type: SWAL_READY,
     version: SWAL_MESSAGE_VERSION,
-    nonce,
     ready: reason === 'ready',
     reason,
   };
