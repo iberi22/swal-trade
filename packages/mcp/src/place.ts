@@ -173,12 +173,11 @@ interface StopOutcome {
 
 /**
  * True (set) when a fill exceeded the notional cap by the tolerance and the
- * excess was reduced on the exchange. Set inside the tool, read by
- * `entryPayload`, which is why it lives at module scope: it is written and read
- * inside one awaited call chain, never across two.
+ * excess was reduced on the exchange. It is passed into `entryPayload` per call:
+ * at module scope a reduction from one call would warn about a fill in the next
+ * one, which is how a process that served two users reports a reduction that
+ * never happened to them.
  */
-let excessNotionalReduced: number | null = null;
-
 /** The success payload of place_order, in one shape for every path that reaches it. */
 function entryPayload(input: {
   cfg: { network: string; journalPath: string };
@@ -203,11 +202,13 @@ function entryPayload(input: {
   ambiguous?: boolean;
   /** What the startup sweep found, when it found anything. */
   startupSweep?: unknown;
+  /** USD of a fill above the cap that this call reduced, or null when it did not. */
+  excessNotionalReduced: number | null;
 }): Record<string, unknown> {
   const warnings = [...input.warnings];
-  if (excessNotionalReduced != null) {
+  if (input.excessNotionalReduced != null) {
     warnings.push(
-      `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${excessNotionalReduced.toFixed(4)} USD and the excess was reduced with a MARKET reduceOnly order.`,
+      `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${input.excessNotionalReduced.toFixed(4)} USD and the excess was reduced with a MARKET reduceOnly order.`,
     );
   }
   const filledNotional = input.filledQty > 0 && averagePriceOf(input.entry) != null
@@ -559,6 +560,9 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     };
 
     let entry: EntryOutcome;
+    // Per call, never module scope: the reduction of one fill must not be
+    // reported in the next call's warnings.
+    let excessNotionalReduced: number | null = null;
     if (orderType === "post_only") {
       entry = await postOnlyEntry(
         client,
@@ -616,6 +620,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               warnings: [...(sweepAlerts.length > 0 ? sweepAlerts : []), `the entry answer was ambiguous (${message}); it was resolved by clientOrderId and the position is protected.`],
               startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
               ambiguous: true,
+              excessNotionalReduced,
             }));
           }
           await writeOutcome({ filled: false, error: message });
@@ -704,6 +709,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         warnings: [...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []), ...sweepAlerts],
         startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
         takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning } : null,
+        excessNotionalReduced,
       }),
     );
   }));

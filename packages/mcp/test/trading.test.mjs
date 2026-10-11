@@ -662,6 +662,27 @@ test("a fill above the notional cap is reduced and reported", async () => {
   assert.equal(orders[1].params.quantity, "0.002");
 });
 
+test("the reduced excess is reported for its own call, never for the next one", async () => {
+  // The flag was module-level state: one fill over the cap left it set, and the
+  // next call reported "the fill exceeded SWAL_MAX_NOTIONAL_USD by 170 USD" for a
+  // fill that was inside the cap. The warning is per call or it is a lie.
+  const over = makeExchange({ marketFill: { avgPrice: "130000", executedQty: "0.009" } });
+  const inside = makeExchange({ marketFill: { avgPrice: "100000", executedQty: "0.002" } });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: over.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 900 } })));
+    assert.match(body.warnings.join(" "), /the excess was reduced/);
+  });
+  assert.equal(over.post("/fapi/v1/order").length, 2);
+
+  // A second, separate server process: the same account, a fill inside the cap.
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: inside.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.filledNotionalUsd, 200);
+    assert.deepEqual(body.warnings, []);
+  });
+  assert.equal(inside.post("/fapi/v1/order").length, 1, "inside the cap: no reduction order");
+});
+
 // ---------------------------------------------------------------------------
 // Item 13: the journal is a writable regular file, or there is no order.
 // ---------------------------------------------------------------------------
