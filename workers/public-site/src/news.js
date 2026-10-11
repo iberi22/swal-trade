@@ -127,6 +127,40 @@ export function hasTerm(foldedText, term) {
   return new RegExp(`(?:^|[^a-z0-9])${needle}(?=$|[^a-z0-9])`).test(foldedText);
 }
 
+const NEGATORS = ['no', 'not', 'never', 'without', 'fails to', 'failed to', 'sin', 'nunca', 'ni'];
+
+/**
+ * @param {string} foldedText
+ * @param {string} term
+ * @returns {{ normal: boolean, negated: boolean }}
+ */
+function checkTermNegation(foldedText, term) {
+  let normal = false;
+  let negated = false;
+  const needle = fold(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  if (!needle) return { normal, negated };
+  const regex = new RegExp(`(?:^|[^a-z0-9])(${needle})(?=$|[^a-z0-9])`, 'g');
+  let match;
+  while ((match = regex.exec(foldedText)) !== null) {
+    const wordsBefore = foldedText.slice(0, match.index).split(/[^a-z0-9]+/).filter(Boolean);
+    let isNegated = false;
+    for (const negator of NEGATORS) {
+      const negWords = negator.split(' ');
+      const len = negWords.length;
+      if (
+        (wordsBefore.length >= len && wordsBefore.slice(-len).join(' ') === negator) ||
+        (wordsBefore.length >= len + 1 && wordsBefore.slice(-(len + 1), -1).join(' ') === negator)
+      ) {
+        isNegated = true;
+        break;
+      }
+    }
+    if (isNegated) negated = true;
+    else normal = true;
+  }
+  return { normal, negated };
+}
+
 /**
  * @param {string} text
  * @returns {{score: number, label: 'positivo'|'negativo'|'neutral'}}
@@ -135,8 +169,16 @@ export function scoreSentiment(text) {
   const folded = fold(text);
   let pos = 0;
   let neg = 0;
-  for (const term of SENTIMENT_TERMS.positive) if (hasTerm(folded, term)) pos += 1;
-  for (const term of SENTIMENT_TERMS.negative) if (hasTerm(folded, term)) neg += 1;
+  for (const term of SENTIMENT_TERMS.positive) {
+    const { normal, negated } = checkTermNegation(folded, term);
+    if (normal) pos += 1;
+    if (negated) neg += 1;
+  }
+  for (const term of SENTIMENT_TERMS.negative) {
+    const { normal, negated } = checkTermNegation(folded, term);
+    if (normal) neg += 1;
+    if (negated) pos += 1;
+  }
   if (pos + neg === 0) return { score: 0, label: 'neutral' };
   const score = Math.max(-1, Math.min(1, Math.round(((pos - neg) / (pos + neg)) * 1000) / 1000));
   const label = score > 0 ? 'positivo' : score < 0 ? 'negativo' : 'neutral';
