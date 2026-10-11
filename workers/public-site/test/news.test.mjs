@@ -352,7 +352,10 @@ test('rota proveedores, cae al siguiente si el primero falla y respeta el cupo',
   assert.deepEqual(configuredProviders({}), []);
 });
 
-test('GET /api/news: vacío, con datos, tope de limit, sin CORS abierto ni secretos', async () => {
+test('GET /api/news: vacío, con datos, tope de limit, sin CORS abierto ni secretos', async (t) => {
+  // Los titulares se fechan contra NOW; el endpoint filtra por antigüedad con el
+  // reloj real. Sin congelarlo, la prueba caduca 48 h después de NOW.
+  t.mock.method(Date, 'now', () => NOW);
   const DB = memoryNewsDb();
   const env = { DB, BRAVE_API_KEY: BRAVE_KEY, TAVILY_API_KEY: TAVILY_KEY, FIRECRAWL_API_KEY: FIRECRAWL_KEY };
   const empty = await worker.fetch(new Request('https://trade.swal.network/api/news?symbol=BTC'), env);
@@ -423,7 +426,10 @@ test('GET /api/news: vacío, con datos, tope de limit, sin CORS abierto ni secre
   assert.equal(await head.text(), '');
 });
 
-test('sin D1 el KV guarda y lee; si hay D1 no se escribe KV', async () => {
+test('sin D1 el KV guarda y lee; si hay D1 no se escribe KV', async (t) => {
+  // Los titulares se fechan contra NOW; el endpoint filtra por antigüedad con el
+  // reloj real. Sin congelarlo, la prueba caduca 48 h después de NOW.
+  t.mock.method(Date, 'now', () => NOW);
   const kv = memoryKv();
   const { fetchImpl } = router({
     'api.search.brave.com': (href) => {
