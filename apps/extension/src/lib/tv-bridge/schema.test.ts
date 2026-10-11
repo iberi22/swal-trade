@@ -17,8 +17,6 @@ import {
   type BridgeShape,
 } from './schema';
 
-const NONCE = 'a'.repeat(32);
-
 function shape(overrides: Partial<BridgeShape> = {}): BridgeShape {
   return {
     id: 'shock:1700000000|level:100',
@@ -58,9 +56,7 @@ describe('coerceShape', () => {
   it('cuenta los puntos por tipo', () => {
     expect(SHAPE_POINT_RANGE.trend).toEqual({ min: 2, max: 2 });
     expect(SHAPE_POINT_RANGE.zone).toEqual({ min: 2, max: 2 });
-    // Una línea de tendencia con un punto no vale: la API exige dos.
     expect(coerceShape(shape({ kind: 'trend' }))).toBeNull();
-    // Un nivel con dos puntos tampoco.
     expect(
       coerceShape(
         shape({ kind: 'level', points: [{ time: 1, price: 1 }, { time: 2, price: 2 }] }),
@@ -99,48 +95,37 @@ describe('coerceShapes', () => {
 });
 
 describe('parseBridgeMessage', () => {
-  it('acepta el dibujo con el nonce correcto', () => {
-    const message = buildDrawMessage([shape()], NONCE, 'BTCUSDT@1h');
-    expect(parseBridgeMessage(message, NONCE)).toEqual(message);
+  it('acepta el dibujo (la confianza la da el puerto, no el contenido)', () => {
+    const message = buildDrawMessage([shape()], 'BTCUSDT@1h');
+    expect(parseBridgeMessage(message)).toEqual(message);
   });
 
   it('acepta el limpiado y el saludo', () => {
-    expect(parseBridgeMessage(buildClearMessage(NONCE), NONCE)?.type).toBe(SWAL_CLEAR);
-    const ready = buildReadyMessage(NONCE, 'ready');
-    expect(parseBridgeMessage(ready, NONCE)).toEqual(ready);
+    expect(parseBridgeMessage(buildClearMessage())?.type).toBe(SWAL_CLEAR);
+    const ready = buildReadyMessage('ready');
+    expect(parseBridgeMessage(ready)).toEqual(ready);
   });
 
   it('descarta los tipos que no son nuestros', () => {
-    expect(parseBridgeMessage({ type: 'swal:paint' }, NONCE)).toBeNull();
-    expect(parseBridgeMessage({ type: 'draw' }, NONCE)).toBeNull();
-    expect(parseBridgeMessage(undefined, NONCE)).toBeNull();
-    expect(parseBridgeMessage('swal:draw', NONCE)).toBeNull();
-    expect(parseBridgeMessage([], NONCE)).toBeNull();
+    expect(parseBridgeMessage({ type: 'swal:paint' })).toBeNull();
+    expect(parseBridgeMessage({ type: 'draw' })).toBeNull();
+    expect(parseBridgeMessage(undefined)).toBeNull();
+    expect(parseBridgeMessage('swal:draw')).toBeNull();
+    expect(parseBridgeMessage([])).toBeNull();
   });
 
   it('descarta otra versión del contrato', () => {
-    const stale = { ...buildDrawMessage([shape()], NONCE), version: SWAL_MESSAGE_VERSION + 1 };
-    expect(parseBridgeMessage(stale, NONCE)).toBeNull();
-    expect(parseBridgeMessage({ ...buildClearMessage(NONCE), version: '1' }, NONCE)).toBeNull();
-  });
-
-  it('descarta un nonce que no es el de esta página', () => {
-    expect(parseBridgeMessage(buildDrawMessage([shape()], 'b'.repeat(32)), NONCE)).toBeNull();
-    // Sin nonce publicado todavía, no se acepta nada.
-    expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), null)).toBeNull();
-    expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), '')).toBeNull();
-    expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), undefined)).toBeNull();
-    // Un mensaje sin nonce tampoco.
-    const noNonce = { ...buildDrawMessage([shape()], NONCE), nonce: undefined };
-    expect(parseBridgeMessage(noNonce, NONCE)).toBeNull();
+    const stale = { ...buildDrawMessage([shape()]), version: SWAL_MESSAGE_VERSION + 1 };
+    expect(parseBridgeMessage(stale)).toBeNull();
+    expect(parseBridgeMessage({ ...buildClearMessage(), version: '1' })).toBeNull();
   });
 
   it('un dibujo viaja con las formas ya filtradas', () => {
-    const empty = buildDrawMessage([], NONCE);
-    const parsed = parseBridgeMessage(empty, NONCE);
+    const empty = buildDrawMessage([]);
+    const parsed = parseBridgeMessage(empty);
     expect(parsed?.type).toBe(SWAL_DRAW);
     if (parsed?.type === SWAL_DRAW) expect(parsed.shapes).toEqual([]);
-    const dirty = parseBridgeMessage({ ...empty, shapes: [{ id: 'x' }, null, 3] }, NONCE);
+    const dirty = parseBridgeMessage({ ...empty, shapes: [{ id: 'x' }, null, 3] });
     expect(dirty?.type).toBe(SWAL_DRAW);
     if (dirty?.type === SWAL_DRAW) expect(dirty.shapes).toEqual([]);
   });
@@ -148,24 +133,28 @@ describe('parseBridgeMessage', () => {
   it('corta en el tope de formas', () => {
     const huge = buildDrawMessage(
       Array.from({ length: 500 }, (_, index) => shape({ id: `f${index}` })),
-      NONCE,
     );
-    const parsed = parseBridgeMessage(huge, NONCE);
+    const parsed = parseBridgeMessage(huge);
     expect(parsed?.type).toBe(SWAL_DRAW);
     if (parsed?.type === SWAL_DRAW) expect(parsed.shapes).toHaveLength(SWAL_MAX_SHAPES);
   });
 
   it('el saludo lleva el motivo y, en desajuste, qué muestra el gráfico', () => {
-    const mismatch = buildReadyMessage(NONCE, 'mismatch', { symbol: 'ETHUSDT', tf: '4h' });
-    const parsed = parseBridgeMessage(mismatch, NONCE);
-    expect(parsed).toMatchObject({ type: SWAL_READY, ready: false, reason: 'mismatch', chart: { symbol: 'ETHUSDT', tf: '4h' } });
+    const mismatch = buildReadyMessage('mismatch', { symbol: 'ETHUSDT', tf: '4h' });
+    const parsed = parseBridgeMessage(mismatch);
+    expect(parsed).toMatchObject({
+      type: SWAL_READY,
+      ready: false,
+      reason: 'mismatch',
+      chart: { symbol: 'ETHUSDT', tf: '4h' },
+    });
     // Sin reason conocido, se degrada a absent (nunca listo).
-    const bogus = { ...buildReadyMessage(NONCE, 'ready'), reason: 'quien-sabe' };
-    expect(parseBridgeMessage(bogus, NONCE)).toMatchObject({ reason: 'absent', ready: false });
+    const bogus = { ...buildReadyMessage('ready'), reason: 'quien-sabe' };
+    expect(parseBridgeMessage(bogus)).toMatchObject({ reason: 'absent', ready: false });
   });
 
   it('ignora el saludo como orden', () => {
-    const ready = buildReadyMessage(NONCE, 'ready') as unknown as Record<string, unknown>;
-    expect(parseBridgeMessage(ready, NONCE)).toMatchObject({ type: SWAL_READY, ready: true });
+    const ready = buildReadyMessage('ready') as unknown as Record<string, unknown>;
+    expect(parseBridgeMessage(ready)).toMatchObject({ type: SWAL_READY, ready: true });
   });
 });
