@@ -153,29 +153,45 @@ describe('shapesForFinding', () => {
       { time: 1_700_000_000, close: 104 },
     ];
     const shapes = shapesForFinding(
-      finding({ kind: 'shock', direction: 'up', levels: [{ role: 'shock', price: 105, confirm: 105, invalidate: 99 }] }),
+      finding({ kind: 'shock', label: '', direction: 'up', levels: [{ role: 'shock', price: 105, confirm: 105, invalidate: 99 }] }),
       { candleTimes: candles.map((candle) => candle.time), priceAt: (time) => candles.find((c) => c.time === time)?.close ?? null },
     );
     const arrow = shapes.find((item) => item.kind === 'arrow')!;
     expect(arrow.direction).toBe('up');
-    expect(arrow.text).toBe('compra agresiva');
+    // Texto neutro: describe la vela y su dirección, nunca "compra" ni "venta".
+    expect(arrow.text).toBe('vela de choque al alza');
+    expect(arrow.text).not.toMatch(/compra|venta|agresiv/i);
     expect(arrow.points).toEqual([{ time: 1_700_000_000, price: 104 }]);
   });
 
-  it('un choque a la baja es una venta agresiva', () => {
-    const shapes = shapesForFinding(
-      finding({ kind: 'shock', direction: 'down', levels: [{ role: 'shock', price: 99, confirm: 105, invalidate: 99 }] }),
-    );
-    expect(shapes.find((item) => item.kind === 'arrow')?.text).toBe('venta agresiva');
+  it('el texto de la flecha nunca es una orden de compra o venta', () => {
+    const at = { candleTimes: [1_700_000_000], priceAt: (t: number) => (t === 1_700_000_000 ? 104 : null) };
+    for (const direction of ['up', 'down'] as const) {
+      const shapes = shapesForFinding(
+        finding({ kind: 'liquidity_sweep_high', label: '', direction, levels: [{ role: 'sweep', price: 105 }] }),
+        at,
+      );
+      const text = shapes.find((item) => item.kind === 'arrow')?.text ?? '';
+      expect(text).not.toMatch(/compra|venta|agresiv/i);
+    }
   });
 
-  it('sin precio de vela cerca, el choque ancla en su propio nivel', () => {
+  it('un choque a la baja apunta abajo con texto neutro', () => {
     const shapes = shapesForFinding(
-      finding({ kind: 'shock', direction: 'up', levels: [{ role: 'shock', price: 105, confirm: 105, invalidate: 99 }] }),
+      finding({ kind: 'shock', label: '', direction: 'down', levels: [{ role: 'shock', price: 99, confirm: 105, invalidate: 99 }] }),
+      { candleTimes: [1_700_000_000], priceAt: (t) => (t === 1_700_000_000 ? 104 : null) },
     );
-    expect(shapes.find((item) => item.kind === 'arrow')?.points).toEqual([
-      { time: 1_700_000_000, price: 105 },
-    ]);
+    const arrow = shapes.find((item) => item.kind === 'arrow')!;
+    expect(arrow.direction).toBe('down');
+    expect(arrow.text).toBe('vela de choque a la baja');
+  });
+
+  it('sin precio de vela cerca no hay flecha (F10: sin anclaje inventado)', () => {
+    // Antes anclaba en levels[0].price; ahora solo pinta si hay precio de vela.
+    const shapes = shapesForFinding(
+      finding({ kind: 'shock', label: '', direction: 'up', levels: [{ role: 'shock', price: 105, confirm: 105, invalidate: 99 }] }),
+    );
+    expect(shapes.some((item) => item.kind === 'arrow')).toBe(false);
   });
 
   it('niveles sin precio utilizable se descartan', () => {

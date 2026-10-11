@@ -287,17 +287,18 @@ export function shapesForFinding(finding: Finding, opts?: ShapesOptions): Bridge
   });
 
   // Flechas: velas de choque y barridos de liquidez. Sin precio de vela
-  // cerca no hay flecha: inventar un precio sería fabricar señales.
+  // cerca no hay flecha: inventar un precio sería fabricar señales. El texto
+  // es neutro (nunca "compra"/"venta"): describe la vela y su dirección.
   if (kind === 'shock' || kind === 'liquidity_sweep_high' || kind === 'liquidity_sweep_low') {
     const direction = finding.direction === 'down' ? 'down' : 'up';
     const time = from ?? 0;
-    const price = nearestPrice(candleTimes, time, opts?.priceAt) ?? levels[0]?.price ?? null;
+    const price = nearestPrice(candleTimes, time, opts?.priceAt);
     if (price !== null) {
       shapes.push({
         id: `${findingId}|arrow`,
         kind: 'arrow',
         style: 'solid',
-        text: shortText(direction === 'up' ? 'compra agresiva' : 'venta agresiva'),
+        text: shortText(`${label} ${direction === 'up' ? 'al alza' : 'a la baja'}`),
         points: [{ time, price }],
         direction,
       });
