@@ -768,6 +768,32 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
       if (!filters.ok) return refused(`exchangeInfo: ${filters.error}`);
       logStep(journal, "exchangeInfo", filters.value);
 
+      // The intent is journaled BEFORE the first order is sent. A close that dies
+      // half-way leaves an open position nobody is watching, and a line that only
+      // exists after the exchange answered cannot prove otherwise.
+      const intentId = newClientOrderId();
+      const intentFailure = await writeJournalLine(deps, cfg.value.journalPath, {
+        ts: new Date(deps.now()).toISOString(),
+        event: "close_position_intent",
+        network: cfg.value.network,
+        symbol,
+        intentId,
+      });
+      if (intentFailure) {
+        return refused(`the intent could not be journaled (${intentFailure}): the close was not sent because an ambiguous outcome could not be reconstructed.`);
+      }
+      const writeOutcome = async (extra: Record<string, unknown>): Promise<void> => {
+        const failure = await writeJournalLine(deps, cfg.value.journalPath, {
+          ts: new Date(deps.now()).toISOString(),
+          event: "close_position_outcome",
+          network: cfg.value.network,
+          symbol,
+          intentId,
+          ...extra,
+        });
+        if (failure) logStep(journal, "journal_outcome", { error: failure });
+      };
+
       // Close first, report second. The position is read netting every
       // positionRisk row of the symbol (one-way BOTH, hedge LONG + SHORT), then
       // reduced with a MARKET reduceOnly order rounded UP to stepSize so the
@@ -814,6 +840,7 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
       }
 
       const sent = flatten.orders.length > 0;
+      await writeOutcome({ netBefore: flatten.netBefore, remaining: flatten.remaining, flat: flatten.flat, orders: flatten.orders.length, error: flatten.error });
       // The note says exactly what happened: a position that could not be
       // closed must not be described as closed.
       const note = flatten.flat

@@ -22,7 +22,7 @@ import type { TradingConfig } from "./trading-config.js";
 import { journalPathOf, tradingEnabled } from "./trading-config.js";
 import { createWriteMutex } from "./mutex.js";
 import type { WriteMutex } from "./mutex.js";
-import { runStartupSweep, startupFlattenEnabled } from "./sweep.js";
+import { intentLabel, runStartupSweep, startupFlattenEnabled } from "./sweep.js";
 import type { SweepReport } from "./sweep.js";
 
 export type ToolOutcome<T = unknown> = { ok: true; value: T } | { ok: false; error: string };
@@ -84,7 +84,7 @@ export function sweepWarnings(report: SweepReport): string[] {
   const warnings: string[] = [];
   for (const finding of report.findings) {
     warnings.push(
-      `STARTUP SWEEP: ${finding.symbol} has ${finding.netPosition} open from an entry (clientOrderId ${finding.clientOrderId}) whose outcome was never journaled. ${finding.detail ?? "It was reported; nothing was changed."}`,
+      `STARTUP SWEEP: ${finding.symbol} has ${finding.netPosition} open from ${intentLabel(finding)} (${finding.tool}: ${finding.clientOrderId}) whose outcome was never journaled. ${finding.detail ?? "It was reported; nothing was changed."}`,
     );
   }
   for (const error of report.errors) warnings.push(`STARTUP SWEEP: ${error}`);

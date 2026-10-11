@@ -30,11 +30,38 @@ export const STARTUP_FLATTEN_ENV = "SWAL_MCP_STARTUP_FLATTEN";
 
 export interface UnprotectedIntent {
   clientOrderId: string;
+  /** Which write tool left the intent behind. */
+  tool: IntentTool;
   symbol: string;
   side: string;
   quantity: string;
   notionalUsd: number;
   leverage: number;
+}
+
+export type IntentTool = "place_order" | "grid_place" | "close_position";
+
+/**
+ * The intent/outcome line pairs every write tool leaves behind.
+ *
+ * `place_order` pairs them by the order's clientOrderId, because that is what
+ * resolves an ambiguous answer. The other two writes have no single order to
+ * name, so they pair them by an intentId generated for the call: what matters is
+ * that an intent whose outcome never arrived is findable, whichever tool wrote it.
+ */
+const INTENT_OUTCOMES = new Map<string, { tool: IntentTool; outcome: string }>([
+  ["place_order_intent", { tool: "place_order", outcome: "place_order_outcome" }],
+  ["grid_place_intent", { tool: "grid_place", outcome: "grid_place_outcome" }],
+  ["close_position_intent", { tool: "close_position", outcome: "close_position_outcome" }],
+]);
+
+const OUTCOME_EVENTS = new Set([...INTENT_OUTCOMES.values()].map((entry) => entry.outcome));
+
+/** One sentence per tool, for the warning an operator reads. */
+export function intentLabel(intent: Pick<UnprotectedIntent, "tool">): string {
+  if (intent.tool === "grid_place") return "a grid placement";
+  if (intent.tool === "close_position") return "a close that never finished";
+  return "an entry";
 }
 
 export interface SweepFinding extends UnprotectedIntent {
@@ -74,18 +101,27 @@ export function findUnprotectedIntents(rows: readonly unknown[]): UnprotectedInt
   for (const row of rows) {
     if (!isRecord(row)) continue;
     const event = typeof row.event === "string" ? row.event : "";
-    const id = typeof row.clientOrderId === "string" ? row.clientOrderId : "";
+    // clientOrderId for place_order, intentId for the writes that have no single
+    // order to name: either way it is what pairs an intent with its outcome.
+    const id =
+      typeof row.clientOrderId === "string" && row.clientOrderId.length > 0
+        ? row.clientOrderId
+        : typeof row.intentId === "string"
+          ? row.intentId
+          : "";
     if (!id) continue;
-    if (event === "place_order_intent") {
+    const intent = INTENT_OUTCOMES.get(event);
+    if (intent) {
       intents.set(id, {
         clientOrderId: id,
+        tool: intent.tool,
         symbol: typeof row.symbol === "string" ? row.symbol : "",
         side: typeof row.side === "string" ? row.side : "",
         quantity: typeof row.quantity === "string" ? row.quantity : "0",
         notionalUsd: typeof row.notionalUsd === "number" ? row.notionalUsd : 0,
         leverage: typeof row.leverage === "number" ? row.leverage : 1,
       });
-    } else if (event === "place_order_outcome") {
+    } else if (OUTCOME_EVENTS.has(event)) {
       resolved.add(id);
     }
   }

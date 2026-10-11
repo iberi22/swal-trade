@@ -7,8 +7,7 @@
 // the same redaction the error paths use (URLs lose their query string, which is
 // where an HMAC signature would travel).
 
-import { access, appendFile, mkdir, open, stat } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { appendFile, mkdir, open, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -89,6 +88,11 @@ export async function appendJournal(filePath: string, record: unknown, secrets: 
  * passed to appendFile: those either fail silently later (a directory raises
  * EISDIR only when the write is attempted, i.e. after the order was sent) or
  * throw the audit trail away (/dev/null).
+ *
+ * The check is the write itself: the file is opened for append (which creates it
+ * with owner-only permissions when it is missing) and closed again. Checking the
+ * DIRECTORY instead of the file is what let a read-only journal through, and the
+ * append then failed with EACCES after the order was already on the exchange.
  */
 export async function assertJournalWritable(filePath: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -101,15 +105,6 @@ export async function assertJournalWritable(filePath: string): Promise<void> {
   if (existing != null && !existing.isFile()) {
     throw new Error(`the journal path is not a regular file (it is a ${existing.isDirectory() ? "directory" : existing.isSymbolicLink() ? "symbolic link" : "special file"})`);
   }
-  if (existing == null) {
-    // Create it now, with owner-only permissions, so a later failure is not a
-    // surprise.
-    const handle = await open(filePath, "a", 0o600);
-    await handle.close();
-  }
-  try {
-    await access(filePath, fsConstants.W_OK);
-  } catch {
-    await access(path.dirname(filePath), fsConstants.W_OK);
-  }
+  const handle = await open(filePath, "a", existing == null ? 0o600 : undefined);
+  await handle.close();
 }

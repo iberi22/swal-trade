@@ -51,6 +51,7 @@ import {
   withWriteLock,
   requireJournal,
   withJournal,
+  writeJournalLine,
 } from "./write.js";
 import type { JournalRecord, ToolOutcome, WriteDeps } from "./write.js";
 import { redactSecrets, errorMessage } from "./types.js";
@@ -632,6 +633,43 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
       return refused(`the grid was not placed: ${insideLiquidation.reason ?? "the stop is not inside the liquidation estimate"}`);
     }
 
+    // The intent is journaled BEFORE the first level is sent, with the whole
+    // ladder in it: a grid that dies between two levels leaves resting entries
+    // and maybe a fill, and the record withJournal writes at the end never
+    // exists. This line is the only thing that says what was about to be sent.
+    const intentId = newClientOrderId();
+    const intentFailure = await writeJournalLine(deps, cfg.value.journalPath, {
+      ts: new Date(deps.now()).toISOString(),
+      event: "grid_place_intent",
+      network: cfg.value.network,
+      symbol,
+      planId: plan.planId,
+      intentId,
+      direction: plan.direction,
+      side: plan.entrySide,
+      stopSide: plan.stopSide,
+      stopPrice: plan.stopPrice,
+      quantity: plan.totalQuantity,
+      notionalUsd: plan.totalNotionalUsd,
+      leverage: cfg.value.maxLeverage,
+      levels: plan.levels.map((level) => ({ index: level.index, side: level.side, price: level.price, quantity: level.quantity })),
+    });
+    if (intentFailure) {
+      return refused(`the intent could not be journaled (${intentFailure}): the grid was not placed because an ambiguous outcome could not be reconstructed.`);
+    }
+    const writeOutcome = async (extra: Record<string, unknown>): Promise<void> => {
+      const failure = await writeJournalLine(deps, cfg.value.journalPath, {
+        ts: new Date(deps.now()).toISOString(),
+        event: "grid_place_outcome",
+        network: cfg.value.network,
+        symbol,
+        planId: plan.planId,
+        intentId,
+        ...extra,
+      });
+      if (failure) record.exchange.push({ step: "journal_outcome", error: failure });
+    };
+
     const placed: unknown[] = [];
     let filledQuantity = 0;
 
@@ -657,6 +695,7 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     const failure = rejected[0];
     if (failure) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
+      await writeOutcome({ placed: placed.length, filledQuantity, error: failure.error });
       return refused(
         `level ${failure.level} at ${failure.price} could not be rested as a post-only order (${failure.error}). The grid was not placed. ${describeFlatten(aborted)}.`,
       );
@@ -665,11 +704,13 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
     const stop = await placeProtectiveStop(client, plan, record);
     if (!stop.ok) {
       const aborted = await emergencyClose(client, filters.value, symbol, record);
+      await writeOutcome({ placed: placed.length, filledQuantity, error: stop.error });
       return refused(
         `the protective stop ${plan.direction === "long" ? "below" : "above"} the grid failed after ${STOP_ATTEMPTS} attempts (${stop.error}). The grid was cancelled. ${describeFlatten(aborted)}.`,
       );
     }
 
+    await writeOutcome({ placed: placed.length, filledQuantity, algoId: stop.algoId ?? null });
     return ok({
       network: cfg.value.network,
       planId: plan.planId,

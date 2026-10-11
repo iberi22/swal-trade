@@ -98,3 +98,21 @@ test("assertJournalWritable accepts a writable directory and rejects a missing p
   await assert.rejects(assertJournalWritable(path.join(dir, "blocked", "x.jsonl")), /EACCES|permission/);
   await fs.chmod(path.join(dir, "blocked"), 0o700);
 });
+
+// ---------------------------------------------------------------------------
+// Item 13: the FILE has to be writable, not just its directory.
+// ---------------------------------------------------------------------------
+
+test("assertJournalWritable refuses a read-only journal FILE", async () => {
+  // The directory is writable, so an access(dirname, W_OK) check passes and the
+  // preflight lets the order through: the append then fails with EACCES after the
+  // exchange has already accepted it. Appending is what has to be proven.
+  const dir = await tempDir();
+  const file = path.join(dir, "journal.jsonl");
+  await fs.writeFile(file, "");
+  await fs.chmod(file, 0o444);
+  await assert.rejects(assertJournalWritable(file), /EACCES|permission/);
+  await fs.chmod(file, 0o644);
+  // And the same file writable again is accepted, without being recreated.
+  await assertJournalWritable(file);
+});

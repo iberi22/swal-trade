@@ -1089,3 +1089,43 @@ test("place_order post_only reprices only a repriceable status and stops on any 
   assert.equal(cancels.length, 1, "the one order that was sent is cancelled by clientOrderId");
   assert.equal(rejected.post("/fapi/v1/algoOrder").length, 0);
 });
+
+test("a read-only journal FILE stops the order, even though its directory is writable", async () => {
+  // The preflight used to accept a read-only file whenever the directory was
+  // writable, so the order was sent and the audit trail failed afterwards with
+  // EACCES. There is no un-sending an order.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-journal-ro-"));
+  const journal = path.join(dir, "journal.jsonl");
+  fs.writeFileSync(journal, "");
+  fs.chmodSync(journal, 0o444);
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile({ SWAL_MCP_JOURNAL: journal }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /not a writable regular file/);
+    assert.match(text, /the order was not sent/);
+  });
+  assert.equal(exchange.calls.length, 0, "nothing is read and nothing is written");
+  fs.chmodSync(journal, 0o644);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("close_position journals an intent before the close and an outcome after it", async () => {
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "-0.5", notional: "-50000", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } });
+  });
+  const intents = journalLines(JOURNAL, "close_position_intent");
+  const outcomes = journalLines(JOURNAL, "close_position_outcome");
+  assert.equal(intents.length, 1);
+  assert.equal(outcomes.length, 1);
+  assert.equal(intents[0].symbol, "BTCUSDT");
+  assert.equal(outcomes[0].intentId, intents[0].intentId);
+  assert.equal(outcomes[0].flat, true);
+  // The intent is written before the order is sent: it is the line that proves a
+  // close that died half-way left a position behind.
+  const raw = journalLines();
+  assert.ok(raw.findIndex((line) => line.event === "close_position_intent") < raw.findIndex((line) => line.event === "close_position_outcome"));
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});

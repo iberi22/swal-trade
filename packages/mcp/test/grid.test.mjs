@@ -315,7 +315,7 @@ test("grid_place places the plan as post-only limits with one protective stop", 
   assert.ok(steps.indexOf("POST /fapi/v1/leverage") < levels[0][0]);
   assert.ok(steps.indexOf("POST /fapi/v1/marginType") < levels[0][0]);
 
-  const lines = journalLines();
+  const lines = journalLines().filter((line) => line.event === "grid_place");
   assert.equal(lines.length, 1);
   assert.equal(lines[0].event, "grid_place");
   assert.equal(lines[0].guard.allow, true);
@@ -334,7 +334,7 @@ test("the grid liquidation estimate is read from the worst level, not from the a
   await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } });
   });
-  const line = journalLines(JOURNAL, "grid_place")[0];
+  const line = journalLines().find((entry) => entry.event === "grid_place");
   const liquidation = line.exchange.find((item) => item.step === "liquidation");
   assert.equal(liquidation.source, "leverageBracket");
   assert.equal(liquidation.maintenanceMarginRatio, 0.004);
@@ -515,7 +515,7 @@ test("grid_place is fail-closed: a stop that fails twice cancels the grid and cl
   assert.equal(orders[3].params.reduceOnly, "true");
   assert.equal(orders[3].params.quantity, "0.3");
   assert.ok(exchange.calls.some((call) => call.method === "DELETE" && call.path === "/fapi/v1/allOpenOrders"));
-  const line = journalLines()[0];
+  const line = journalLines().find((entry) => entry.event === "grid_place");
   assert.match(line.error, /protective stop below the grid failed/);
   assert.ok(line.exchange.some((item) => item.step === "emergency_close"));
 });
@@ -754,4 +754,58 @@ test("grid_place reprices only a repriceable status and stops on any other", asy
   const orders = expired.post("/fapi/v1/order");
   assert.equal(orders.length, 3, "an EXPIRED post-only level is repriced");
   assert.deepEqual(orders.map((order) => order.params.price), ["97000", "96999", "96998"]);
+});
+
+test("grid_place journals the whole ladder as an intent before the first level", async () => {
+  // The record withJournal writes only exists at the end of the call, so a process
+  // that dies between two levels leaves no trace of what was sent. The intent line
+  // carries the ladder, and the sweep can find it.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({ symbols: GRID_SYMBOLS });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } });
+  });
+  const intents = journalLines().filter((line) => line.event === "grid_place_intent");
+  const outcomes = journalLines().filter((line) => line.event === "grid_place_outcome");
+  assert.equal(intents.length, 1);
+  assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].intentId, intents[0].intentId);
+  assert.equal(outcomes[0].placed, 3);
+  assert.deepEqual(intents[0].levels, [
+    { index: 1, side: "BUY", price: "97000", quantity: "0.1" },
+    { index: 2, side: "BUY", price: "98000", quantity: "0.1" },
+    { index: 3, side: "BUY", price: "99000", quantity: "0.1" },
+  ]);
+  assert.equal(intents[0].quantity, "0.3");
+  assert.equal(intents[0].stopPrice, "95000");
+  assert.equal(journalLines().findIndex((line) => line.event === "grid_place_intent") < 3, true);
+});
+
+test("the startup sweep reports a grid whose outcome was never journaled", async () => {
+  // A grid that died between two levels: resting entries, maybe a fill, and no
+  // outcome line. The sweep asks the exchange and says so.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.1", notional: "9700", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+  });
+  const orphan = {
+    ts: new Date(NOW).toISOString(),
+    event: "grid_place_intent",
+    network: "testnet",
+    symbol: "BTCUSDT",
+    intentId: "swalgriddeadbeefdeadbeefdeadbeef",
+    side: "BUY",
+    quantity: "0.3",
+    notionalUsd: 29400,
+    leverage: 5,
+    levels: [],
+  };
+  fs.appendFileSync(JOURNAL, `${JSON.stringify(orphan)}\n`);
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "ETHUSDT" } })));
+    assert.equal(body.startupSweep.findings.length, 1);
+    assert.equal(body.startupSweep.findings[0].symbol, "BTCUSDT");
+    assert.equal(body.startupSweep.findings[0].tool, "grid_place");
+    assert.match(body.notes.join(" "), /from a grid placement \(grid_place:/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0, "reporting only");
 });
