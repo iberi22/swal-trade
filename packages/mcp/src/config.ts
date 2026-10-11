@@ -17,7 +17,7 @@ const DEFAULT_FUTURES_BASE = "https://fapi.binance.com";
 
 type NumberRead = { state: "unset" } | { state: "invalid" } | { state: "set"; value: number };
 
-function readNumber(env: NodeJS.ProcessEnv, key: string): NumberRead {
+export function readNumber(env: NodeJS.ProcessEnv, key: string): NumberRead {
   const raw = env[key];
   if (raw == null || raw.trim() === "") return { state: "unset" };
   const value = Number(raw);
@@ -25,7 +25,8 @@ function readNumber(env: NodeJS.ProcessEnv, key: string): NumberRead {
   return { state: "set", value };
 }
 
-function positiveOrNull(env: NodeJS.ProcessEnv, key: string): ConfigResult<number | null> {
+/** Reads a positive number, or null when the key is unset. Shared with the write-tool limits. */
+export function positiveOrNull(env: NodeJS.ProcessEnv, key: string): ConfigResult<number | null> {
   const read = readNumber(env, key);
   if (read.state === "unset") return { ok: true, value: null };
   if (read.state === "invalid" || !(read.value > 0)) {
@@ -52,7 +53,8 @@ export function readCredentials(env: NodeJS.ProcessEnv): ConfigResult<Credential
   if (!apiKey || !apiSecret) {
     return {
       ok: false,
-      error: "BINANCE_API_KEY and BINANCE_API_SECRET are required for account_risk. This tool is read-only and they are not set.",
+      error:
+        "BINANCE_API_KEY and BINANCE_API_SECRET are required for signed endpoints (account_risk and the write tools). They are not set, and without them no order can be signed.",
     };
   }
   return { ok: true, value: { apiKey, apiSecret } };

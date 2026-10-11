@@ -87,6 +87,24 @@ export function positionsFrom(account: { positions?: RawPosition[] }): Position[
     }));
 }
 
+/**
+ * The daily PnL the kill switch and the daily-loss lock trust.
+ *
+ * Realized PnL of the day plus only the NEGATIVE unrealized PnL of the open
+ * positions. An unrealized profit is not money yet: letting it offset a realized
+ * loss would keep opening positions on a day that is already past its limit. A
+ * loss that is only on paper still counts, because it becomes real the moment
+ * the market keeps going.
+ */
+/** Unrealized loss of the open positions: the only unrealized part that counts. */
+export function unrealizedLoss(positions: readonly Position[]): number {
+  return positions.reduce((sum, position) => (position.unrealized < 0 ? sum + position.unrealized : sum), 0);
+}
+
+export function dailyPnl(realized: number, unrealized: number): number {
+  return realized + Math.min(0, unrealized);
+}
+
 const f2 = (n: number): string => n.toFixed(2);
 
 export function breaches(
@@ -176,7 +194,7 @@ export function evaluateAccount(input: {
   }
   const realized = realizedUsd(input.income);
   const unrealized = positions.reduce((sum, position) => sum + position.unrealized, 0);
-  const dayPnl = realized + unrealized;
+  const dayPnl = dailyPnl(realized, unrealizedLoss(positions));
   return {
     dayPnl,
     realized,

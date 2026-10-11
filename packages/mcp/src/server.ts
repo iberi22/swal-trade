@@ -1,9 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { loadAccountRiskView } from "./account.js";
 import { createReadOnlyClient } from "./binance.js";
 import { futuresBase, parseAccountRiskConfig, parseProposalLimits, readCredentials } from "./config.js";
 import { ANALYSIS_CORE_MISSING, loadAnalysisCore, withSortedFindings } from "./core.js";
+import { fetchSymbolFilters } from "./exchange.js";
+import { createGridPlanStore, gridPlace, gridPlan } from "./grid.js";
 import {
   explainFallback,
   explainRequestBody,
@@ -25,19 +28,65 @@ import {
   NEWS_NOTE,
 } from "./market-data.js";
 import { loadHeadlines } from "./news.js";
+import { closePosition, placeOrder } from "./place.js";
 import { PLACEMENT_NOTE, proposeFromMark } from "./propose.js";
-import { dayStartMs, evaluateAccount } from "./risk.js";
-import type { AlgoOrder, IncomeRow, PositionRiskRow, RawPosition } from "./risk.js";
 import { normalizeSymbol } from "./symbol.js";
-import { errorMessage, isRecord, redactSecrets } from "./types.js";
+import { parseTradingConfig, readBase, tradingEnabled } from "./trading-config.js";
+import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
+import type { WriteDeps } from "./write.js";
 
 const STRENGTH_NOTE = "Strength is pattern quality, not probability.";
+
+/** The three notes every write tool carries in its description. */
+const WRITE_FLAG_NOTE =
+  "Write tool: it sends real orders to Binance USD-M futures. It is only registered when SWAL_MCP_TRADING=enabled, and it trades on testnet (https://testnet.binancefuture.com) unless SWAL_MCP_NETWORK=mainnet and SWAL_MCP_MAINNET_CONFIRM=yes are both set.";
+const WRITE_GUARD_NOTE =
+  "Every order passes the order guard first: the symbol must be in SWAL_MCP_SYMBOLS, the notional is capped by SWAL_MAX_NOTIONAL_USD, leverage by SWAL_MAX_LEVERAGE (default 1), a stop is always required, the daily-loss lock (SWAL_DAILY_LOSS_USD) refuses new orders when today's PnL reaches it, and open positions are capped by SWAL_MCP_MAX_POSITIONS (default 1).";
+const EXPLAIN_NOTE =
+  "Explain what you are about to send to the user in plain language before calling this tool (for an order: symbol, side, notional, leverage, stop, take profit and why). The user decides; nothing is sent until this tool is called.";
+const NO_STRATEGY_NOTE =
+  "This server provides no strategy, no signal and no recommendation: it only executes the explicit instruction it is given.";
+
+/**
+ * The instructions the client is shown, built from the configuration that is
+ * actually in force.
+ *
+ * They are derived from parseTradingConfig rather than from a hardcoded string,
+ * because instructions that describe a different configuration than the one the
+ * server will enforce are worse than no instructions at all.
+ */
+export function serverInstructions(env: NodeJS.ProcessEnv, base: string): string {
+  const parts = [
+    "swal-trade MCP serves chart analysis, market context, account risk and order proposals.",
+    `Reads use ${base}.`,
+  ];
+  const cfg = parseTradingConfig(env);
+  if (!cfg.ok) {
+    parts.push(
+      tradingEnabled(env)
+        ? `Write tools (place_order, close_position, grid_place) are registered, but the current configuration refuses every order: ${cfg.error} Fix the configuration before sending anything.`
+        : "Write tools (place_order, close_position, grid_place) are disabled unless SWAL_MCP_TRADING=enabled; grid_plan is read-only and always available.",
+    );
+  } else {
+    const value = cfg.value;
+    parts.push(
+      `Write tools are registered because SWAL_MCP_TRADING=enabled. They trade on ${value.base} (${value.network}): explain every order to the user before sending it, and never assume a strategy or a signal from this server.`,
+      `The order guard enforces: symbols ${value.symbols.join(", ")}; notional at most ${value.maxNotionalUsd} USD per position; leverage at most ${value.maxLeverage}x; at most ${value.maxOpenPositions} open position(s); a stop on every order; and no new order once today's PnL reaches -${value.dailyLossUsd} USD (${value.tz >= 0 ? "+" : ""}${value.tz}h day boundary).`,
+    );
+  }
+  parts.push(STRENGTH_NOTE, "There are no withdrawal tools. API keys must not have withdrawal permission.", "The daily-loss lock cannot be bypassed from this server.");
+  return parts.join(" ");
+}
 
 export interface ServerDeps {
   env?: NodeJS.ProcessEnv;
   fetchFn?: FetchLike;
   now?: () => number;
+  /** Overrides for the write plumbing, so a test can inject a failing journal. */
+  append?: WriteDeps["append"];
+  writeLock?: WriteDeps["writeLock"];
+  sweep?: WriteDeps["sweep"];
 }
 
 interface ToolText {
@@ -51,78 +100,27 @@ interface ToolResult {
   isError?: boolean;
 }
 
-function asNumberString(value: unknown, field: string): string {
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  throw new Error(`missing ${field}`);
-}
-
-function parseAccountPositions(account: unknown): RawPosition[] {
-  if (!isRecord(account)) throw new Error("account response is not an object");
-  const rows = account.positions ?? [];
-  if (!Array.isArray(rows)) throw new Error("account positions is not an array");
-  return rows.map((row) => {
-    if (!isRecord(row) || typeof row.symbol !== "string") throw new Error("account position is invalid");
-    const position: RawPosition = {
-      symbol: row.symbol,
-      positionAmt: asNumberString(row.positionAmt, "positionAmt"),
-      notional: asNumberString(row.notional, "notional"),
-      unrealizedProfit: asNumberString(row.unrealizedProfit, "unrealizedProfit"),
-    };
-    if (typeof row.positionSide === "string") position.positionSide = row.positionSide;
-    return position;
-  });
-}
-
-function parsePositionRisk(value: unknown): PositionRiskRow[] {
-  if (!Array.isArray(value)) throw new Error("positionRisk response is not an array");
-  return value.map((row) => {
-    if (!isRecord(row) || typeof row.symbol !== "string") throw new Error("positionRisk row is invalid");
-    if (typeof row.leverage !== "string" && typeof row.leverage !== "number") throw new Error("positionRisk row missing leverage");
-    return {
-      symbol: row.symbol,
-      positionAmt: asNumberString(row.positionAmt, "positionAmt"),
-      leverage: row.leverage,
-    };
-  });
-}
-
-function parseIncome(value: unknown): IncomeRow[] {
-  if (!Array.isArray(value)) throw new Error("income response is not an array");
-  return value.map((row) => {
-    if (!isRecord(row)) throw new Error("income row is not an object");
-    const income: IncomeRow = {};
-    if (typeof row.incomeType === "string") income.incomeType = row.incomeType;
-    if (typeof row.asset === "string") income.asset = row.asset;
-    if (typeof row.income === "string" || typeof row.income === "number") income.income = row.income;
-    if (typeof row.time === "number") income.time = row.time;
-    return income;
-  });
-}
-
-function parseAlgo(value: unknown): AlgoOrder[] {
-  if (!Array.isArray(value)) throw new Error("openAlgoOrders response is not an array");
-  return value.map((row) => {
-    if (!isRecord(row)) throw new Error("algo order is not an object");
-    const order: AlgoOrder = {};
-    if (typeof row.symbol === "string") order.symbol = row.symbol;
-    if (typeof row.side === "string") order.side = row.side;
-    if (typeof row.orderType === "string") order.orderType = row.orderType;
-    if (typeof row.type === "string") order.type = row.type;
-    if ("closePosition" in row) order.closePosition = row.closePosition;
-    if ("reduceOnly" in row) order.reduceOnly = row.reduceOnly;
-    if (typeof row.positionSide === "string") order.positionSide = row.positionSide;
-    return order;
-  });
-}
-
 export function createServer(deps: ServerDeps = {}): McpServer {
   const env = deps.env ?? process.env;
   const fetchFn: FetchLike = deps.fetchFn ?? ((input, init) => fetch(input, init));
   const now = deps.now ?? Date.now;
   const fearGreedCache = createFearGreedCache();
-  const secrets = [env.BINANCE_API_KEY, env.BINANCE_API_SECRET].flatMap((value) =>
-    value ? [value, value.trim()] : [],
-  );
+  const plans = createGridPlanStore(now);
+  const writeDeps: WriteDeps = { env, fetchFn, now, plans };
+  if (deps.append) writeDeps.append = deps.append;
+  if (deps.writeLock) writeDeps.writeLock = deps.writeLock;
+  if (deps.sweep) writeDeps.sweep = deps.sweep;
+  // One base for every tool: what an order is explained with is what it is sent
+  // against, and the write tools decide their own network from SWAL_MCP_NETWORK.
+  const publicBase = futuresBase(env);
+  // An invalid BINANCE_FUTURES_URL is a configuration error, never a silent
+  // fallback: reading mainnet because a URL was mistyped is how a proposal gets
+  // priced against a network the user never chose. When trading is on, readBase
+  // derives the base from SWAL_MCP_NETWORK and ignores this value; when it is off,
+  // every read tool checks publicBase.ok and returns this error instead of reading.
+  const base = readBase(env, publicBase.ok ? publicBase.value : "");
+  const secrets = [env.BINANCE_API_KEY, env.BINANCE_API_SECRET].flatMap((value) => (value ? [value, value.trim()] : []));
+  const canTrade = tradingEnabled(env);
 
   const fail = (text: string): ToolResult => ({
     content: [{ type: "text", text: redactSecrets(text, secrets) }],
@@ -132,18 +130,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     content: [{ type: "text", text: JSON.stringify(value) }],
   });
 
-  const server = new McpServer(
-    { name: "swal-trade", version: "0.1.0" },
-    {
-      instructions: [
-        "swal-trade MCP is read-only in this build.",
-        "Order placement tools are disabled in this build.",
-        STRENGTH_NOTE,
-        "There are no withdrawal tools. API keys must not have withdrawal permission.",
-        "The daily-loss lock cannot be bypassed from this server.",
-      ].join(" "),
-    },
-  );
+  const server = new McpServer({ name: "swal-trade", version: "0.1.0" }, { instructions: serverInstructions(env, base) });
 
   server.registerTool(
     "analyze_chart",
@@ -166,13 +153,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async (args) => {
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
+      if (!publicBase.ok) return fail(publicBase.error);
       const loaded = await loadAnalysisCore(env);
       if (!loaded.ok) return fail(ANALYSIS_CORE_MISSING);
       try {
         const candles = await fetchCandles({
-          base: base.value,
+          base,
           symbol,
           timeframe: args.timeframe,
           limit: args.limit ?? DEFAULT_KLINE_LIMIT,
@@ -272,8 +258,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async (args) => {
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
+      if (!publicBase.ok) return fail(publicBase.error);
       try {
         const [fearGreed, core, headlines] = await Promise.all([
           fearGreedCache.get(fetchFn, now),
@@ -296,7 +281,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           MARKET_TIMEFRAMES.map(async (timeframe) => {
             try {
               const candles = await fetchCandles({
-                base: base.value,
+                base,
                 symbol,
                 timeframe,
                 limit: MARKET_KLINE_LIMIT,
@@ -335,37 +320,22 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async () => {
+      if (!publicBase.ok) return fail(publicBase.error);
       const credentials = readCredentials(env);
       if (!credentials.ok) return fail(credentials.error);
       const cfg = parseAccountRiskConfig(env);
       if (!cfg.ok) return fail(cfg.error);
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
       try {
         const client = createReadOnlyClient({
           apiKey: credentials.value.apiKey,
           apiSecret: credentials.value.apiSecret,
           fetchFn,
           now,
-          base: base.value,
+          base,
         });
-        await client.syncTime();
-        const start = dayStartMs(now(), cfg.value.tz);
-        const [account, positionRisk, algoOrders, income] = await Promise.all([
-          client.account(),
-          client.positionRisk(),
-          client.openAlgoOrders(),
-          client.incomeSince(start),
-        ]);
-        const snapshot = evaluateAccount({
-          account: { positions: parseAccountPositions(account) },
-          positionRisk: parsePositionRisk(positionRisk),
-          income: parseIncome(income),
-          algoOrders: parseAlgo(algoOrders),
-          cfg: cfg.value,
-        });
+        const snapshot = await loadAccountRiskView({ client, cfg: cfg.value, now });
         return ok({
-          ...snapshot,
+          ...snapshot.view,
           limits: {
             dailyLossUsd: cfg.value.limit,
             warnFraction: cfg.value.warn ?? 0.7,
@@ -385,7 +355,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "propose_order",
     {
       title: "Propose order",
-      description: `Build a proposed futures order from the public mark price: quantity, stop price, a liquidation-distance check, and violations of SWAL_MAX_LEVERAGE and SWAL_MAX_NOTIONAL_USD. stop_loss_pct is a percent (1.5 means 1.5%). The stop is always included. Order placement tools are disabled in this build. This tool never sends an order. ${PLACEMENT_NOTE}`,
+      description: `Build a proposed futures order from the public mark price: quantity rounded down to the exchange stepSize and checked against minQty and MIN_NOTIONAL, stop price, a liquidation-distance check, and violations of SWAL_MAX_LEVERAGE and SWAL_MAX_NOTIONAL_USD. stop_loss_pct is a percent (1.5 means 1.5%). The stop is always included. ${PLACEMENT_NOTE} ${EXPLAIN_NOTE} ${NO_STRATEGY_NOTE}`,
       inputSchema: {
         symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
         side: z.enum(["BUY", "SELL", "LONG", "SHORT"]).describe("BUY/LONG opens a long. SELL/SHORT opens a short."),
@@ -396,14 +366,16 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async (args) => {
+      if (!publicBase.ok) return fail(publicBase.error);
       const limits = parseProposalLimits(env);
       if (!limits.ok) return fail(limits.error);
-      const base = futuresBase(env);
-      if (!base.ok) return fail(base.error);
       const symbol = normalizeSymbol(args.symbol);
       if (!symbol) return fail("symbol must be 2 to 30 letters or digits.");
       try {
-        const markPrice = await fetchMarkPrice(base.value, symbol, fetchFn);
+        const [markPrice, filters] = await Promise.all([
+          fetchMarkPrice(base, symbol, fetchFn),
+          fetchSymbolFilters(base, symbol, fetchFn),
+        ]);
         const built = proposeFromMark({
           symbol,
           side: args.side,
@@ -412,14 +384,126 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           leverage: args.leverage ?? 1,
           markPrice,
           limits: limits.value,
+          filters: filters.ok
+            ? {
+                stepSize: filters.value.stepSize,
+                minQty: filters.value.minQty,
+                tickSize: filters.value.tickSize,
+                minNotional: filters.value.minNotional,
+              }
+            : null,
         });
         if (!built.ok) return fail(built.error);
-        return ok(built.proposal);
+        return ok({
+          ...built.proposal,
+          filtersError: filters.ok ? null : filters.error,
+          filtersSource: filters.ok ? "/fapi/v1/exchangeInfo" : null,
+        });
       } catch (err) {
         return fail(errorMessage(err));
       }
     },
   );
+
+  // -------------------------------------------------------------------------
+  // grid_plan: read-only, always available.
+  // -------------------------------------------------------------------------
+
+  server.registerTool(
+    "grid_plan",
+    {
+      title: "Grid plan",
+      description: `Read-only plan for a limit grid on one symbol: the price of every level rounded to the exchange tickSize, the quantity per level rounded to stepSize, the total notional, the average entry, the worst-case loss if price runs to stop_loss_price, and the levels that would not rest as post-only orders. It reads exchangeInfo, the mark price and the book ticker, and it never places, cancels or modifies an order, so it does not need API keys and it is always available. Placing the grid needs grid_place, which is only registered with SWAL_MCP_TRADING=enabled and trades on testnet unless SWAL_MCP_NETWORK=mainnet and SWAL_MCP_MAINNET_CONFIRM=yes are both set. ${NO_STRATEGY_NOTE}`,
+      inputSchema: {
+        symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
+        lower: z.number().finite().positive().describe("Lower bound of the grid."),
+        upper: z.number().finite().positive().describe("Upper bound of the grid. Must be greater than lower."),
+        levels: z
+          .number()
+          .int()
+          .min(2)
+          .max(20)
+          .describe("Number of price levels, from 2 to 20."),
+        total_notional_usd: z.number().finite().positive().describe("Total notional spread across the levels, in USD."),
+        stop_loss_price: z
+          .number()
+          .finite()
+          .positive()
+          .describe("Protective stop price. Below the range for a long grid, above it for a short grid."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => {
+      const outcome = await gridPlan(writeDeps, args);
+      return outcome.ok ? ok(outcome.value) : fail(outcome.error);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Write tools: registered only when the user opted in.
+  // -------------------------------------------------------------------------
+
+  if (canTrade) {
+    server.registerTool(
+      "place_order",
+      {
+        title: "Place order",
+        description: `WRITE tool. Places one entry order and a mandatory protective STOP_MARKET through the Algo Service (POST /fapi/v1/algoOrder, closePosition, workingType MARK_PRICE). Sets leverage and ISOLATED margin on the exchange before the entry, rounds the quantity to stepSize and checks minQty and MIN_NOTIONAL. type market sends a MARKET order; type post_only sends a LIMIT GTX at the best bid or ask and reprices away from the book on -5022 or EXPIRED. If the protective stop fails twice the position is closed with a MARKET reduceOnly order and the tool returns an error. Every write is appended to the local journal (SWAL_MCP_JOURNAL). ${WRITE_FLAG_NOTE} ${WRITE_GUARD_NOTE} ${EXPLAIN_NOTE} ${NO_STRATEGY_NOTE}`,
+        inputSchema: {
+          symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT. Must be in SWAL_MCP_SYMBOLS."),
+          side: z.enum(["BUY", "SELL", "LONG", "SHORT"]).describe("BUY/LONG opens a long. SELL/SHORT opens a short."),
+          notional_usd: z.number().finite().positive().describe("Order notional in USD. Capped by SWAL_MAX_NOTIONAL_USD."),
+          stop_loss_pct: z.number().finite().gt(0).lt(100).describe("Stop distance in percent of the entry price. Mandatory."),
+          take_profit_pct: z.number().finite().gt(0).optional().describe("Optional take profit distance in percent of the entry price."),
+          leverage: z.number().finite().min(1).max(125).optional().describe("Leverage. Default 1. Capped by SWAL_MAX_LEVERAGE."),
+          type: z.enum(["market", "post_only"]).optional().describe("market (default) or post_only (LIMIT GTX)."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      },
+      async (args) => {
+        const outcome = await placeOrder(writeDeps, args);
+        return outcome.ok ? ok(outcome.value) : fail(outcome.error);
+      },
+    );
+
+    server.registerTool(
+      "close_position",
+      {
+        title: "Close position",
+        description: `WRITE tool. Closes one symbol's position with a MARKET reduceOnly order and cancels that symbol's open orders and open algo orders. The daily-loss lock and the position cap do not apply: closing is protective and must never be blocked. It does not withdraw and does not touch any other symbol. ${WRITE_FLAG_NOTE} ${EXPLAIN_NOTE} ${NO_STRATEGY_NOTE}`,
+        inputSchema: {
+          symbol: z.string().min(1).describe("Futures symbol, for example BTCUSDT."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      },
+      async (args) => {
+        const outcome = await closePosition(writeDeps, args);
+        return outcome.ok ? ok(outcome.value) : fail(outcome.error);
+      },
+    );
+
+    server.registerTool(
+      "grid_place",
+      {
+        title: "Grid place",
+        description: `WRITE tool. Places a limit grid as post-only orders (LIMIT GTX, 2 to 20 levels) plus one protective STOP_MARKET below a long range or above a short range, with the same flag, order guard and journal as place_order. The direction comes from the stop (below the range = long, above = short), leverage is SWAL_MAX_LEVERAGE, and margin is ISOLATED. Accepts a plan_id returned by grid_plan, or the same parameters. If any level cannot be rested or the protective stop fails twice, the grid is cancelled, any open position is closed with MARKET reduceOnly, and the tool returns an error. ${WRITE_FLAG_NOTE} ${WRITE_GUARD_NOTE} ${EXPLAIN_NOTE} ${NO_STRATEGY_NOTE}`,
+        inputSchema: {
+          plan_id: z.string().min(1).optional().describe("plan_id returned by grid_plan. Alternative to passing the parameters."),
+          symbol: z.string().min(1).optional().describe("Futures symbol, for example BTCUSDT. Required without plan_id."),
+          lower: z.number().finite().positive().optional().describe("Lower bound of the grid."),
+          upper: z.number().finite().positive().optional().describe("Upper bound of the grid."),
+          levels: z.number().int().min(2).max(20).optional().describe("Number of price levels, from 2 to 20."),
+          total_notional_usd: z.number().finite().positive().optional().describe("Total notional spread across the levels, in USD."),
+          stop_loss_price: z.number().finite().positive().optional().describe("Protective stop price, below a long range or above a short range."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      },
+      async (args) => {
+        const outcome = await gridPlace(writeDeps, args);
+        return outcome.ok ? ok(outcome.value) : fail(outcome.error);
+      },
+    );
+  }
 
   return server;
 }

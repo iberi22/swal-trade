@@ -27,7 +27,9 @@ test("proposeFromMark sizes quantity and a long stop from the mark price", () =>
   assert.equal(result.proposal.withinSafeDistance, true);
   assert.deepEqual(result.proposal.violations, []);
   assert.equal(result.proposal.sent, false);
-  assert.match(result.proposal.note, /Order placement tools are disabled in this build/);
+  assert.match(result.proposal.note, /SWAL_MCP_TRADING=enabled/);
+  assert.match(result.proposal.note, /nothing was sent/i);
+  assert.equal(result.proposal.rounding.applied, false);
   assert.equal(result.proposal.limits.dailyLossEvaluated, false);
 });
 
