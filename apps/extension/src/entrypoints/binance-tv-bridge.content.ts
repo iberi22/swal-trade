@@ -5,8 +5,8 @@
  * mismo origen que la pestaña "Trading View" monta. Este script:
  *
  * - hace un saludo one-shot en `document_start` con el content script aislado y
- *   recibe por `MessageChannel` UN puerto privado; a partir de ahí solo acepta
- *   órdenes por ese puerto (nunca por `window`);
+ *   recibe por el canal desvinculado UN puerto privado; a partir de ahí solo acepta
+ *   órdenes por ese canal (nunca por `window`);
  * - no arranca a mirar el gráfico hasta que el interruptor de pintar esté
  *   encendido (el `hello` lo dice; draw ⇒ encendido, clear ⇒ apagado) (F8);
  * - busca `tradingViewApi` en el iframe del mismo origen, espera a que el chart
@@ -25,7 +25,7 @@ import {
   parseBridgeMessage,
   type BridgeMessage,
 } from '../lib/tv-bridge/schema';
-import { buildPort, isPortFor, parseHello, withinShapeBudget, DrawRateLimit } from '../lib/tv-bridge/handshake';
+import { parseHello, withinShapeBudget, DrawRateLimit, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { ChartSession, type BridgeReport } from '../lib/tv-bridge/tv-session';
 import { chartFromWindow } from '../lib/tv-bridge/tv-chart';
 
@@ -82,9 +82,9 @@ export default defineContentScript({
       selfWindow: window,
       onStatus: (report: BridgeReport) => {
         // El estado viaja solo por el puerto privado, nunca por window.
-        if (!port) return;
+        if (!channel) return;
         try {
-          port.postMessage(
+          channel.send(
             buildReadyMessage(
               report.status,
               report.status === 'mismatch' ? report.chart : undefined,
@@ -96,8 +96,8 @@ export default defineContentScript({
       },
     });
 
-    // El puerto privado que entrega el saludo. Sin él no se acepta nada.
-    let port: MessagePort | null = null;
+    // El canal síncrono desvinculado (DOM)
+    let channel: BridgeChannel | null = null;
     // F8: el bucle de vigilancia no arranca hasta el primer draw (encendido).
     let running = false;
     const rate = new DrawRateLimit(4);
@@ -113,52 +113,49 @@ export default defineContentScript({
       session.stop();
     };
 
-    const onHello = (event: MessageEvent) => {
-      // Solo lo que llegue a esta ventana desde ella misma.
-      if (event.source !== window) return;
-      const hello = parseHello(event.data);
-      if (!hello || port) return;
-      let channel: MessageChannel;
-      try {
-        channel = new MessageChannel();
-      } catch {
-        return;
-      }
-      port = channel.port1;
-      port.onmessage = (ev: MessageEvent) => {
-        const raw = ev.data as { type?: unknown; shapes?: unknown } | undefined;
-        // Rechazo temprano: una carga descomunal se tira sin validarla.
-        if (raw && raw.type === SWAL_DRAW && Array.isArray(raw.shapes) && !withinShapeBudget(raw.shapes.length)) {
-          return;
-        }
-        // Límite blando de 4 dibujos por segundo.
-        if (raw && raw.type === SWAL_DRAW && !rate.allow(Date.now())) return;
-        const message = parseBridgeMessage(ev.data);
-        if (!message) return;
-        if (message.type === SWAL_DRAW) {
-          ensureRunning();
-        } else {
-          // clear: se apaga la vigilancia y se limpia.
-          stop();
-        }
-        session.apply(message as BridgeMessage);
-      };
-      // Entrega el otro puerto al aislado, atado a ESTE session.
-      try {
-        window.postMessage(buildPort(hello.session), location.origin, [channel.port2]);
-      } catch {
-        // Sin destino mismo origen no hay canal: no se pinta.
-        port = null;
-        return;
-      }
-      // El saludo dice si el interruptor ya está encendido; si lo está, arrancamos.
-      if (hello.enabled) ensureRunning();
-    };
+    let seenHello = false;
 
-    window.addEventListener('message', onHello);
+    // Establecer la comunicación síncrona
+    establishLink(3000)
+      .then((ch) => {
+        channel = ch;
+        channel.onMessage((data: unknown) => {
+          if (!seenHello) {
+            const hello = parseHello(data);
+            if (!hello) return;
+            seenHello = true;
+            // El saludo dice si el interruptor ya está encendido; si lo está, arrancamos.
+            if (hello.enabled) ensureRunning();
+            return;
+          }
+
+          const raw = data as { type?: unknown; shapes?: unknown } | undefined;
+          // Rechazo temprano: una carga descomunal se tira sin validarla.
+          if (raw && raw.type === SWAL_DRAW && Array.isArray(raw.shapes) && !withinShapeBudget(raw.shapes.length)) {
+            return;
+          }
+          // Límite blando de 4 dibujos por segundo.
+          if (raw && raw.type === SWAL_DRAW && !rate.allow(Date.now())) return;
+          const message = parseBridgeMessage(data);
+          if (!message) return;
+          if (message.type === SWAL_DRAW) {
+            ensureRunning();
+          } else {
+            // clear: se apaga la vigilancia y se limpia.
+            stop();
+          }
+          session.apply(message as BridgeMessage);
+        });
+      })
+      .catch(() => {
+        // Falló el enlace, no hacemos nada (el otro lado lo marcará como unavailable)
+      });
+
     window.addEventListener('pagehide', () => {
-      window.removeEventListener('message', onHello);
-      port = null;
+      if (channel) {
+        channel.disconnect();
+        channel = null;
+      }
       session.stop();
     });
   },

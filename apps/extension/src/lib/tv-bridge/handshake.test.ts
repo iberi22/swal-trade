@@ -1,16 +1,20 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   SWAL_HELLO,
-  SWAL_PORT,
   buildHello,
-  buildPort,
-  isPortFor,
   parseHello,
   withinShapeBudget,
   DrawRateLimit,
+  establishLink
 } from './handshake';
 
 describe('Handshake logic', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '';
+    vi.useFakeTimers();
+  });
+
   it('buildHello / parseHello', () => {
     const hello = buildHello('sess-1', true);
     expect(hello).toEqual({ type: SWAL_HELLO, session: 'sess-1', enabled: true });
@@ -19,17 +23,6 @@ describe('Handshake logic', () => {
     expect(parseHello(null)).toBeNull();
     expect(parseHello({ type: 'swal:hello' })).toBeNull();
     expect(parseHello({ type: 'swal:hello', session: 123 })).toBeNull();
-  });
-
-  it('buildPort / isPortFor', () => {
-    const port = buildPort('sess-1');
-    expect(port).toEqual({ type: SWAL_PORT, session: 'sess-1' });
-
-    const ports = [{} as MessagePort];
-    expect(isPortFor(port, 'sess-1', ports)).toBe(true);
-    expect(isPortFor(port, 'sess-2', ports)).toBe(false);
-    expect(isPortFor(port, 'sess-1', [])).toBe(false);
-    expect(isPortFor(port, 'sess-1', null)).toBe(false);
   });
 
   it('withinShapeBudget', () => {
@@ -50,5 +43,97 @@ describe('Handshake logic', () => {
 
     expect(rate.allow(now + 999)).toBe(false);
     expect(rate.allow(now + 1000)).toBe(true);
+  });
+});
+
+describe('establishLink', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '';
+    vi.useFakeTimers();
+  });
+
+  it('links when MAIN is first and ISOLATED is second', async () => {
+    const mainPromise = establishLink();
+
+    // MAIN creates the element
+    const linkEl = document.documentElement.querySelector('swal-link');
+    expect(linkEl).not.toBeNull();
+
+    const isolatedPromise = establishLink();
+
+    // ISOLATED should detach the element
+    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+
+    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
+    expect(mainChannel).toBeDefined();
+    expect(isolatedChannel).toBeDefined();
+
+    // Verify communication
+    let received: any = null;
+    isolatedChannel.onMessage((msg) => { received = msg; });
+    mainChannel.send({ type: 'test' });
+
+    expect(received).toEqual({ type: 'test' });
+  });
+
+  it('links when ISOLATED is first and MAIN is second', async () => {
+    const isolatedPromise = establishLink();
+
+    // ISOLATED creates the element
+    const linkEl = document.documentElement.querySelector('swal-link');
+    expect(linkEl).not.toBeNull();
+
+    const mainPromise = establishLink();
+
+    // MAIN should detach the element
+    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+
+    const [isolatedChannel, mainChannel] = await Promise.all([isolatedPromise, mainPromise]);
+    expect(mainChannel).toBeDefined();
+    expect(isolatedChannel).toBeDefined();
+
+    // Verify communication
+    let received: any = null;
+    mainChannel.onMessage((msg) => { received = msg; });
+    isolatedChannel.send({ type: 'test' });
+
+    expect(received).toEqual({ type: 'test' });
+  });
+
+  it('rejects on timeout if second script never runs', async () => {
+    const promise = establishLink(100);
+
+    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
+
+    vi.advanceTimersByTime(150);
+
+    await expect(promise).rejects.toThrow('Link timeout');
+    // Element should be cleaned up
+    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+  });
+
+  it('page script cannot eavesdrop or forge messages', async () => {
+    const mainPromise = establishLink();
+    const isolatedPromise = establishLink();
+
+    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
+
+    let eavesdropped: any = null;
+    window.addEventListener('swal:msg', (e) => { eavesdropped = e; });
+    document.addEventListener('swal:msg', (e) => { eavesdropped = e; });
+
+    let receivedByIsolated: any = null;
+    isolatedChannel.onMessage((msg) => { receivedByIsolated = msg; });
+
+    mainChannel.send({ secret: true });
+
+    expect(receivedByIsolated).toEqual({ secret: true });
+    // Page script should not see the event since it's on a detached node
+    expect(eavesdropped).toBeNull();
+
+    // Page script forging a message
+    document.dispatchEvent(new CustomEvent('swal:msg', { detail: JSON.stringify({ forged: true }) }));
+
+    expect(receivedByIsolated).toEqual({ secret: true }); // Still just the secret, forged didn't arrive
   });
 });

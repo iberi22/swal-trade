@@ -105,8 +105,8 @@ Cómo funciona:
    núcleo) y los convierte en formas: `src/lib/tv-bridge/shapes.ts`.
 2. Manda un mensaje de runtime al content script aislado de cada pestaña de
    futuros abierta (`src/lib/tv-paint-send.ts`).
-3. El content script aislado (`src/entrypoints/content.ts`) establece un canal privado (`MessageChannel`) en `document_start` (ver modelo de confianza) y reenvía la orden solo por ese puerto.
-4. El puente MAIN-world (`src/entrypoints/binance-tv-bridge.content.ts`) escucha únicamente por el puerto privado y valida el mensaje (tipo, versión, límite de tasa, tope de 60 formas, puntos numéricos), busca
+3. El content script aislado (`src/entrypoints/content.ts`) establece un canal privado desvinculado (DOM) síncrono en `document_start` (ver modelo de confianza) y reenvía la orden solo por ese canal.
+4. El puente MAIN-world (`src/entrypoints/binance-tv-bridge.content.ts`) escucha únicamente por el canal privado y valida el mensaje (tipo, versión, límite de tasa, tope de 60 formas, puntos numéricos), busca
    `tradingViewApi` en el iframe del mismo origen de la pestaña **Trading View**,
    espera a que el chart tenga rango visible y dibuja.
 
@@ -152,4 +152,6 @@ aparecen y que desaparecen al apagarlo. Las velas van mockeadas
 
 La API del gráfico está en el mundo de la página (`MAIN`). Nuestro puente tiene que vivir ahí, pero un content script `MAIN` comparte ventana con cualquier script de la página (incluyendo anuncios o tag managers), lo que abría la puerta a que otro script fabricara un mensaje de dibujo y pintara en el gráfico del usuario inventando análisis.
 
-Para solucionarlo, los dos scripts (el aislado y el puente) se saludan en la fase `document_start` (antes de que la página ejecute nada) mediante un `MessageChannel`. El puente entrega un puerto privado que el script aislado atrapa. A partir de ahí, el puente ignora por completo `window.postMessage` y atiende solo los mensajes que lleguen por ese puerto. La autenticidad la da el canal, no una clave o un nonce en el mensaje.
+Para solucionarlo, los dos scripts (el aislado y el puente) establecen un canal privado síncrono en la fase `document_start` (antes de que la página ejecute nada). El script que corre primero inserta un elemento marcador en el DOM (`<swal-link>`). El segundo script lo encuentra, lo retira del DOM inmediatamente (quedando como un nodo desvinculado/detached) y emite un evento `swal:link` sobre él para avisar al primero.
+
+A partir de ahí, ambos se comunican disparando y escuchando eventos sobre este nodo desvinculado. El puente ignora por completo los mensajes de la ventana y atiende solo los mensajes que lleguen por ese nodo. Un script de la página no puede interceptar ni falsificar estos mensajes porque no puede ejecutarse antes de `document_start` ni obtener una referencia al elemento desvinculado. La autenticidad la da la tenencia exclusiva del nodo, no una clave o un nonce en el mensaje.
