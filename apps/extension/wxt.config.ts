@@ -42,6 +42,8 @@ export default defineConfig({
     permissions: browser === 'firefox' ? ['storage'] : ['storage', 'sidePanel'],
     host_permissions: [
       'https://www.binance.com/*/futures/*',
+      // El iframe de la pestaña Trading View. Es donde se pinta.
+      'https://www.binance.com/static/chart/tradingview/*',
       'https://www.tradingview.com/chart/*',
       'https://fapi.binance.com/fapi/v1/klines*',
       'wss://fstream.binance.com/*',
