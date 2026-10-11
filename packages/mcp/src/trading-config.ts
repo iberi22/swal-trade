@@ -161,6 +161,24 @@ export function parseTradingConfig(env: NodeJS.ProcessEnv): ConfigResult<Trading
 }
 
 /**
+ * The network a read is performed against.
+ *
+ * The same parse the write tools use: mainnet is mainnet only when the user set
+ * SWAL_MCP_NETWORK=mainnet AND SWAL_MCP_MAINNET_CONFIRM=yes, because without
+ * both the writes stay on testnet. Deriving it any other way is how a plan gets
+ * priced on one network and placed on another.
+ */
+export function readNetwork(env: NodeJS.ProcessEnv): TradingNetwork {
+  const raw = (env.SWAL_MCP_NETWORK ?? "").trim().toLowerCase();
+  if (raw === "mainnet" && (env.SWAL_MCP_MAINNET_CONFIRM ?? "").trim().toLowerCase() === "yes") return "mainnet";
+  return "testnet";
+}
+
+export function baseOfNetwork(network: TradingNetwork): string {
+  return network === "mainnet" ? MAINNET_BASE : TESTNET_BASE;
+}
+
+/**
  * The base every tool in the server reads from and writes to.
  *
  * The write tools decide their own network from SWAL_MCP_NETWORK, so the read
@@ -171,9 +189,7 @@ export function parseTradingConfig(env: NodeJS.ProcessEnv): ConfigResult<Trading
  */
 export function readBase(env: NodeJS.ProcessEnv, futuresBase: string): string {
   if (!tradingEnabled(env)) return futuresBase;
-  const raw = (env.SWAL_MCP_NETWORK ?? "").trim().toLowerCase();
-  if (raw === "mainnet" && (env.SWAL_MCP_MAINNET_CONFIRM ?? "").trim().toLowerCase() === "yes") return MAINNET_BASE;
-  return TESTNET_BASE;
+  return baseOfNetwork(readNetwork(env));
 }
 
 export interface GridLimits {
@@ -183,6 +199,12 @@ export interface GridLimits {
   dailyLossUsd: number | null;
   enabled: boolean;
   network: TradingNetwork;
+  /**
+   * The base the plan is read from, from the SAME parse the write tools use: a
+   * plan priced against one network and placed on another is how an order gets
+   * explained with one price and sent against another.
+   */
+  base: string;
 }
 
 /**
@@ -190,8 +212,7 @@ export interface GridLimits {
  * caps it can see without requiring the trading flag or the credentials.
  */
 export function readGridLimits(env: NodeJS.ProcessEnv): GridLimits {
-  const raw = (env.SWAL_MCP_NETWORK ?? "").trim().toLowerCase();
-  const network: TradingNetwork = raw === "mainnet" ? "mainnet" : "testnet";
+  const network = readNetwork(env);
   const notional = positiveOrNull(env, "SWAL_MAX_NOTIONAL_USD");
   const leverage = positiveOrNull(env, "SWAL_MAX_LEVERAGE");
   const daily = readNumber(env, "SWAL_DAILY_LOSS_USD");
@@ -203,5 +224,6 @@ export function readGridLimits(env: NodeJS.ProcessEnv): GridLimits {
     dailyLossUsd: daily.state === "set" ? daily.value : null,
     enabled: tradingEnabled(env),
     network,
+    base: baseOfNetwork(network),
   };
 }

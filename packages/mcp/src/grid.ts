@@ -29,7 +29,7 @@ import {
 } from "./order-guard.js";
 import type { GuardAccount, GuardDecision, GuardLimits, GuardSide } from "./order-guard.js";
 import { normalizeSymbol } from "./symbol.js";
-import { parseTradingConfig, readGridLimits, TESTNET_BASE, MAINNET_BASE } from "./trading-config.js";
+import { parseTradingConfig, readGridLimits } from "./trading-config.js";
 import type { GridLimits } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
@@ -420,7 +420,10 @@ export async function gridPlan(deps: Pick<WriteDeps, "env" | "fetchFn" | "now" |
     stop_loss_price: Number(args.stop_loss_price),
   };
   const limits = readGridLimits(deps.env);
-  const base = limits.network === "mainnet" ? MAINNET_BASE : TESTNET_BASE;
+  // The base comes from the same parse the write tools use, never from a
+  // re-derived network: a plan priced on one network and placed on another is how
+  // an order gets explained with one price and sent against another.
+  const base = limits.base;
   try {
     const [filters, markPrice, book] = await Promise.all([
       fetchSymbolFilters(base, symbol, deps.fetchFn),

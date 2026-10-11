@@ -809,3 +809,36 @@ test("the startup sweep reports a grid whose outcome was never journaled", async
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0, "reporting only");
 });
+
+test("grid_plan reads from the base the write tools would use, never a re-derived one", async () => {
+  // mainnet without SWAL_MCP_MAINNET_CONFIRM is not mainnet: grid_place refuses
+  // and stays on testnet, so the plan must be priced against testnet. Reading
+  // mainnet here is how a plan is explained with one price and placed with another.
+  const exchange = makeExchange({ symbols: GRID_SYMBOLS });
+  await withClient(
+    { env: { SWAL_MCP_NETWORK: "mainnet" }, fetchFn: exchange.fetchFn, now: () => NOW },
+    async (client) => {
+      const body = JSON.parse(
+        textOf(await client.callTool({ name: "grid_plan", arguments: { symbol: "BTCUSDT", ...gridArgs } })),
+      );
+      assert.equal(body.network, "testnet");
+    },
+  );
+  for (const call of exchange.calls) {
+    assert.equal(new URL(call.url).origin, "https://testnet.binancefuture.com");
+  }
+
+  exchange.calls.length = 0;
+  await withClient(
+    { env: { SWAL_MCP_NETWORK: "mainnet", SWAL_MCP_MAINNET_CONFIRM: "yes" }, fetchFn: exchange.fetchFn, now: () => NOW },
+    async (client) => {
+      const body = JSON.parse(
+        textOf(await client.callTool({ name: "grid_plan", arguments: { symbol: "BTCUSDT", ...gridArgs } })),
+      );
+      assert.equal(body.network, "mainnet");
+    },
+  );
+  for (const call of exchange.calls) {
+    assert.equal(new URL(call.url).origin, "https://fapi.binance.com");
+  }
+});

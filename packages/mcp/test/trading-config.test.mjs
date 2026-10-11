@@ -125,6 +125,7 @@ test("readGridLimits is lenient: the read-only plan needs no flag and no keys", 
   const limits = readGridLimits({});
   assert.equal(limits.enabled, false);
   assert.equal(limits.network, "testnet");
+  assert.equal(limits.base, TESTNET_BASE);
   assert.equal(limits.maxNotionalUsd, null);
 
   const configured = readGridLimits({
@@ -135,9 +136,18 @@ test("readGridLimits is lenient: the read-only plan needs no flag and no keys", 
     SWAL_MCP_NETWORK: "mainnet",
   });
   assert.equal(configured.enabled, false);
-  assert.equal(configured.network, "mainnet");
+  // mainnet without the confirmation is not mainnet: the writes stay on testnet,
+  // so the plan has to be priced against testnet too.
+  assert.equal(configured.network, "testnet");
+  assert.equal(configured.base, TESTNET_BASE);
   assert.equal(configured.maxNotionalUsd, 500);
   assert.equal(configured.maxLeverage, 3);
   assert.equal(configured.dailyLossUsd, 50);
   assert.deepEqual(configured.symbols, ["BTCUSDT"]);
+
+  const confirmed = readGridLimits({ SWAL_MCP_NETWORK: "mainnet", SWAL_MCP_MAINNET_CONFIRM: "yes" });
+  assert.equal(confirmed.network, "mainnet");
+  assert.equal(confirmed.base, MAINNET_BASE);
+  const notConfirmed = readGridLimits({ SWAL_MCP_NETWORK: "mainnet", SWAL_MCP_MAINNET_CONFIRM: "no" });
+  assert.equal(notConfirmed.base, TESTNET_BASE);
 });

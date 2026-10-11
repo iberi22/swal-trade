@@ -17,7 +17,7 @@ import { readFile } from "node:fs/promises";
 import { fetchSymbolFilters } from "./exchange.js";
 import { readCredentials } from "./config.js";
 import { normalizeSymbol } from "./symbol.js";
-import { journalPathOf, tradingEnabled } from "./trading-config.js";
+import { journalPathOf, readNetwork, baseOfNetwork, tradingEnabled } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
 import { netPosition } from "./account.js";
@@ -184,7 +184,7 @@ export async function runStartupSweep(input: SweepInput): Promise<SweepReport> {
     report.errors.push(credentials.error);
     return report;
   }
-  const base = (input.env.SWAL_MCP_NETWORK ?? "").trim().toLowerCase() === "mainnet" ? "https://fapi.binance.com" : "https://testnet.binancefuture.com";
+  const base = baseOfNetwork(readNetwork(input.env));
   const client: TradingClient = createTradingClient({
     apiKey: credentials.value.apiKey,
     apiSecret: credentials.value.apiSecret,

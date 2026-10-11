@@ -53,7 +53,7 @@ Las tres herramientas de escritura **no se registran** si `SWAL_MCP_TRADING` no 
 | `BINANCE_FUTURES_URL` | no | `https://fapi.binance.com` | Origen HTTPS de las lecturas públicas. **No** afecta a las escrituras: su red la decide `SWAL_MCP_NETWORK`. |
 | `BRAVE_API_KEY` / `TAVILY_API_KEY` / `FIRECRAWL_API_KEY` | no | — | Noticias locales, en ese orden de prueba. |
 
-Las escrituras usan como base `https://testnet.binancefuture.com` por defecto y `https://fapi.binance.com` solo con `SWAL_MCP_NETWORK=mainnet` **y** `SWAL_MCP_MAINNET_CONFIRM=yes`.
+Las escrituras usan como base `https://testnet.binancefuture.com` por defecto y `https://fapi.binance.com` solo con `SWAL_MCP_NETWORK=mainnet` **y** `SWAL_MCP_MAINNET_CONFIRM=yes`. Lecturas y escrituras derivan la red del **mismo** parse (`readNetwork`): `grid_plan` y el barrido de arranque usan esa base y ninguna otra, así que un plan nunca se tarifa contra una red distinta de la que se coloca.
 
 ## Qué garantiza el guard (`order_guard`)
 
