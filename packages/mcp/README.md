@@ -64,7 +64,7 @@ Puerto a TypeScript de `crates/synapse-core/src/order_guard.rs` (`check_order`) 
 3. El stop es obligatorio y su distancia cabe dentro de la distancia segura de liquidación (80 % de `100 / apalancamiento`, igual que `propose_order`).
 4. `leverage` ≤ `SWAL_MAX_LEVERAGE` (entero ≥ 1).
 5. Kill switch diario: si el PnL del día (realizado + no realizado **negativo**, calculado como en `account_risk`) llega a `-SWAL_DAILY_LOSS_USD`, no hay órdenes nuevas.
-6. El nocional se compara con la exposición del símbolo: sus posiciones más sus órdenes de entrada en reposo más sus órdenes algo que abren exposición.
+6. El nocional se compara con la exposición del símbolo: sus posiciones más sus órdenes de entrada en reposo más sus órdenes algo que abren exposición. Para un grid, la exposición que añade es el `total_notional_usd` completo, no la de un solo nivel.
 6. Posiciones abiertas < `SWAL_MCP_MAX_POSITIONS`, y ninguna posición existente sin `STOP_MARKET`.
 
 Todos los motivos se acumulan y se devuelven juntos, como en la versión Rust.

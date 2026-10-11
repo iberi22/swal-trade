@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { buildGridPlan, createGridPlanStore, gridChecks, MAX_GRID_LEVELS, repriceAway } from "../dist/grid.js";
+import { buildGridPlan, checkGridPlan, createGridPlanStore, gridChecks, MAX_GRID_LEVELS, repriceAway } from "../dist/grid.js";
 import { callOrCatch, errorText, textOf, withClient } from "./helpers.mjs";
 import { makeExchange, tradeEnv, TRADE_KEY, TRADE_SECRET } from "./trading-fixtures.mjs";
 import { readGridLimits } from "../dist/trading-config.js";
@@ -646,4 +646,68 @@ test("the same quotient sizes an order and a proposal, not only a grid", () => {
   // The same numbers through the writer's own formula: floorToStep over the
   // truncated quotient, which is what place_order sends.
   assert.equal(floorToStep(toDecimalText(notional / price), filters.stepSize), "0.000066");
+});
+
+// ---------------------------------------------------------------------------
+// Item N3: the grid is checked against the exposure cap, like every order.
+//
+// A ladder is not one order: it commits the whole totalNotionalUsd, on top of
+// what the account already has on that symbol (positions plus resting entries
+// plus pending algo entries). place_order has always compared that total;
+// checkGridPlan only compared the grid against the cap, so a second grid on a
+// symbol that already had a resting entry passed the cap twice.
+// ---------------------------------------------------------------------------
+
+test("checkGridPlan refuses a grid that would take the account past the exposure cap", () => {
+  const plan = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 100, upper: 102, levels: 3, total_notional_usd: 300, stop_loss_price: 95 },
+    filters: FILTERS,
+  });
+  assert.equal(plan.ok, true);
+  if (!plan.ok) return;
+  const limits = { symbols: ["BTCUSDT"], maxNotionalUsd: 400, maxLeverage: 5, maxOpenPositions: 3, dailyLossUsd: 100 };
+  const account = { dayPnl: 0, openPositions: 1, unprotectedSymbols: [], openNotionalUsd: 200, pendingSymbols: ["BTCUSDT"] };
+
+  const clean = checkGridPlan(plan.value, limits, { dayPnl: 0, openPositions: 0, unprotectedSymbols: [] }, 5, 5);
+  assert.deepEqual(clean, { allow: true, reasons: [] });
+
+  const over = checkGridPlan(plan.value, limits, account, 5, 5);
+  assert.equal(over.allow, false);
+  assert.equal(over.reasons.length, 1, over.reasons.join(" | "));
+  assert.match(over.reasons[0], /already has 200 USD committed/);
+  assert.match(over.reasons[0], /adds 299.95 USD/);
+  assert.match(over.reasons[0], /exceeds SWAL_MAX_NOTIONAL_USD 400 USD/);
+});
+
+test("grid_place refuses a grid that sits on top of a resting entry order", async () => {
+  // The resting BUY of 200 USD is committed money, and the ladder adds 300 USD:
+  // 500 USD of exposure against a 400 USD cap. Neither order breaks the cap alone.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    openOrders: [{ symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "100", quantity: "2", clientOrderId: "resting-1" }],
+  });
+  await withClient(
+    {
+      env: gridPlaceEnv({ SWAL_MAX_NOTIONAL_USD: "400", SWAL_MCP_MAX_POSITIONS: "3" }),
+      fetchFn: exchange.fetchFn,
+      now: () => NOW,
+    },
+    async (client) => {
+      const text = errorText(
+        await client.callTool({
+          name: "grid_place",
+          arguments: { symbol: "BTCUSDT", lower: 100, upper: 102, levels: 3, total_notional_usd: 300, stop_loss_price: 95 },
+        }),
+      );
+      assert.match(text, /the order guard rejected this grid/);
+      assert.match(text, /already has 200 USD committed/);
+      assert.match(text, /adds 299.95 USD/);
+    },
+  );
+  assert.equal(exchange.post("/fapi/v1/order").length, 0, "no level may be placed over the cap");
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+  const line = journalLines(JOURNAL, "grid_place")[0];
+  assert.equal(line.guard.allow, false);
+  assert.ok(line.guard.reasons.some((reason) => /already has 200 USD committed/.test(reason)), JSON.stringify(line.guard));
 });

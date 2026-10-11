@@ -19,6 +19,7 @@ import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
 import {
   dailyLockReason,
+  exposureReason,
   leverageReason,
   notionalReason,
   openPositionsReason,
@@ -304,6 +305,15 @@ export function checkGridPlan(plan: GridPlan, limits: GuardLimits, account: Guar
   if (symbol) reasons.push(symbol);
   const notional = notionalReason(plan.totalNotionalUsd, limits.maxNotionalUsd);
   if (notional) reasons.push(notional);
+  // The cap is on exposure, not on this one grid: positions already open, the
+  // symbol's resting entry orders and its pending algo entries are money the
+  // account has committed, and the ladder adds the whole totalNotionalUsd to it.
+  const exposure = exposureReason({
+    openNotionalUsd: account.openNotionalUsd ?? 0,
+    newNotionalUsd: plan.totalNotionalUsd,
+    maxNotionalUsd: limits.maxNotionalUsd,
+  });
+  if (exposure) reasons.push(exposure);
   const leverage = leverageReason(maxLeverage, limits.maxLeverage);
   if (leverage) reasons.push(leverage);
   const stop = stopReason(plan.stopDistancePct, maxLeverage);
