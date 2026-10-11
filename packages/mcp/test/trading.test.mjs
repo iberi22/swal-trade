@@ -261,6 +261,27 @@ test("place_order refuses a quantity below minQty or MIN_NOTIONAL", async () => 
   assert.equal(expensive.post("/fapi/v1/order").length, 0);
 });
 
+test("place_order sizes a quantity whose quotient has more than eighteen decimals", async () => {
+  // 10 USD at 150000 is 0.00006666666666666667: twenty decimals, which the
+  // decimal guard refuses. Refusing the alignment used to stop a valid order with
+  // "quantity for 10 USD cannot be aligned to stepSize".
+  const fine = makeExchange({
+    symbols: { BTCUSDT: { stepSize: "0.000001", minQty: "0.000001", tickSize: "0.1", minNotional: "5" } },
+    markPrice: "150000",
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: fine.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(
+      textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 10, stop_loss_pct: 0.5 } })),
+    );
+    assert.equal(body.quantity, "0.000066");
+    assert.equal(body.entry.type, "MARKET");
+  });
+  const orders = fine.post("/fapi/v1/order");
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0].params.quantity, "0.000066");
+  assert.equal(orders[0].params.price, undefined);
+});
+
 // ---------------------------------------------------------------------------
 // The guard, end to end.
 // ---------------------------------------------------------------------------

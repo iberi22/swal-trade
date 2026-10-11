@@ -465,7 +465,10 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       if (!(entryPrice > 0)) return refused("the best bid or ask is not a usable price for a post-only order.");
     }
 
-    const quantity = floorToStep(notionalUsd / entryPrice, filters.value.stepSize);
+    // toDecimalText first: notional / entryPrice is a double that can carry more decimals
+    // than roundDecimal accepts, and a refused alignment used to read as "cannot be aligned to
+    // stepSize" on a perfectly valid order.
+    const quantity = floorToStep(toDecimalText(notionalUsd / entryPrice), filters.value.stepSize);
     if (quantity == null) return refused(`quantity for ${notionalUsd} USD cannot be aligned to stepSize ${filters.value.stepSize}.`);
     const quantityNumber = decimalNumber(quantity);
     const minQty = decimalNumber(filters.value.minQty);

@@ -10,7 +10,7 @@
 // and a note saying so.
 
 import type { ProposalLimits } from "./config.js";
-import { decimalNumber, floorToStep } from "./decimal.js";
+import { decimalNumber, floorToStep, toDecimalText } from "./decimal.js";
 import { normalizeSymbol } from "./symbol.js";
 
 export const SAFE_SL_LIQUIDATION_FACTOR = 0.8;
@@ -131,12 +131,20 @@ export function proposeFromMark(input: ProposalInput): ProposalResult {
   const filters = input.filters ?? null;
   const stepSize = filters?.stepSize ?? null;
   const rawQuantity = input.notionalUsd / input.markPrice;
-  const rounded = stepSize ? floorToStep(rawQuantity, stepSize) : null;
+  // The quotient is a double: it can carry more decimals than the decimal
+  // helpers accept, which used to make the rounding fail on a valid order.
+  const quantityText = toDecimalText(rawQuantity);
+  const rounded = stepSize ? floorToStep(quantityText, stepSize) : null;
   const quantity = rounded == null ? rawQuantity : decimalNumber(rounded);
   const effectiveNotionalUsd = quantity * input.markPrice;
   const minNotional = filters?.minNotional ? decimalNumber(filters.minNotional) : null;
-  if (rounded == null) {
+  if (stepSize == null) {
     // No filters to round to: the raw math is returned and `rounding.applied` is false.
+  } else if (rounded == null) {
+    // The filters are there but the quantity cannot be aligned to them: an
+    // unaligned quantity is an order the exchange refuses with -1111, so it is a
+    // violation and not a rounding detail.
+    violations.push(`quantity ${quantityText} cannot be aligned to stepSize ${stepSize}: the exchange would refuse this order.`);
   } else {
     const minQty = filters?.minQty ? decimalNumber(filters.minQty) : null;
     if (minQty != null && quantity < minQty) {
@@ -154,7 +162,7 @@ export function proposeFromMark(input: ProposalInput): ProposalResult {
       side,
       orderType: "MARKET",
       quantity,
-      quantityString: rounded ?? String(rawQuantity),
+      quantityString: rounded ?? quantityText,
       notionalUsd: input.notionalUsd,
       markPrice: input.markPrice,
       effectiveNotionalUsd,

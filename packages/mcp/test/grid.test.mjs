@@ -5,6 +5,8 @@ import { buildGridPlan, createGridPlanStore, gridChecks, MAX_GRID_LEVELS, repric
 import { callOrCatch, errorText, textOf, withClient } from "./helpers.mjs";
 import { makeExchange, tradeEnv, TRADE_KEY, TRADE_SECRET } from "./trading-fixtures.mjs";
 import { readGridLimits } from "../dist/trading-config.js";
+import { decimalNumber, decimalsOf, floorToStep, toDecimalText } from "../dist/decimal.js";
+import { proposeFromMark } from "../dist/propose.js";
 
 const NOW = Date.UTC(2026, 9, 9, 3, 0);
 
@@ -96,7 +98,11 @@ test("the stop distance comes from the worst level, never from the average entry
   // larger, more comfortable number, which is exactly why it must not be used.
   const fromAverage = (Math.abs(plan.averageEntryUsd - 92000) / plan.averageEntryUsd) * 100;
   assert.ok(fromAverage > plan.stopDistancePct);
-  assert.equal(plan.averageEntryUsd, 101733.333333);
+  // The total quantity is the sum of the levels, aligned to stepSize: summing the
+  // doubles directly gives 0.7599999999999999, which floors to 0.75 and reports a
+  // grid one step smaller than the one that was placed.
+  assert.equal(plan.totalQuantity, "0.76");
+  assert.equal(plan.averageEntryUsd, 100394.736842);
   assert.equal(plan.worstCaseLossUsd, 6380);
 });
 
@@ -141,9 +147,36 @@ test("buildGridPlan rejects a stop inside the range and unusable parameters", ()
     filters: { ...FILTERS, stepSize: "1", minQty: "1" },
   });
   assert.equal(tiny.ok, false);
-  if (!tiny.ok) assert.match(tiny.error, /no level survives rounding/);
+  if (!tiny.ok) assert.match(tiny.error, /level 1 at 97000 rounds to a quantity of zero at stepSize 1/);
+  // A level that cannot be sized fails the WHOLE plan: the grid is never placed
+  // with fewer levels than the plan says.
+  assert.equal(tiny.warnings, undefined);
 });
 
+test("a level that cannot be sized fails the plan, it is never dropped", () => {
+  // The top level is 100000 with stepSize 1: 1000 USD there is a quantity of
+  // 0.01, which floors to zero. Dropping it used to leave a ONE-level grid sold
+  // as a two-level one, with the stop, the worst case and the notional computed
+  // from a ladder the account does not have.
+  const built = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 1000, upper: 100000000, levels: 2, total_notional_usd: 500000, stop_loss_price: 900 },
+    filters: { ...FILTERS, stepSize: "1", minQty: "1" },
+  });
+  assert.equal(built.ok, false);
+  if (!built.ok) {
+    assert.match(built.error, /level 2 at 100000000 rounds to a quantity of zero at stepSize 1/);
+    assert.match(built.error, /250000 USD per level over 2 levels/);
+    assert.equal(/dropped/.test(built.error), false);
+  }
+
+  // The same range with a notional that sizes both levels plans normally.
+  const sized = buildGridPlan({
+    args: { symbol: "BTCUSDT", lower: 1000, upper: 100000000, levels: 2, total_notional_usd: 500000000000, stop_loss_price: 900 },
+    filters: { ...FILTERS, stepSize: "1", minQty: "1" },
+  });
+  assert.equal(sized.ok, true);
+  if (sized.ok) assert.deepEqual(sized.value.levels.map((level) => level.quantity), ["250000000", "2500"]);
+});
 test("a level that would cross the book is reported, not silently placed", () => {
   const built = buildGridPlan({
     args: { symbol: "BTCUSDT", lower: 97000, upper: 101000, levels: 3, total_notional_usd: 30000, stop_loss_price: 95000 },
@@ -509,4 +542,108 @@ test("grid_place is fail-closed when a level cannot be rested", async () => {
   const closed = exchange.post("/fapi/v1/order").filter((order) => order.params.reduceOnly === "true");
   assert.equal(closed.length, 1);
   assert.equal(closed[0].params.quantity, "0.1");
+});
+
+// ---------------------------------------------------------------------------
+// Item N1: sizing a level never depends on how many decimals the double carries.
+//
+// notional / price is an IEEE754 division: at 5 USD over 150000 it is
+// 0.00006666666666666667, twenty decimals, and roundDecimal refuses more than
+// eighteen on purpose. When that refusal reached the planner, the level was
+// dropped with a warning and the grid was placed one level (or every level)
+// smaller than the plan said. The quotient is truncated with toDecimalText
+// before it is aligned, which is the honest version of that number.
+// ---------------------------------------------------------------------------
+
+/** (stepSize, tickSize) pairs real USD-M symbols publish, with a price of each. */
+const FILTER_COMBOS = [
+  { name: "BTCUSDT", price: 112000, step: "0.001", tick: "0.1" },
+  { name: "ETHUSDT", price: 3800, step: "0.001", tick: "0.01" },
+  { name: "SOLUSDT", price: 190, step: "0.01", tick: "0.01" },
+  { name: "DOGEUSDT", price: 0.19, step: "1", tick: "0.00001" },
+  { name: "XRPUSDT", price: 2.4, step: "1", tick: "0.0001" },
+  { name: "1000PEPEUSDT", price: 0.011, step: "1", tick: "0.00000001" },
+  { name: "SUIUSDT", price: 3.3, step: "0.1", tick: "0.0001" },
+  { name: "LINKUSDT", price: 22, step: "0.01", tick: "0.001" },
+  { name: "PAXGUSDT", price: 4700, step: "0.001", tick: "0.01" },
+  // A high price against a small notional: the quotients here are the ones with
+  // more than eighteen decimals, the case that used to drop the level.
+  { name: "BTCUSDT", price: 150000, step: "0.000001", tick: "0.1" },
+  { name: "PAXGUSDT", price: 300000, step: "0.00001", tick: "1" },
+  { name: "CRVUSDT", price: 75000, step: "0.01", tick: "0.001" },
+];
+
+/** Per-level notionals chosen because they divide badly against these prices. */
+const PER_LEVEL_NOTIONALS = [5, 7, 10, 25, 33.33, 100, 137.5, 1000];
+/** Multiples of exactly one step, the smallest notional that sizes a level. */
+const STEP_MULTIPLES = [1.05, 1.5, 2, 3, 7.5, 33, 137, 1200];
+const LEVEL_COUNTS = [2, 3, 5, 8, 13, 20];
+
+const aligned = (value, step) => floorToStep(value, step) === value;
+
+test("every level of every realistic combination is sized and step aligned", () => {
+  let plans = 0;
+  let refusedQuotients = 0;
+  for (const combo of FILTER_COMBOS) {
+    const unit = decimalNumber(combo.step) * combo.price; // notional of exactly one step
+    for (const perLevel of [...PER_LEVEL_NOTIONALS.filter((value) => value >= unit), ...STEP_MULTIPLES.map((k) => unit * k)]) {
+      if (decimalsOf(perLevel / combo.price) === null) refusedQuotients += 1;
+      for (const levels of LEVEL_COUNTS) {
+        const total = perLevel * levels;
+        const lower = combo.price * 0.98;
+        const upper = combo.price * 1.02;
+        const stop = combo.price * 0.95;
+        const built = buildGridPlan(
+          {
+            args: { symbol: combo.name, lower, upper, levels, total_notional_usd: total, stop_loss_price: stop },
+            filters: { stepSize: combo.step, minQty: combo.step, tickSize: combo.tick, minNotional: "5" },
+          },
+        );
+        const where = `${combo.name} price=${combo.price} step=${combo.step} tick=${combo.tick} notional=${total} levels=${levels}`;
+        assert.equal(built.ok, true, `${where}: ${built.ok ? "" : built.error}`);
+        if (!built.ok) continue;
+        const plan = built.value;
+        plans += 1;
+        // No level is dropped: the ladder placed is the ladder asked for.
+        assert.equal(plan.levels.length, levels, `${where}: ${plan.levels.length} levels planned`);
+        assert.deepEqual(
+          plan.levels.map((level) => level.index),
+          Array.from({ length: levels }, (_, index) => index + 1),
+          where,
+        );
+        for (const level of plan.levels) {
+          assert.ok(aligned(level.quantity, combo.step), `${where}: quantity ${level.quantity} is not a multiple of ${combo.step}`);
+          assert.ok(decimalNumber(level.quantity) > 0, `${where}: quantity ${level.quantity} is zero`);
+          assert.ok(aligned(level.price, combo.tick), `${where}: price ${level.price} is not a multiple of ${combo.tick}`);
+          assert.ok(level.notionalUsd > 0, `${where}: notional ${level.notionalUsd}`);
+        }
+        // Rounding can only lose, never gain: the ladder never exceeds the ask.
+        assert.ok(plan.totalNotionalUsd <= total + 1e-9, `${where}: total ${plan.totalNotionalUsd} exceeds ${total}`);
+      }
+    }
+  }
+  assert.ok(plans > 500, `the property test should cover hundreds of combinations, it covered ${plans}`);
+  // The regression this test exists for: quotients the decimal guard refuses
+  // (more than eighteen decimals), which used to drop the level.
+  assert.ok(refusedQuotients > 20, `expected many more-than-eighteen-decimal quotients, found ${refusedQuotients}`);
+});
+
+test("the same quotient sizes an order and a proposal, not only a grid", () => {
+  const filters = { stepSize: "0.000001", minQty: "0.000001", tickSize: "0.1", minNotional: "5" };
+  const notional = 10;
+  const price = 150000;
+  // 10 / 150000 = 0.00006666666666666667: twenty decimals, refused by the guard
+  // that used to make this a "cannot be aligned to stepSize" rejection.
+  assert.equal(decimalsOf(notional / price), null);
+
+  const proposed = proposeFromMark({ symbol: "BTCUSDT", side: "BUY", notionalUsd: notional, stopLossPct: 0.5, leverage: 1, markPrice: price, limits: { maxLeverage: null, maxNotionalUsd: null, dailyLossUsd: null }, filters });
+  assert.equal(proposed.ok, true);
+  if (!proposed.ok) return;
+  assert.equal(proposed.proposal.quantityString, "0.000066");
+  assert.equal(proposed.proposal.rounding.applied, true);
+  assert.deepEqual(proposed.proposal.violations, []);
+
+  // The same numbers through the writer's own formula: floorToStep over the
+  // truncated quotient, which is what place_order sends.
+  assert.equal(floorToStep(toDecimalText(notional / price), filters.stepSize), "0.000066");
 });

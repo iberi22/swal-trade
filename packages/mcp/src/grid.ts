@@ -11,7 +11,7 @@
 
 import { createHash } from "node:crypto";
 
-import { ceilToStep, decimalNumber, floorToStep, nearestStep, shiftStep } from "./decimal.js";
+import { ceilToStep, decimalNumber, floorToStep, nearestStep, shiftStep, toDecimalText } from "./decimal.js";
 import type { ConfigResult } from "./config.js";
 import { readCredentials } from "./config.js";
 import type { SymbolFilters } from "./exchange.js";
@@ -108,7 +108,10 @@ function planIdOf(args: GridPlanArgs, symbol: string): string {
 }
 
 function sumQuantity(quantities: readonly string[], stepSize: string): string {
-  const total = quantities.reduce((sum, value) => sum + decimalNumber(value), 0);
+  // toDecimalText first: the sum of a handful of decimals is a double with more
+  // decimals than any exchange filter, and floorToStep refuses those instead of
+  // guessing where to cut them.
+  const total = toDecimalText(quantities.reduce((sum, value) => sum + decimalNumber(value), 0));
   return floorToStep(total, stepSize) ?? "0";
 }
 
@@ -153,18 +156,44 @@ export function buildGridPlan(input: {
 
   const warnings: string[] = [];
   const seen = new Map<string, GridLevel>();
+  const planLevels: GridLevel[] = [];
   for (let index = 0; index < levels; index += 1) {
-    const rawPrice = lower + ((upper - lower) * index) / (levels - 1);
+    const rawPrice = toDecimalText(lower + ((upper - lower) * index) / (levels - 1));
     const price = nearestStep(rawPrice, input.filters.tickSize);
+    // A level that cannot be sized FAILS the plan: it is never dropped with a
+    // warning. Every number in the plan (exposure per level, worst case, stop
+    // distance, the total notional the guard checks) is computed from the ladder
+    // as a whole, so a ladder that quietly loses a level is a plan that describes
+    // an exposure the user did not ask for and does not get.
     if (price == null || decimalNumber(price) <= 0) {
-      warnings.push(`level ${index + 1} at ${rawPrice} cannot be aligned to tickSize ${input.filters.tickSize} and was dropped.`);
-      continue;
+      return {
+        ok: false,
+        error:
+          `level ${index + 1} at ${rawPrice} cannot be aligned to tickSize ${input.filters.tickSize}, so the grid cannot be planned with all ${levels} levels: ` +
+          `widen the range, lower the level count, or adjust the range to the tickSize.`,
+      };
     }
     const notionalPerLevel = totalNotional / levels;
-    const quantity = floorToStep(notionalPerLevel / decimalNumber(price), input.filters.stepSize);
-    if (quantity == null || decimalNumber(quantity) <= 0) {
-      warnings.push(`level ${index + 1} at ${price} was dropped: its quantity rounds to zero at stepSize ${input.filters.stepSize}.`);
-      continue;
+    // notional / price is a double: it can carry more decimals than the guard in
+    // roundDecimal accepts, which used to make floorToStep refuse the level and
+    // drop it from the grid. toDecimalText is the honest truncation of that
+    // quotient before it is aligned to stepSize.
+    const quantity = floorToStep(toDecimalText(notionalPerLevel / decimalNumber(price)), input.filters.stepSize);
+    if (quantity == null) {
+      return {
+        ok: false,
+        error:
+          `level ${index + 1} at ${price} cannot be aligned to stepSize ${input.filters.stepSize}: the grid was not planned. ` +
+          `Use a stepSize the price can be sized to.`,
+      };
+    }
+    if (decimalNumber(quantity) <= 0) {
+      return {
+        ok: false,
+        error:
+          `level ${index + 1} at ${price} rounds to a quantity of zero at stepSize ${input.filters.stepSize} ` +
+          `(${toDecimalText(notionalPerLevel)} USD per level over ${levels} levels): raise total_notional_usd or lower the level count.`,
+      };
     }
     // Two levels on the same tick are not a grid: they are one order for double
     // the size, which quietly doubles the exposure of that price.
@@ -177,16 +206,19 @@ export function buildGridPlan(input: {
           `Widen the range, lower the level count, or raise total_notional_usd.`,
       };
     }
-    seen.set(price, {
+    const level: GridLevel = {
       index: index + 1,
       side: entrySide,
       price,
       quantity,
-      notionalUsd: Number((decimalNumber(quantity) * decimalNumber(price)).toFixed(6)),
-    });
+      notionalUsd: Number(toDecimalText(decimalNumber(quantity) * decimalNumber(price), 6)),
+    };
+    seen.set(price, level);
+    planLevels.push(level);
   }
-  const planLevels = [...seen.values()];
   if (planLevels.length === 0) {
+    // Unreachable while every level above either fails the plan or is pushed:
+    // kept as the invariant the rest of the function relies on.
     return { ok: false, error: `no level survives rounding at stepSize ${input.filters.stepSize} and tickSize ${input.filters.tickSize}: widen the range, raise total_notional_usd, or lower the level count.` };
   }
 
@@ -218,7 +250,11 @@ export function buildGridPlan(input: {
 
   const quantities = planLevels.map((level) => level.quantity);
   const totalQuantity = sumQuantity(quantities, input.filters.stepSize);
-  const totalNotionalUsd = Number(planLevels.reduce((sum, level) => sum + level.notionalUsd, 0).toFixed(2));
+  // The ladder's own notional, summed in decimal space: summing the doubles and
+  // then rounding to cents reports a total the user did not ask for (0.055 summed
+  // as 0.055000000000000004 reads as 0.06), and the cap is checked against this
+  // number.
+  const totalNotionalUsd = Number(toDecimalText(planLevels.reduce((sum, level) => sum + level.notionalUsd, 0), 6));
   const quantityNumber = decimalNumber(totalQuantity);
   const averageEntryUsd = quantityNumber > 0 ? Number((planLevels.reduce((sum, level) => sum + decimalNumber(level.quantity) * decimalNumber(level.price), 0) / quantityNumber).toFixed(6)) : 0;
   const stopDistancePct = Number(worstLevelDistancePct.toFixed(6));

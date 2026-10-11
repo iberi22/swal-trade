@@ -159,3 +159,48 @@ test("propose_order reports the unrounded math when the filters are missing", ()
   assert.equal(result.proposal.rounding.applied, false);
   assert.deepEqual(result.proposal.violations, []);
 });
+
+// A quotient with more than eighteen decimals is the honest number the rounding
+// has to survive: 10 USD at 150000 is 0.00006666666666666667, which the decimal
+// guard refuses. Truncating it with toDecimalText sizes the order instead of
+// silently returning the unrounded math.
+test("propose_order sizes a quantity whose quotient has more than eighteen decimals", () => {
+  const fine = { ...FILTERS, stepSize: "0.000001", minQty: "0.000001" };
+  const result = proposeFromMark({ symbol: "BTCUSDT", side: "BUY", notionalUsd: 10, stopLossPct: 0.5, leverage: 1, markPrice: 150000, limits, filters: fine });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.proposal.quantityString, "0.000066");
+  assert.equal(result.proposal.quantity, 0.000066);
+  assert.equal(result.proposal.rounding.applied, true);
+  assert.deepEqual(result.proposal.violations, []);
+});
+
+test("propose_order separates \"no filters\" from \"cannot round\"", () => {
+  // No filters at all: the raw math is returned and that is all the proposal says.
+  const unfiltered = proposeFromMark({ symbol: "BTCUSDT", side: "BUY", notionalUsd: 250, stopLossPct: 2, leverage: 10, markPrice: 100, limits });
+  assert.equal(unfiltered.ok, true);
+  if (unfiltered.ok) {
+    assert.deepEqual(unfiltered.proposal.violations, []);
+    assert.equal(unfiltered.proposal.rounding.applied, false);
+  }
+
+  // Filters that cannot be used: a quantity that is not a multiple of stepSize is
+  // an order the exchange refuses with -1111, so it is a violation and not a
+  // rounding detail. Reporting the unrounded number here sells an order that
+  // cannot be sent.
+  const unusable = proposeFromMark({
+    symbol: "BTCUSDT",
+    side: "BUY",
+    notionalUsd: 250,
+    stopLossPct: 2,
+    leverage: 10,
+    markPrice: 100,
+    limits,
+    filters: { ...FILTERS, stepSize: "not-a-step" },
+  });
+  assert.equal(unusable.ok, true);
+  if (!unusable.ok) return;
+  assert.equal(unusable.proposal.rounding.applied, false);
+  assert.equal(unusable.proposal.violations.length, 1);
+  assert.match(unusable.proposal.violations[0], /cannot be aligned to stepSize not-a-step/);
+});
