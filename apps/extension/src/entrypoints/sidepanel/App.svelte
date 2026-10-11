@@ -136,6 +136,21 @@
     }
   }
 
+  // Pintando sobre el gráfico de Binance: si muestra el mismo par en otra
+  // temporalidad, el análisis adopta la del gráfico. Así los niveles que se
+  // pintan son los de las velas que el usuario ve, y no hace falta tocar nada.
+  $effect(() => {
+    if (!settings.paintOnChart || tvState !== 'mismatch' || !tvChart) return;
+    const chart = tvChart;
+    untrack(() => {
+      if (chart.symbol !== symbol) return;
+      if (chart.tf === timeframe) return;
+      if (!(TIMEFRAMES as readonly string[]).includes(chart.tf)) return;
+      timeframe = chart.tf as Timeframe;
+      inferred = false;
+    });
+  });
+
   onMount(() => {
     const onMessage = (message: unknown) => {
       applyContext(message);
