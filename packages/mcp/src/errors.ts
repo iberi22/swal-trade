@@ -62,6 +62,15 @@ export function httpError(status: number, path: string, body: string): BinanceEr
 export const ORDER_NOT_FOUND_CODE = -2013;
 
 /**
+ * Code of "Unknown order sent.": a CANCEL-only answer. The order is not on the
+ * book right now, which a cancel may legitimately read as "gone". A LOOKUP must
+ * NOT read it that way: it can be answered for a malformed origClientOrderId or
+ * an unsupported parameter combination that says nothing about whether the
+ * order ever existed or filled.
+ */
+export const CANCEL_UNKNOWN_ORDER_CODE = -2011;
+
+/**
  * Client order id for every order this process sends.
  *
  * Binance keeps the id for as long as the order exists and answers lookups by

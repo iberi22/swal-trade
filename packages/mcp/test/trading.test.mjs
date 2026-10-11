@@ -810,9 +810,11 @@ test("place_order post_only treats a not-found cancel with an open position as a
 });
 
 test("place_order post_only with a 200 cancel, 0 executed, and 0 position resolves as no fill", async () => {
+  // A lookup that finds nothing answers -2013. (-2011 is a cancel-only code and
+  // no longer counts as "not found" on a lookup: see the F3 test.)
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
-    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    queryOrder: { code: -2013, msg: "Order does not exist." },
     cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
   });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
@@ -1166,6 +1168,26 @@ test("a timed-out entry is resolved by clientOrderId and the position, then prot
   assert.match(queried.params.origClientOrderId, /^swal/);
   assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
   assert.match(JSON.stringify(journalLines(JOURNAL, "place_order")[0]), /query_by_client_order_id/);
+});
+
+test("a lookup answering -2011 does not resolve as not-found", async () => {
+  // -2011 "Unknown order sent." is a cancel-only answer. Reading it as a
+  // definitive "the order is gone" in the LOOKUP resolves an intent the exchange
+  // never ruled on: the order may have filled, and the position read that would
+  // have said so is what actually failed here. No resolving outcome is written.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    positionRiskHttpError: 500,
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /the result is unknown/);
+    assert.match(text, /startup sweep will report it/);
+  });
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed on an unknown result");
+  assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+  assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
 });
 
 test("a timed-out entry with no fill anywhere sends no stop and says so", async () => {

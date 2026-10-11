@@ -39,8 +39,9 @@ import {
   filledQuantityOf,
   flattenPosition,
   guardLimitsFrom,
+  isCancelNotFound,
   isFinalStatus,
-  isOrderNotFound,
+  isLookupNotFound,
   logStep,
   ok,
   orderStatusOf,
@@ -117,7 +118,7 @@ async function cancelRestingEntry(
   } catch (err) {
     const message = redactSecrets(errorMessage(err), []);
     logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: false, error: message });
-    if (isOrderNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null };
+    if (isCancelNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null };
     return { confirmed: false, filledQty: 0, avgPrice: null, order: null, error: message };
   }
 }
@@ -479,7 +480,7 @@ async function resolveEntry(
     // A definitive "order does not exist" (-2013) IS a resolved read: the order
     // is gone, so there is nothing to protect or cancel. Any other lookup failure
     // (a 5xx, a timeout) is not a read that succeeded.
-    if (isOrderNotFound(err)) resolved = true;
+    if (isLookupNotFound(err)) resolved = true;
   }
   // Not settled by the lookup: read the position, which is the ground truth.
   try {
