@@ -1,4 +1,5 @@
 import type { AnalysisResult, Finding, FindingLevel } from './types';
+import { volumeShockMarkers } from './volume-flow-view';
 
 export interface ChartMarker {
   time: number;
@@ -165,6 +166,9 @@ export function roleLabel(role: string, kind: string): string {
     neck: 'cuello',
     upper: 'techo',
     lower: 'suelo',
+    volume_shock: 'choque de volumen',
+    absorption: 'absorción',
+    climax: 'clímax',
   };
   const short = role ? map[role] ?? role.replace(/_/g, ' ') : '';
   return short || kind || 'nivel';
@@ -181,6 +185,12 @@ const KIND_LABEL: Record<string, string> = {
   range_breakout: 'ruptura de rango',
   shock: 'vela de choque',
   volume_profile: 'perfil de volumen',
+  volume_shock_buy: 'compra agresiva',
+  volume_shock_sell: 'venta agresiva',
+  delta_divergence_bullish: 'divergencia de delta alcista',
+  delta_divergence_bearish: 'divergencia de delta bajista',
+  absorption: 'absorción',
+  climax: 'clímax de volumen',
   rsi_divergence_bullish: 'divergencia RSI alcista',
   rsi_divergence_bearish: 'divergencia RSI bajista',
   fvg_bullish: 'FVG alcista',
@@ -205,11 +215,22 @@ export function kindLabel(kind: string, label: string): string {
   return text || KIND_LABEL[kind] || kind || 'hallazgo';
 }
 
-/** Marcadores de `from`/`to` anclados a la vela más cercana. */
+/** Choques de volumen con sesgo: ▲ compra agresiva, ▼ venta agresiva. */
+export function isVolumeShockKind(kind: string): boolean {
+  return kind === 'volume_shock_buy' || kind === 'volume_shock_sell';
+}
+
+/**
+ * Marcadores de `from`/`to` anclados a la vela más cercana. Los choques de
+ * volumen llevan su propio glifo (▲/▼) en lugar de la etiqueta.
+ */
 export function markersForFinding(
   finding: Finding,
   candleTimes: readonly number[] = [],
 ): ChartMarker[] {
+  if (isVolumeShockKind(String(finding.kind ?? ''))) {
+    return volumeShockMarkers([finding], candleTimes);
+  }
   const shape = markerShape(finding.direction);
   const rawTimes = [asSeconds(finding.from), asSeconds(finding.to)].filter(
     (time): time is number => time !== null,

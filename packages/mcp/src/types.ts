@@ -8,6 +8,10 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  /** Number of trades in the candle (optional). */
+  trades?: number;
+  /** Taker buy base volume (optional): enables volume flow / CVD in the core. */
+  takerBuyVolume?: number;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

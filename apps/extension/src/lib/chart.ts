@@ -1,13 +1,20 @@
 import {
   CandlestickSeries,
   ColorType,
+  HistogramSeries,
+  LineSeries,
   LineStyle,
   createChart,
   createSeriesMarkers,
+  type HistogramData,
   type IPriceLine,
+  type ITimeScaleApi,
+  type LineData,
+  type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import type { Candle } from './types';
+import type { Candle, VolumeFlow } from './types';
+import { CVD_TONE, cvdHistogramData, cvdLineData, type FlowBar, type FlowPoint } from './volume-flow-view';
 import type { ChartAnnotation, ChartPriceLine, PriceLineKind } from './findings-view';
 
 /**
@@ -29,6 +36,18 @@ export interface ChartHandle {
   times(): number[];
   /** Anotaciones de todos los hallazgos; `selectedId` resalta uno. */
   setAnnotations(annotation: ChartAnnotation, selectedId?: string | null): void;
+  /** Escala de tiempo: el panel de CVD la sigue para no desalinearse. */
+  timeScale(): ITimeScaleApi<Time>;
+  destroy(): void;
+}
+
+/**
+ * Panel de flujo de volumen: línea de CVD y histograma del delta por vela.
+ * `setFlow` repinta la serie completa; `updateFlow` solo mueve el último punto.
+ */
+export interface FlowPaneHandle {
+  setFlow(candles: Candle[], flow: VolumeFlow | null): void;
+  updateFlow(candles: Candle[], flow: VolumeFlow | null): void;
   destroy(): void;
 }
 
@@ -111,6 +130,9 @@ export function mountChart(container: HTMLElement): ChartHandle {
     times() {
       return bars.map((bar) => bar.time as number);
     },
+    timeScale() {
+      return chart.timeScale();
+    },
     setAnnotations(annotation, selectedId = null) {
       markers.setMarkers(
         annotation.markers.map((marker) => {
@@ -155,3 +177,123 @@ function priceLineOptions(line: ChartPriceLine, selectedId: string | null) {
     axisLabelVisible: selected,
   };
 }
+
+/**
+ * Panel de flujo de volumen debajo del de precio: línea de CVD en el tono
+ * principal, histograma del delta en pasos del mismo tono (sin rojo ni verde) y
+ * escala de tiempo sincronizada con la del gráfico de velas. `price` es el
+ * mango del gráfico de precio: manda su rango visible.
+ */
+export function mountFlowPane(container: HTMLElement, price: ChartHandle): FlowPaneHandle {
+  const chart = createChart(container, {
+    autoSize: true,
+    layout: {
+      background: { type: ColorType.Solid, color: BG },
+      textColor: MUTED,
+      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+    },
+    grid: { vertLines: { visible: false }, horzLines: { color: GRID } },
+    rightPriceScale: { visible: false },
+    timeScale: { visible: false, timeVisible: true, secondsVisible: false },
+    crosshair: {
+      vertLine: { color: 'hsl(30 12% 12% / 0.25)', labelBackgroundColor: FG },
+      horzLine: { color: 'hsl(30 12% 12% / 0.25)', labelBackgroundColor: FG },
+    },
+  });
+
+  const line = chart.addSeries(LineSeries, {
+    color: CVD_TONE.line,
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerRadius: 3,
+  });
+  // El delta va en su propia escala, oculta: comparte el lienzo sin inventar números.
+  const bars = chart.addSeries(HistogramSeries, {
+    priceScaleId: 'delta',
+    color: CVD_TONE.deltaUp,
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
+  chart.priceScale('delta').applyOptions({ visible: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+
+  // La escala de tiempo manda la del precio. El guard corta el rebote entre ambas.
+  let syncing = false;
+  const pull = () => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      const range = price.timeScale().getVisibleLogicalRange();
+      if (range) chart.timeScale().setVisibleLogicalRange(range);
+    } catch {
+      /* rango aún no válido */
+    } finally {
+      syncing = false;
+    }
+  };
+  const push = () => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      if (range) price.timeScale().setVisibleLogicalRange(range);
+    } catch {
+      /* rango aún no válido */
+    } finally {
+      syncing = false;
+    }
+  };
+  price.timeScale().subscribeVisibleLogicalRangeChange(pull);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(push);
+
+  const paint = (candles: Candle[], flow: VolumeFlow | null) => {
+    const lineData = cvdLineData(candles, flow);
+    const barsData = cvdHistogramData(candles, flow, CVD_TONE);
+    if (!lineData.length) {
+      line.setData([]);
+      bars.setData([]);
+      return;
+    }
+    line.setData(lineData.map(toLineData));
+    bars.setData(barsData.map(toHistogramData));
+  };
+
+  return {
+    setFlow(candles, flow) {
+      paint(candles, flow);
+      const range = price.timeScale().getVisibleLogicalRange();
+      if (range) chart.timeScale().setVisibleLogicalRange(range);
+      else chart.timeScale().fitContent();
+    },
+    updateFlow(candles, flow) {
+      const lineData = cvdLineData(candles, flow);
+      const barsData = cvdHistogramData(candles, flow, CVD_TONE);
+      if (!lineData.length) {
+        paint(candles, flow);
+        return;
+      }
+      // Solo cambia la última vela: el CVD acumulado de las anteriores no se mueve.
+      try {
+        line.update(toLineData(lineData[lineData.length - 1]!));
+        bars.update(toHistogramData(barsData[barsData.length - 1]!));
+      } catch {
+        paint(candles, flow);
+      }
+    },
+    destroy() {
+      chart.remove();
+    },
+  };
+}
+
+/** lightweight-charts quiere el tiempo como `Time`, no como número pelado. */
+const toLineData = (point: FlowPoint): LineData<UTCTimestamp> => ({
+  time: point.time as UTCTimestamp,
+  value: point.value,
+});
+
+const toHistogramData = (bar: FlowBar): HistogramData<UTCTimestamp> => ({
+  time: bar.time as UTCTimestamp,
+  value: bar.value,
+  color: bar.color,
+});

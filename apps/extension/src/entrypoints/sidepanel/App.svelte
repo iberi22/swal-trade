@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { browser } from 'wxt/browser';
-  import { analyze, usingAnalysisStub } from '../../lib/analysis';
-  import { mountChart, type ChartHandle } from '../../lib/chart';
+  import { analyze, usingAnalysisStub, volumeFlowOf } from '../../lib/analysis';
+  import { mountChart, mountFlowPane, type ChartHandle, type FlowPaneHandle } from '../../lib/chart';
   import {
     CHART_FINDING_LIMIT,
     NO_ANNOTATIONS,
@@ -24,6 +24,7 @@
     type ExtensionSettings,
   } from '../../lib/settings';
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
+  import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -38,6 +39,11 @@
   let live = $state(false);
   let chartHost = $state<HTMLDivElement | null>(null);
   let chartApi = $state<ChartHandle | null>(null);
+  let flowHost = $state<HTMLDivElement | null>(null);
+  let flowApi = $state<FlowPaneHandle | null>(null);
+  let flowLegend = $state(CVD_LEGEND_TEXT);
+  /** Puntos pintados en el panel de CVD (línea y barras): 0 si no hay flujo. */
+  let flowPoints = $state(0);
 
   let settings = $state<ExtensionSettings>({ ...DEFAULT_SETTINGS, symbols: [] });
   let settingsLoaded = $state(false);
@@ -146,12 +152,15 @@
 
   $effect(() => {
     const host = chartHost;
+    const flow = flowHost;
     const sym = symbol;
     const tf = timeframe;
-    if (!host) return;
+    if (!host || !flow) return;
 
     const handle = mountChart(host);
+    const flowPane = mountFlowPane(flow, handle);
     chartApi = handle;
+    flowApi = flowPane;
     let alive = true;
     let stream: LiveSocket | null = null;
     let rows: Candle[] = [];
@@ -174,7 +183,12 @@
         rows = await fetchKlines(sym, tf);
         if (!alive) return;
         handle.setCandles(rows);
-        applyResult(analyze({ symbol: sym, timeframe: tf, candles: rows }));
+        const analysis = analyze({ symbol: sym, timeframe: tf, candles: rows });
+        const flowData = analysis.volumeFlow ?? volumeFlowOf(rows);
+        flowPane.setFlow(rows, flowData);
+        flowLegend = flowLegendText(rows, flowData);
+        flowPoints = cvdLineData(rows, flowData).length;
+        applyResult(analysis);
         loading = false;
         stream = openKlineStream(sym, tf, {
           onCandle(candle, closed) {
@@ -184,7 +198,12 @@
             const index = rows.findIndex((row) => row.time === candle.time);
             if (index >= 0) rows[index] = candle;
             else rows.push(candle);
-            applyResult(analyze({ symbol: sym, timeframe: tf, candles: rows }));
+            const nextResult = analyze({ symbol: sym, timeframe: tf, candles: rows });
+            const liveFlow = nextResult.volumeFlow ?? volumeFlowOf(rows);
+            flowPane.setFlow(rows, liveFlow);
+            flowLegend = flowLegendText(rows, liveFlow);
+            flowPoints = cvdLineData(rows, liveFlow).length;
+            applyResult(nextResult);
           },
           onLive(isLive) {
             if (alive) live = isLive;
@@ -201,7 +220,9 @@
       alive = false;
       stream?.close();
       chartApi = null;
+      flowApi = null;
       handle.destroy();
+      flowPane.destroy();
     };
   });
 
@@ -274,6 +295,13 @@
   </header>
 
   <div class="chart" bind:this={chartHost}></div>
+
+  <!-- Panel de flujo de volumen: línea de CVD y delta por vela, con la misma
+       escala de tiempo que el gráfico de precio. Un solo tono, sin rojo ni verde. -->
+  <section class="flow" aria-label="Flujo de volumen">
+    <div class="flow-chart" bind:this={flowHost} data-cvd-points={flowPoints}></div>
+    <p class="flow-legend">{flowLegend}</p>
+  </section>
 
   <!-- Leyenda del gráfico. Vive fuera del canvas a propósito: dentro, el lienzo
        de lightweight-charts se come los clics. -->
