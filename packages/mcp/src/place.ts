@@ -276,6 +276,51 @@ function entryPayload(input: {
 }
 
 /**
+ * A MARKET fill can land above SWAL_MAX_NOTIONAL_USD: the notional the account
+ * really carries is avgPrice * executedQty, and rounding the quantity down to
+ * stepSize can only move it up against the cap. When it does, the excess is
+ * reduced with a MARKET reduceOnly order and the USD of the reduction is
+ * returned; null when there was nothing to reduce (or the reduction failed and
+ * was logged).
+ *
+ * Shared by the immediate-market path and the ambiguous-resolution path, so a
+ * fill resolved after a timeout is capped exactly like a fill answered at once:
+ * the ambiguous path used to return before this block and over-order silently.
+ */
+async function reduceExcessNotional(input: {
+  client: TradingClient;
+  symbol: string;
+  side: "BUY" | "SELL";
+  fillQty: number;
+  /** Average fill price already read from the order (entry price when absent). */
+  avg: number;
+  maxNotionalUsd: number;
+  stepSize: string;
+  journal: JournalRecord;
+}): Promise<number | null> {
+  const effectiveAfterFill = input.avg * input.fillQty;
+  if (!(input.fillQty > 0) || !(effectiveAfterFill > input.maxNotionalUsd * 1.01)) return null;
+  // The excess is in USD, so it is converted to a quantity at the fill price
+  // before it is rounded: rounding a USD amount to stepSize sends the wrong size.
+  const excessQty = ceilToStep(toDecimalText((effectiveAfterFill - input.maxNotionalUsd) / input.avg), input.stepSize);
+  if (excessQty == null || !(decimalNumber(excessQty) > 0)) return null;
+  try {
+    const reduction = await input.client.placeOrder({
+      symbol: input.symbol,
+      side: input.side === "BUY" ? "SELL" : "BUY",
+      type: "MARKET",
+      quantity: excessQty,
+      reduceOnly: "true",
+    });
+    logStep(input.journal, "reduce_excess_notional", reduction);
+    return effectiveAfterFill - input.maxNotionalUsd;
+  } catch (err) {
+    logStep(input.journal, "reduce_excess_notional", { error: redactSecrets(errorMessage(err), []) });
+    return null;
+  }
+}
+
+/**
  * Cancels whatever this tool has resting on the symbol, by clientOrderId when
  * there is one. `allOpenOrders` would also cancel another tool's orders: the
  * mutex serializes this process, but the user may have placed orders by hand.
@@ -646,6 +691,19 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         if (isAmbiguousError(err)) {
           const resolution = await resolveEntry(client, { symbol, side, clientOrderId, entryPrice, quantity }, journal);
           if (resolution.filledQty > 0) {
+            // A fill resolved after a timeout is capped exactly like a fill
+            // answered at once: the reduction runs here too, not only on the
+            // direct path.
+            excessNotionalReduced = await reduceExcessNotional({
+              client,
+              symbol,
+              side,
+              fillQty: resolution.filledQty,
+              avg: averagePriceOf(resolution.order) ?? entryPrice,
+              maxNotionalUsd: Number(cfg.value.maxNotionalUsd),
+              stepSize: filters.value.stepSize,
+              journal,
+            });
             const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
             if (!stop.ok) {
               const aborted = await emergencyClose(client, filters.value, symbol, journal);
@@ -704,30 +762,16 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     // avgPrice * executedQty: rounding can only move it against the cap, never
     // for us.
     if (entry.ok) {
-      const fillQty = entry.filledQty ?? 0;
-      const avg = averagePriceOf(entry.order) ?? entryPrice;
-      const effectiveAfterFill = avg * fillQty;
-      if (fillQty > 0 && effectiveAfterFill > Number(cfg.value.maxNotionalUsd) * 1.01) {
-        // The excess is in USD, so it is converted to a quantity at the fill price
-        // before it is rounded: rounding a USD amount to stepSize sends an order
-        // of the wrong size.
-        const excessQty = ceilToStep(toDecimalText((effectiveAfterFill - cfg.value.maxNotionalUsd) / avg), filters.value.stepSize);
-        if (excessQty != null && decimalNumber(excessQty) > 0) {
-          try {
-            const reduction = await client.placeOrder({
-              symbol,
-              side: side === "BUY" ? "SELL" : "BUY",
-              type: "MARKET",
-              quantity: excessQty,
-              reduceOnly: "true",
-            });
-            logStep(journal, "reduce_excess_notional", reduction);
-            excessNotionalReduced = effectiveAfterFill - cfg.value.maxNotionalUsd;
-          } catch (err) {
-            logStep(journal, "reduce_excess_notional", { error: redactSecrets(errorMessage(err), []) });
-          }
-        }
-      }
+      excessNotionalReduced = await reduceExcessNotional({
+        client,
+        symbol,
+        side,
+        fillQty: entry.filledQty ?? 0,
+        avg: averagePriceOf(entry.order) ?? entryPrice,
+        maxNotionalUsd: Number(cfg.value.maxNotionalUsd),
+        stepSize: filters.value.stepSize,
+        journal,
+      });
     }
 
     const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });

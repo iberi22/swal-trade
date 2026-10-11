@@ -916,6 +916,29 @@ test("a timed-out MARKET entry whose lookup AND position reads both fail leaves 
   assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
 });
 
+test("an ambiguous MARKET entry resolved by clientOrderId is capped like an immediate fill", async () => {
+  // A timed-out MARKET entry the lookup resolves to a 1170 USD fill over a 1000
+  // USD cap: the excess must be reduced exactly as for a fill answered at once.
+  // The ambiguous success path used to return before the reduction block and
+  // over-order silently.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { clientOrderId: "x", status: "FILLED", executedQty: "0.009", avgPrice: "130000", side: "BUY", type: "MARKET" },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.009", notional: "1170", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 900 } })));
+    assert.equal(body.ambiguousOutcome, true);
+    assert.equal(body.filledQuantity, 0.009);
+    assert.match(body.warnings.join(" "), /the fill exceeded SWAL_MAX_NOTIONAL_USD by 170/);
+    assert.match(body.warnings.join(" "), /the excess was reduced/);
+  });
+  const reduce = exchange.post("/fapi/v1/order").find((order) => order.params.reduceOnly === "true");
+  assert.ok(reduce, "the excess of an ambiguous fill is reduced");
+  // 170 USD over the cap at 130000, rounded UP to stepSize 0.001.
+  assert.equal(reduce.params.quantity, "0.002");
+});
+
 test("a timed-out entry that filled but cannot be protected is flattened", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
