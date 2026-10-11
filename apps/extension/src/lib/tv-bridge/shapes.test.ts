@@ -25,11 +25,24 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 }
 
 describe('formatPrice', () => {
-  it('usa el formato español y recorta los decimales', () => {
+  it('usa el formato español con cifras significativas', () => {
     expect(formatPrice(82977.7)).toBe('82.977,7');
     expect(formatPrice(83010)).toBe('83.010');
     expect(formatPrice(0.5)).toBe('0,5');
-    expect(formatPrice(1234567.891)).toBe('1.234.567,89');
+    // Seis cifras significativas: la cola se redondea, no se recorta a dos decimales.
+    expect(formatPrice(1234567.891)).toBe('1.234.570');
+  });
+
+  it('conserva los precios pequeños sin colapsarlos a cero (F9)', () => {
+    // Un toFixed(2) daría 0,01 y 0,00. Las cifras significativas no.
+    expect(formatPrice(0.006)).toBe('0,006');
+    expect(formatPrice(0.00001234)).toBe('0,00001234');
+    expect(formatPrice(0.00001)).toBe('0,00001');
+  });
+
+  it('un no número se devuelve tal cual', () => {
+    expect(formatPrice(Number.NaN)).toBe('NaN');
+    expect(formatPrice(Number.POSITIVE_INFINITY)).toBe('Infinity');
   });
 });
 

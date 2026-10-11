@@ -21,17 +21,17 @@ import { CHART_FINDING_LIMIT, kindLabel, rankFindings, roleLabel } from '../find
 import type { Finding, FindingLevel } from '../types';
 import { MAX_SHAPE_TEXT, SWAL_MAX_SHAPES, type BridgeShape } from './schema';
 
-/** Precio formateado en español: 82977.7 → "82.977,7". */
+/**
+ * Precio formateado en español con cifras significativas.
+ *
+ * Seis cifras significativas, no dos decimales fijos: un shiba a 0.00001234
+ * conserva sus dígitos útiles (`0,00001234`) y no colapsa a `0`, y un BTC a
+ * 82977.7 se agrupa en `82.977,7`. Un `toFixed(2)` inventaría ceros o perdería
+ * precisión según la escala del activo.
+ */
 export function formatPrice(value: number): string {
-  const rounded = Math.round(value * 100) / 100;
-  const fixed = Math.abs(rounded).toFixed(2);
-  const parts = fixed.split('.');
-  const integer = parts[0] ?? '0';
-  const decimals = parts[1] ?? '00';
-  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  const tail = (decimals ?? '').replace(/0+$/, '');
-  const sign = rounded < 0 ? '-' : '';
-  return `${sign}${grouped}${tail ? `,${tail}` : ''}`;
+  if (!Number.isFinite(value)) return String(value);
+  return new Intl.NumberFormat('es', { maximumSignificantDigits: 6 }).format(value);
 }
 
 function shortText(text: string): string {
