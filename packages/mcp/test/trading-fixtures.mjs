@@ -160,19 +160,26 @@ export function makeExchange(options = {}) {
           }
         }
       }
+      // Binance defaults newOrderRespType to ACK: symbol, orderId and
+      // clientOrderId only, with no status, executedQty or avgPrice. A caller that
+      // forgets newOrderRespType=RESULT gets that thin answer, and the decisions
+      // made against it (is it filled? for how much?) silently become zero. That
+      // is the regression the ACK-shaped default guards against.
+      const ack = params.get("newOrderRespType") !== "RESULT";
       return json({
         symbol: params.get("symbol"),
         side: params.get("side"),
         type,
-        status: type === "MARKET" ? "FILLED" : orderStatus,
+        status: ack ? undefined : type === "MARKET" ? "FILLED" : orderStatus,
         // The exchange echoes back what it was given: a fill on a LIMIT that
         // expired in the same instant is visible here and nowhere else.
-        executedQty:
-          type === "MARKET"
+        executedQty: ack
+          ? undefined
+          : type === "MARKET"
             ? (marketFill?.executedQty ?? params.get("quantity"))
             : (params.get("executedQty") ?? orderExecutedQty),
         quantity: params.get("quantity"),
-        avgPrice: type === "MARKET" ? (marketFill?.avgPrice ?? markPrice) : (params.get("price") ?? markPrice),
+        avgPrice: ack ? undefined : type === "MARKET" ? (marketFill?.avgPrice ?? markPrice) : (params.get("price") ?? markPrice),
         price: params.get("price"),
         stopPrice: params.get("stopPrice") ?? params.get("price"),
         timeInForce: params.get("timeInForce"),

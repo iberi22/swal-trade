@@ -215,6 +215,32 @@ test("place_order with a take profit places the algo order too", async () => {
   assert.equal(algos[1].params.triggerPrice, "101000");
 });
 
+test("every order sends newOrderRespType=RESULT, so the answer carries status and executedQty", async () => {
+  // Binance defaults newOrderRespType to ACK: no status, no executedQty, no
+  // avgPrice. A fill then reads as executedQty 0 and a filled order looks empty.
+  // The fixture answers a RESULT-less POST with an ACK-shaped body, so a caller
+  // that forgets the param fails here instead of trading blind.
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.entry.status, "FILLED", "the RESULT answer carries a status");
+    assert.ok(body.filledQuantity > 0, "the RESULT answer carries executedQty");
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.ok(orders.length >= 1);
+  for (const order of orders) assert.equal(order.params.newOrderRespType, "RESULT");
+});
+
+test("a LIMIT GTX entry also sends newOrderRespType=RESULT", async () => {
+  const exchange = makeExchange({ orderStatus: "NEW" });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } });
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.ok(orders.length >= 1);
+  for (const order of orders) assert.equal(order.params.newOrderRespType, "RESULT");
+});
+
 test("place_order post_only rests a LIMIT GTX at the best bid and reprices on -5022", async () => {
   const exchange = makeExchange({ orderFailures: [{ code: -5022, msg: "Order would immediately match." }] });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {

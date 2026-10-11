@@ -151,7 +151,13 @@ export function createTradingClient(options: TradingClientOptions): TradingClien
     openOrders: (symbol) => reader.get("/fapi/v1/openOrders", { symbol }),
     setLeverage: (symbol, leverage) => post("/fapi/v1/leverage", { symbol, leverage }),
     setMarginType: (symbol, marginType) => post("/fapi/v1/marginType", { symbol, marginType }),
-    placeOrder: (params) => post("/fapi/v1/order", params),
+    placeOrder: (params) =>
+      // Binance defaults newOrderRespType to ACK, whose answer carries no status,
+      // no executedQty and no avgPrice: a fill then reads as zero and a filled
+      // order looks empty. RESULT returns the full confirmation every decision
+      // here is made against. Sent on every order, entries and reduceOnly closes
+      // alike; it is harmless on a LIMIT and required for a MARKET fill.
+      post("/fapi/v1/order", { newOrderRespType: "RESULT", ...params }),
     placeAlgoOrder: (params) => post("/fapi/v1/algoOrder", params),
     queryOrder: (symbol, origClientOrderId) => reader.get("/fapi/v1/order", { symbol, origClientOrderId }),
     cancelOrder: (symbol, origClientOrderId) => del("/fapi/v1/order", { symbol, origClientOrderId }),
