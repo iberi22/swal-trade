@@ -171,11 +171,17 @@
     }, 30_000);
     const tvClock = setInterval(refreshTv, 5_000);
     refreshTv();
+    const onPageHide = () => {
+      void sendPaintCommand(null);
+    };
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       browser.runtime.onMessage.removeListener(onMessage);
       unsubscribeTv();
       clearInterval(clock);
       clearInterval(tvClock);
+      void sendPaintCommand(null);
+      window.removeEventListener('pagehide', onPageHide);
     };
   });
 
