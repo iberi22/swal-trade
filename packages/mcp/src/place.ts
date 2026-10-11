@@ -29,7 +29,7 @@ import { normalizeSymbol } from "./symbol.js";
 import { parseCloseConfig, parseTradingConfig } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
-import { isAmbiguousError, isRepriceable, newClientOrderId } from "./trade-client.js";
+import { isAmbiguousError, isRepriceable, isRepriceableStatus, newClientOrderId } from "./trade-client.js";
 import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
 import {
   applyLeverageAndMargin,
@@ -141,6 +141,19 @@ async function postOnlyEntry(
       // EXPIRED, REJECTED or a status the exchange did not label: read the
       // executedQty before assuming nothing happened.
       if (filled > 0) return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled };
+      // A 200 answer is not permission to reprice: only an EXPIRED post-only
+      // (-5022, "would immediately match") says the order cannot rest and a tick
+      // away would fix it. A REJECTED or an unlabelled status is the exchange
+      // refusing THIS order for a reason a tick away does not fix.
+      if (!isRepriceableStatus(status)) {
+        return {
+          ok: false,
+          clientOrderId: lastSent,
+          error:
+            `the post-only ${input.side} at ${aligned} was answered ${status ?? "with an unlabelled status"} with no fill: ` +
+            `only an EXPIRED post-only answer (-5022, "would immediately match") is repriceable, so it was not retried.`,
+        };
+      }
     } catch (err) {
       const message = redactSecrets(errorMessage(err), []);
       logStep(journal, `entry_post_only_${attempt}`, { error: message });

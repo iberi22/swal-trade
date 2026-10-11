@@ -1071,3 +1071,21 @@ test("when neither the stop nor the emergency close works the tool says so expli
   const emergency = line.exchange.find((item) => item.step === "emergency_close");
   assert.match(emergency.error, /insufficient balance/);
 });
+
+test("place_order post_only reprices only a repriceable status and stops on any other", async () => {
+  // A REJECTED 200 answer is the exchange refusing THIS order (filters, balance,
+  // a symbol it will not take): repricing it one tick away sends two more orders
+  // that fail the same way. Only an EXPIRED post-only answer (-5022, "would
+  // immediately match") says the order cannot REST and a tick would fix it.
+  const rejected = makeExchange({ orderStatus: "REJECTED", orderExecutedQty: "0" });
+  await withClient({ env: tradeEnvFile(), fetchFn: rejected.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /the order was not sent/);
+    assert.match(text, /was answered REJECTED with no fill/);
+    assert.match(text, /only an EXPIRED post-only answer/);
+  });
+  assert.equal(rejected.post("/fapi/v1/order").length, 1, "a REJECTED post-only order is not repriced");
+  const cancels = rejected.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "the one order that was sent is cancelled by clientOrderId");
+  assert.equal(rejected.post("/fapi/v1/algoOrder").length, 0);
+});

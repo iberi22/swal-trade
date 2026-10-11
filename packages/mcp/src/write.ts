@@ -597,7 +597,9 @@ export function averagePriceOf(order: unknown): number | null {
 
 export function orderStatusOf(order: unknown): string | null {
   if (!isRecord(order) || typeof order.status !== "string") return null;
-  return order.status;
+  // An empty or blank status is the exchange not labelling the order: reading it
+  // as a status would let an unlabelled answer pass as a real one.
+  return order.status.trim().length > 0 ? order.status : null;
 }
 
 /** Final statuses: after one of these nothing else will happen to the order. */

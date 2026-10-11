@@ -33,7 +33,7 @@ import { parseTradingConfig, readGridLimits, TESTNET_BASE, MAINNET_BASE } from "
 import type { GridLimits } from "./trading-config.js";
 import { createTradingClient } from "./trade-client.js";
 import type { TradingClient } from "./trade-client.js";
-import { isAmbiguousError, isRepriceable, newClientOrderId } from "./trade-client.js";
+import { isAmbiguousError, isRepriceable, isRepriceableStatus, newClientOrderId } from "./trade-client.js";
 import { fetchLiquidationInputs, readLiquidationEstimate, stopInsideLiquidation } from "./liquidation.js";
 import { loadAccountRiskView, readExposure } from "./account.js";
 import { parseAccountRiskConfig } from "./config.js";
@@ -791,8 +791,20 @@ interface LevelOutcome {
       const filled = filledQuantityOf(order);
       if (filled > 0) return { ok: true, order, filled: true, filledQty: filled };
       if (orderStatusOf(order) === "NEW") return { ok: true, order, filled: false };
-      // EXPIRED, REJECTED or an unlabelled status with no fill: reprice only if
-      // the exchange actually said so.
+      // A 200 answer is not permission to reprice. Only an EXPIRED post-only
+      // (the exchange's "would immediately match", -5022) says the ORDER CANNOT
+      // REST and a tick away would fix it; a REJECTED, a CANCELED or an
+      // unlabelled status is the exchange refusing this order for a reason a tick
+      // away does not fix, and repricing it would send two more orders that fail
+      // the same way.
+      if (!isRepriceableStatus(orderStatusOf(order))) {
+        return {
+          ok: false,
+          error:
+            `level ${level.index} at ${price} was answered ${orderStatusOf(order) ?? "with an unlabelled status"} with no fill: ` +
+            `only an EXPIRED post-only answer (-5022, "would immediately match") is repriceable, so the level was not retried.`,
+        };
+      }
     } catch (err) {
       const message = redactSecrets(errorMessage(err), []);
       input.record.exchange.push({ step: `level_${level.index}_${attempt}`, error: message });

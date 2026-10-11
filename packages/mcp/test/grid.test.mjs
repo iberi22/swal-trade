@@ -711,3 +711,47 @@ test("grid_place refuses a grid that sits on top of a resting entry order", asyn
   assert.equal(line.guard.allow, false);
   assert.ok(line.guard.reasons.some((reason) => /already has 200 USD committed/.test(reason)), JSON.stringify(line.guard));
 });
+
+// ---------------------------------------------------------------------------
+// Item 6: a 200 answer is not permission to reprice.
+//
+// The grid used to reprice on ANY status that was not NEW and carried no fill: a
+// REJECTED level sent two more orders, each rejected the same way, before the
+// ladder failed. Only an EXPIRED post-only answer (the exchange's "would
+// immediately match", -5022) means the order cannot rest and a tick away would
+// fix it.
+// ---------------------------------------------------------------------------
+
+test("grid_place reprices only a repriceable status and stops on any other", async () => {
+  // REJECTED with no fill: one attempt, then the ladder fails closed.
+  fs.rmSync(JOURNAL, { force: true });
+  const rejected = makeExchange({ symbols: GRID_SYMBOLS, orderStatus: "REJECTED", orderExecutedQty: "0" });
+  await withClient({ env: gridPlaceEnv(), fetchFn: rejected.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /could not be rested as a post-only order/);
+    assert.match(text, /was answered REJECTED with no fill/);
+    assert.match(text, /only an EXPIRED post-only answer/);
+  });
+  assert.equal(rejected.post("/fapi/v1/order").length, 1, "a REJECTED level is never repriced");
+  assert.equal(rejected.post("/fapi/v1/algoOrder").length, 0);
+
+  // An unlabelled status (no status field at all) is the same refusal.
+  fs.rmSync(JOURNAL, { force: true });
+  const unlabelled = makeExchange({ symbols: GRID_SYMBOLS, orderStatus: "", orderExecutedQty: "0" });
+  await withClient({ env: gridPlaceEnv(), fetchFn: unlabelled.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /with an unlabelled status/);
+  });
+  assert.equal(unlabelled.post("/fapi/v1/order").length, 1);
+
+  // EXPIRED with no fill is the repriceable one: three attempts, one tick apart.
+  fs.rmSync(JOURNAL, { force: true });
+  const expired = makeExchange({ symbols: { BTCUSDT: { stepSize: "0.01", minQty: "0.01", tickSize: "1", minNotional: "5" } }, orderStatus: "EXPIRED", orderExecutedQty: "0" });
+  await withClient({ env: gridPlaceEnv(), fetchFn: expired.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /could not be rested after 3 attempts/);
+  });
+  const orders = expired.post("/fapi/v1/order");
+  assert.equal(orders.length, 3, "an EXPIRED post-only level is repriced");
+  assert.deepEqual(orders.map((order) => order.params.price), ["97000", "96999", "96998"]);
+});

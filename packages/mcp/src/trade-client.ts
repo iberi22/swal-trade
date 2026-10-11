@@ -23,6 +23,20 @@ export const MARGIN_TYPE_ALREADY_SET = -4048;
 const REPRICE_CODES = new Set([-5022]);
 const REPRICE_MSG = /post only|would immediately match|would match|expired/i;
 
+/**
+ * Statuses the exchange answers a post-only order that cannot rest with.
+ *
+ * An HTTP 200 is not permission to retry: a REJECTED, a CANCELED or a status the
+ * exchange did not label is the exchange refusing THIS order for a reason a tick
+ * away does not fix (filters, balance, a cancelled symbol), and repricing it
+ * sends two more orders that will fail the same way.
+ */
+const REPRICEABLE_STATUSES = new Set(["EXPIRED"]);
+
+export function isRepriceableStatus(status: string | null): boolean {
+  return status != null && REPRICEABLE_STATUSES.has(status);
+}
+
 export function isRepriceable(err: unknown): boolean {
   if (!(err instanceof BinanceError)) return false;
   if (err.code != null && REPRICE_CODES.has(err.code)) return true;
