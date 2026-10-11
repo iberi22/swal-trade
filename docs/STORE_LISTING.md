@@ -41,6 +41,8 @@ No es un servicio de señales. No abre ni cierra operaciones, no lee tu cuenta, 
 
 Lo medimos. En BTC y ETH, de 1 minuto a 4 horas, con regla de cierre, comisiones y corrección por multiplicidad (2026-10), ningún patrón superó al azar. Sirve para entender el gráfico, no para predecirlo.
 
+Con el interruptor del panel encendido, la extensión puede pintar los niveles del análisis sobre el propio gráfico de futuros de Binance; pide permiso para acceder a ese lienzo, pero no lee tu cuenta.
+
 Qué sale del navegador:
 - Velas públicas: GET https://fapi.binance.com/fapi/v1/klines (símbolo, temporalidad y límite).
 - La vela en curso: websocket público wss://fstream.binance.com (símbolo y temporalidad).
@@ -206,7 +208,7 @@ Firefox AMO (cuenta gratis):
 2. Envía un complemento nuevo. Sube el zip de Firefox. Cuando pida las fuentes porque el código va empaquetado, sube `swal-trade-extension-0.1.0-sources.zip`.
 3. Categoría Other. Mismos textos, mismas capturas, mismo icono de 128 y la misma URL de privacidad.
 4. En la recogida de datos, deja solo el contenido del sitio (`websiteContent`), que ya declara el manifest: el símbolo y la temporalidad que salen hacia el mercado público.
-5. Notas para el revisor: el panel explica patrones; no es un servicio de señales; la medición (BTC/ETH, 1m–4h, regla de cierre, comisiones, corrección por multiplicidad, 2026-10) no encontró un patrón que superara al azar. Para reconstruir: `npm install && npm run build` dentro del zip de fuentes.
+5. Notas para el revisor: el panel explica patrones; no es un servicio de señales; la medición (BTC/ETH, 1m–4h, regla de cierre, comisiones, corrección por multiplicidad, 2026-10) no encontró un patrón que superara al azar. Firefox 128 soporta content scripts en el mundo `MAIN` de acuerdo a MDN Web Docs. Para reconstruir: `npm install && npm run build` dentro del zip de fuentes.
 
 ## Qué no decir en la ficha
 

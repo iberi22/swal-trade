@@ -154,6 +154,55 @@ function newsItemsFixture() {
   };
 }
 
+test('side panel clears paint on unmount and pagehide', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+
+    // Mock the browser tabs query and sendMessage locally
+    await page.evaluate(() => {
+      const w = window as any;
+      w._paintCommands = [];
+      w.chrome.tabs = w.chrome.tabs || {};
+      w.chrome.tabs.query = async () => [{ id: 1, url: 'https://www.binance.com/en/futures/BTCUSDT' }];
+      const origSendMessage = w.chrome.tabs.sendMessage;
+      w.chrome.tabs.sendMessage = async (tabId: number, msg: any) => {
+        if (msg && msg.type === 'tv-paint') {
+          w._paintCommands.push(msg);
+        }
+        if (origSendMessage) return origSendMessage(tabId, msg);
+      };
+    });
+
+    // We toggle paint on first to register any setting
+    const settings = page.locator('details.settings');
+    await settings.locator('summary').click();
+    const paintToggle = page.getByRole('checkbox', { name: 'Pintar en el gráfico de Binance (pestaña Trading View)' });
+    await paintToggle.check();
+    // Await for some rendering
+    await page.waitForTimeout(500);
+
+    // Despachar el evento pagehide en la ventana del panel.
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    // Comprobar que se ha capturado el comando.
+    const commands = await page.evaluate(() => {
+      return (window as any)._paintCommands;
+    });
+
+    expect(commands).toBeDefined();
+    const lastCommand = commands[commands.length - 1];
+    expect(lastCommand).toBeDefined();
+    expect(lastCommand.enabled).toBe(false);
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 test('side panel renders the chart and findings from mocked klines', async () => {
   const panel = await openSidePanel();
   try {

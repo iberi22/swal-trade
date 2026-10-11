@@ -68,7 +68,7 @@
 
     <h2>Qué no sale</h2>
     <ul>
-      <li>No pedimos ni enviamos claves de API, balances, órdenes, posiciones ni datos de cuenta.</li>
+      <li>No pedimos ni enviamos claves de API, balances, órdenes, posiciones ni datos de cuenta. Con el interruptor encendido, la extensión crea dibujos bloqueados sobre el propio gráfico de Binance; nunca lee la cuenta. El comando de pintado se envía a las pestañas abiertas de futuros de Binance.</li>
       <li>No leemos cookies, formularios ni el historial del navegador.</li>
       <li>El content script, en <code>binance.com/*/futures/*</code> y <code>tradingview.com/chart/*</code>, lee la URL, el control de temporalidad visible y, solo si la página no lo pinta, el valor de unas claves concretas de intervalo en <code>localStorage</code>. No enumera el almacenamiento. Ese valor se queda en el navegador, salvo el símbolo y la temporalidad que ya viajan en las peticiones de arriba.</li>
       <li>Los ajustes (temporalidad por defecto, lista de símbolos y si el panel sigue a la página) se guardan en <code>storage.local</code> de la extensión. El último símbolo de la sesión, en <code>storage.session</code>. No se envían a SWAL.</li>
@@ -90,7 +90,7 @@
       <li>The live candle: a public websocket at <code>wss://fstream.binance.com/market/ws/</code>, falling back to <code>wss://fstream.binance.com/ws/</code>, with the symbol and the timeframe in the path.</li>
       <li>Headlines, and only for BTC or ETH: <code>GET https://trade.swal.network/api/news?symbol=BTC|ETH&amp;limit=5</code>.</li>
     </ul>
-    <p>The extension adds no API key, no auth header, and no cookie of its own. It does not read account data, balances, orders, forms, cookies, or browsing history. The content script reads the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
+    <p>The extension adds no API key, no auth header, and no cookie of its own. It does not read account data, balances, orders, forms, cookies, or browsing history. With the toggle on, the extension creates locked drawings directly on the page's chart, but it never reads the account; the paint command is delivered to open Binance futures tabs. The content script reads the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
     <p>As with any HTTPS or websocket connection, Binance and trade.swal.network see the connection's IP address. The extension does not attach a user id, store that address on an account, or link it to an identity. Questions: <a href="/contact/">soporte@swal.network</a>. The site policy is at <a href="/privacy/">/privacy/</a>.</p>
   </main>
   <footer class="site-footer">
