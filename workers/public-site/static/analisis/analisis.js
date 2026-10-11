@@ -281,6 +281,9 @@ function renderFindings(res) {
   for (const f of list) {
     const li = document.createElement('li');
     if (f.id === state.selected) li.className = 'active';
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    li.setAttribute('aria-pressed', f.id === state.selected ? 'true' : 'false');
     const row = document.createElement('div'); row.className = 'row';
     const a = document.createElement('span'); a.textContent = f.label;
     const b = document.createElement('span'); b.textContent = `fuerza del patrón ${PCT(f.strength)}`;
@@ -291,6 +294,12 @@ function renderFindings(res) {
     meta.textContent = `${DIR[f.direction]} · ${f.status === 'confirmed' ? 'confirmado' : 'en formación'} · acierto histórico: ${NO_HISTORY_TEXT}`;
     li.append(row, p, m, meta);
     li.addEventListener('click', () => focusFinding(f));
+    li.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === ' ') e.preventDefault();
+        focusFinding(f);
+      }
+    });
     ol.append(li);
   }
 }
