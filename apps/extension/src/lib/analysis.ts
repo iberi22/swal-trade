@@ -1,5 +1,5 @@
 import * as coreModule from '@swal/analysis-core';
-import type { AnalysisInput, AnalysisResult, Finding } from './types';
+import type { AnalysisInput, AnalysisResult, Candle, Finding, VolumeFlow } from './types';
 
 /**
  * Punto de integración con el núcleo determinista compartido.
@@ -14,6 +14,8 @@ interface AnalysisCoreModule {
   /** Sync entry of the shared core. The panel cannot await. */
   analyzeSync?: (input: AnalysisInput) => unknown;
   analyze?: (input: AnalysisInput) => unknown;
+  /** Flujo de volumen (delta/CVD). El núcleo sin datos taker no lo expone. */
+  volumeFlow?: (candles: readonly Candle[]) => VolumeFlow | null;
   default?:
     | ((input: AnalysisInput) => unknown)
     | { analyze?: (input: AnalysisInput) => unknown; analyzeSync?: (input: AnalysisInput) => unknown };
@@ -70,7 +72,7 @@ function trendText(trend: unknown): string | null {
 function toResult(raw: unknown): AnalysisResult | null {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof (raw as { then?: unknown }).then === 'function') return null;
-  const rec = raw as { findings?: unknown; top?: unknown; trend?: unknown; levels?: unknown; generatedAt?: unknown };
+  const rec = raw as { findings?: unknown; top?: unknown; trend?: unknown; levels?: unknown; generatedAt?: unknown; volumeFlow?: unknown };
   if (!Array.isArray(rec.findings)) return null;
   const levels = Array.isArray(rec.levels)
     ? rec.levels.filter((level): level is number => typeof level === 'number' && Number.isFinite(level))
@@ -80,8 +82,36 @@ function toResult(raw: unknown): AnalysisResult | null {
     top: asFindings(rec.top),
     trend: trendText(rec.trend),
     levels,
+    volumeFlow: volumeFlow(rec.volumeFlow),
     generatedAt: typeof rec.generatedAt === 'string' ? rec.generatedAt : new Date().toISOString(),
   };
+}
+
+/** Acepta el flujo del núcleo o `null`; cualquier otra forma se descarta. */
+function volumeFlow(value: unknown): VolumeFlow | null {
+  if (!value || typeof value !== 'object') return null;
+  const flow = value as Partial<VolumeFlow>;
+  if (!Array.isArray(flow.delta) || !Array.isArray(flow.cvd)) return null;
+  return {
+    delta: flow.delta,
+    cvd: flow.cvd,
+    buyShare: Array.isArray(flow.buyShare) ? flow.buyShare : [],
+  };
+}
+
+/**
+ * Flujo de volumen calculado por el núcleo sobre `candles`. Es la única fuente
+ * del panel de CVD: si el núcleo no expone `volumeFlow` (stub, velas sin dato
+ * taker) devuelve `null` y el panel no pinta nada en lugar de inventar.
+ */
+export function volumeFlowOf(candles: readonly Candle[]): VolumeFlow | null {
+  const fn = core.volumeFlow;
+  if (typeof fn !== 'function') return null;
+  try {
+    return volumeFlow(fn(candles));
+  } catch {
+    return null;
+  }
 }
 
 /**

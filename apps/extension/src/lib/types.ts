@@ -66,6 +66,20 @@ export interface AnalysisInput {
   candles: Candle[];
 }
 
+/**
+ * Flujo de volumen por vela que expone el núcleo cuando las velas traen
+ * `takerBuyVolume`. Sin ese campo el núcleo devuelve `null`: no se inventa
+ * flujo y el panel de CVD no se pinta.
+ */
+export interface VolumeFlow {
+  /** comprador agresivo − vendedor agresivo de la vela (2·takerBuy − volume). */
+  delta: number[];
+  /** suma acumulada de `delta`: presión compradora neta. */
+  cvd: number[];
+  /** fracción del volumen del lado comprador agresivo; null si la vela no trae dato. */
+  buyShare: Array<number | null>;
+}
+
 export interface AnalysisResult {
   findings: Finding[];
   /** Subconjunto diverso de `findings`: lo que se dibuja en el gráfico. */
@@ -73,4 +87,6 @@ export interface AnalysisResult {
   trend: string | null;
   levels: number[];
   generatedAt: string;
+  /** Flujo de volumen (delta/CVD) si el núcleo lo pudo calcular. */
+  volumeFlow?: VolumeFlow | null;
 }

@@ -113,6 +113,30 @@ select {
   background: hsl(var(--background));
 }
 
+/* Panel de flujo de volumen (CVD): línea + histograma del delta, escala de
+   tiempo sincronizada con el gráfico de precio. Un solo tono. */
+.flow {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.flow-chart {
+  position: relative;
+  height: 5.5rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.flow-legend {
+  margin: 0;
+  font-size: 0.66rem;
+  line-height: 1.3;
+  color: hsl(var(--muted-foreground));
+}
+
 /* Leyenda del gráfico: qué pinta cada hallazgo del top y con qué precios
    decide. Vive fuera del canvas: dentro, el lienzo se come los clics. */
 .legend {
