@@ -51,6 +51,7 @@ export interface TvChartLike {
   getAllShapes?(): TvShapeHandle[];
   onSymbolChanged?(callback: () => void): void;
   onIntervalChanged?(callback: () => void): void;
+  onVisibleRangeChanged?(callback: () => void): void;
 }
 
 export interface TvApiWindow {
