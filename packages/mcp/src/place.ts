@@ -468,8 +468,9 @@ async function resolveEntry(
     const found = await client.queryOrder(input.symbol, input.clientOrderId);
     logStep(journal, "query_by_client_order_id", found);
     order = found;
-    // The lookup answered: that is a definitive read, whatever it said.
-    resolved = true;
+    // A lookup settles the entry only when it reports a fill or a final status
+    // (both return below). A resting or unlabelled answer does not: only a
+    // definitive position read can say that nothing filled.
     const status = orderStatusOf(found);
     const filled = filledQuantityOf(found);
     if (filled > 0 || status === "FILLED") return { filledQty: filled > 0 ? filled : Number(input.quantity), order: found, resolved: true, resting: false };
@@ -477,10 +478,11 @@ async function resolveEntry(
     if (isFinalStatus(status)) return { filledQty: filled, order: found, resolved: true, resting: false };
   } catch (err) {
     logStep(journal, "query_by_client_order_id", { error: redactSecrets(errorMessage(err), []) });
-    // A definitive "order does not exist" (-2013) IS a resolved read: the order
-    // is gone, so there is nothing to protect or cancel. Any other lookup failure
-    // (a 5xx, a timeout) is not a read that succeeded.
-    if (isLookupNotFound(err)) resolved = true;
+    // Even a definitive "order does not exist" (-2013) is not proof that nothing
+    // filled: a MARKET order that filled and left the book can answer it. The
+    // position read below decides; if it fails the entry stays unresolved and
+    // the intent pending for the startup sweep.
+    if (isLookupNotFound(err)) logStep(journal, "query_by_client_order_id_not_found", { clientOrderId: input.clientOrderId });
   }
   // Not settled by the lookup: read the position, which is the ground truth.
   try {

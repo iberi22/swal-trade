@@ -1190,6 +1190,26 @@ test("a lookup answering -2011 does not resolve as not-found", async () => {
   assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
 });
 
+for (const [label, queryOrder] of [
+  ["a definitive -2013", { code: -2013, msg: "Order does not exist." }],
+  ["a resting NEW order with no fill", { clientOrderId: "x", status: "NEW", executedQty: "0", side: "BUY", type: "MARKET" }],
+]) {
+  test(`a timed-out MARKET entry whose lookup answers ${label} but whose position read fails stays pending (F2)`, async () => {
+    // The lookup alone is not the ground truth for a MARKET order: only a
+    // definitive position read can say nothing filled. With positionRisk
+    // failing, the result is unknown and the intent must stay pending.
+    const exchange = makeExchange({ networkErrorOnOrder: [1], queryOrder, positionRiskHttpError: 500 });
+    await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+      const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+      assert.match(text, /the result is unknown/);
+      assert.match(text, /startup sweep will report it/);
+    });
+    assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed on an unknown result");
+    assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+    assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
+  });
+}
+
 test("a timed-out entry with no fill anywhere sends no stop and says so", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
@@ -1519,12 +1539,26 @@ test("close_position works with the daily loss lock tripped: closing is protecti
 });
 
 test("close_position with no position only cancels the symbol's orders", async () => {
-  const exchange = makeExchange();
+  // A positionRisk answer with no row at all for the symbol.
+  const exchange = makeExchange({ positionRiskOmitsFlat: true });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
     assert.equal(body.positionQuantity, null);
     assert.equal(body.closeOrder, null);
     assert.match(body.notes.join(" "), /no row for BTCUSDT: treated as no open position/);
+    assert.equal(body.sent, false);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 2);
+});
+
+test("close_position with a zero row only cancels the symbol's orders", async () => {
+  // The realistic /fapi/v2/positionRisk answer: the symbol's row with positionAmt "0".
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.positionQuantity, 0);
+    assert.equal(body.closeOrder, null);
     assert.equal(body.sent, false);
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
