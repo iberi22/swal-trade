@@ -13,7 +13,7 @@ import { appendJournal, assertJournalWritable } from "./journal.js";
 import type { SymbolFilters } from "./exchange.js";
 import type { TradingClient } from "./trade-client.js";
 import { BinanceError, MARGIN_TYPE_ALREADY_SET } from "./trade-client.js";
-import { ORDER_NOT_FOUND_CODE } from "./errors.js";
+import { ORDER_NOT_FOUND_CODE, CANCEL_UNKNOWN_ORDER_CODE } from "./errors.js";
 import type { GridPlanStore } from "./grid.js";
 import { ceilToStep, floorToStep, decimalNumber } from "./decimal.js";
 import { isRecord } from "./types.js";
@@ -711,58 +711,29 @@ export function guardLimitsFrom(cfg: TradingConfig) {
   };
 }
 
-/** True when a lookup by clientOrderId answered "no such order". */
-export function isOrderNotFound(err: unknown): boolean {
-  return err instanceof BinanceError && (err.code === ORDER_NOT_FOUND_CODE || err.code === -2011);
+/**
+ * What a lookup and what a cancel are allowed to read as "there is no such
+ * order". The two codes are not interchangeable, and treating them as one is
+ * how an ambiguous resolution gets decided by a 400 that answered something
+ * else:
+ *
+ *   -2013 "Order does not exist." is what a LOOKUP answers for an order the
+ *      exchange has no record of, and what a CANCEL answers for an order that
+ *      is already gone. It is definitive in both places.
+ *   -2011 "Unknown order sent." is a CANCEL-only answer: the order is not on
+ *      the book. It says nothing decisive about a LOOKUP, which can answer it
+ *      for a reason that has nothing to do with the order existing (a malformed
+ *      origClientOrderId, an unsupported combination of parameters), and reading
+ *      it as "the order is gone, so there is no fill" resolves an intent the
+ *      exchange never actually ruled on.
+ */
+export function isLookupNotFound(err: unknown): boolean {
+  return err instanceof BinanceError && err.code === ORDER_NOT_FOUND_CODE;
 }
 
-/**
- * What a cancel proved, out of the answer the exchange gave.
- *
- * `filledQty` matters because a cancel on USDⓈ-M futures is NOT only a cancel:
- * DELETE /fapi/v1/order answers 200 with the executedQty and avgPrice of what was
- * cancelled, so an order that filled before the cancel is visible in the cancel
- * answer and nowhere else. Discarding that body ("200, so it is gone") is how a
- * live position gets reported as unfilled.
- */
-export interface CancelOutcome {
-  /** True only when the exchange proved the order is gone. */
-  confirmed: boolean;
-  /** Quantity the cancel answer reported as already filled. */
-  filledQty: number;
-  /** Average price the cancel answer reported, when it did. */
-  avgPrice: number | null;
-  /** The cancel answer itself, or null when there was none. */
-  order: unknown;
-  error: string | null;
-}
-
-/**
- * Cancels one order by clientOrderId and keeps what the answer says.
- *
- * `confirmed` is true only when the exchange proved the order is gone: a 200
- * cancel, or a definitive not-found (-2013, -2011), which is a real answer and
- * not a confirmation that nothing filled. Any other failure, or a cancel that
- * itself times out, is NOT a confirmation: the caller must treat the order as
- * perhaps still resting and refuse WITHOUT resolving the intent.
- */
-export async function cancelOrderByClientId(
-  client: TradingClient,
-  symbol: string,
-  clientOrderId: string,
-  journal: JournalRecord,
-  label = "cancel_by_client_order_id",
-): Promise<CancelOutcome> {
-  try {
-    const result = await client.cancelOrder(symbol, clientOrderId);
-    logStep(journal, label, { clientOrderId, canceled: true, result });
-    return { confirmed: true, filledQty: filledQuantityOf(result), avgPrice: averagePriceOf(result), order: result, error: null };
-  } catch (err) {
-    const message = redactSecrets(errorMessage(err), []);
-    logStep(journal, label, { clientOrderId, canceled: false, error: message });
-    if (isOrderNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null, error: null };
-    return { confirmed: false, filledQty: 0, avgPrice: null, order: null, error: message };
-  }
+/** True when a CANCEL answered "the order is gone" (-2013, and -2011). */
+export function isCancelNotFound(err: unknown): boolean {
+  return err instanceof BinanceError && (err.code === ORDER_NOT_FOUND_CODE || err.code === CANCEL_UNKNOWN_ORDER_CODE);
 }
 
 /** Reads the quantity actually filled out of any order response. */

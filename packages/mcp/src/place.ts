@@ -21,7 +21,7 @@ import { ceilToStep, decimalNumber, floorToStep, shiftStep, toDecimalText } from
 import { parseAccountRiskConfig, readCredentials } from "./config.js";
 import { fetchBookTicker, fetchSymbolFilters } from "./exchange.js";
 import { fetchMarkPrice } from "./market-data.js";
-import { loadAccountRiskView, netPosition, readExposure } from "./account.js";
+import { loadAccountRiskView, netPosition, flatSymbolRefusal, readExposure } from "./account.js";
 import { checkOrder } from "./order-guard.js";
 import type { GuardDecision } from "./order-guard.js";
 import { normalizeSide } from "./propose.js";
@@ -39,8 +39,9 @@ import {
   filledQuantityOf,
   flattenPosition,
   guardLimitsFrom,
+  isCancelNotFound,
   isFinalStatus,
-  isOrderNotFound,
+  isLookupNotFound,
   logStep,
   ok,
   orderStatusOf,
@@ -117,7 +118,7 @@ async function cancelRestingEntry(
   } catch (err) {
     const message = redactSecrets(errorMessage(err), []);
     logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: false, error: message });
-    if (isOrderNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null };
+    if (isCancelNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null };
     return { confirmed: false, filledQty: 0, avgPrice: null, order: null, error: message };
   }
 }
@@ -467,8 +468,9 @@ async function resolveEntry(
     const found = await client.queryOrder(input.symbol, input.clientOrderId);
     logStep(journal, "query_by_client_order_id", found);
     order = found;
-    // The lookup answered: that is a definitive read, whatever it said.
-    resolved = true;
+    // A lookup settles the entry only when it reports a fill or a final status
+    // (both return below). A resting or unlabelled answer does not: only a
+    // definitive position read can say that nothing filled.
     const status = orderStatusOf(found);
     const filled = filledQuantityOf(found);
     if (filled > 0 || status === "FILLED") return { filledQty: filled > 0 ? filled : Number(input.quantity), order: found, resolved: true, resting: false };
@@ -476,10 +478,11 @@ async function resolveEntry(
     if (isFinalStatus(status)) return { filledQty: filled, order: found, resolved: true, resting: false };
   } catch (err) {
     logStep(journal, "query_by_client_order_id", { error: redactSecrets(errorMessage(err), []) });
-    // A definitive "order does not exist" (-2013) IS a resolved read: the order
-    // is gone, so there is nothing to protect or cancel. Any other lookup failure
-    // (a 5xx, a timeout) is not a read that succeeded.
-    if (isOrderNotFound(err)) resolved = true;
+    // Even a definitive "order does not exist" (-2013) is not proof that nothing
+    // filled: a MARKET order that filled and left the book can answer it. The
+    // position read below decides; if it fails the entry stays unresolved and
+    // the intent pending for the startup sweep.
+    if (isLookupNotFound(err)) logStep(journal, "query_by_client_order_id_not_found", { clientOrderId: input.clientOrderId });
   }
   // Not settled by the lookup: read the position, which is the ground truth.
   try {
@@ -644,6 +647,21 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       return refused(
         `the exposure could not be read (${exposure.errors.join(" ")}): refusing the order instead of trading against an unknown exposure.`,
       );
+    }
+    // The flat-symbol invariant, checked with the exposure that was just read:
+    // this tool OPENS a position, so it refuses on a symbol that already has one,
+    // or a resting order that would create one. Everything after this point
+    // assumes the position it is looking at is its own.
+    const flatRefusal = flatSymbolRefusal(exposure, symbol);
+    if (flatRefusal) {
+      journal.guard = { allow: false, reasons: [flatRefusal] };
+      logStep(journal, "flat_symbol_refused", {
+        openPosition: exposure.positionSymbols.includes(symbol),
+        restingOrders: exposure.restingOrders
+          .filter((order) => order.symbol === symbol)
+          .map((order) => ({ source: order.source, id: order.id, side: order.side, type: order.type, reduces: order.reduces })),
+      });
+      return refused(flatRefusal);
     }
     const guard: GuardDecision = checkOrder(
       { symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType },

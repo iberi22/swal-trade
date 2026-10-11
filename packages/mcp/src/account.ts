@@ -135,6 +135,34 @@ export function netPosition(risk: unknown, symbol: string): NetPosition {
   return { amount: amount === 0 ? 0 : Number(amount.toFixed(12)), rows, error };
 }
 
+/**
+ * The flat-symbol invariant, as a refusal sentence.
+ *
+ * `place_order` and `grid_place` OPEN a position, so they may only run on a
+ * symbol that is flat: no net position, and no resting order that would create
+ * one (a limit that has not filled, a pending stop-entry, a non-reduce algo
+ * order). Protective orders (reduceOnly, closePosition) are exempt: they close
+ * exposure, they do not open it.
+ *
+ * The alternative was to keep going and reconcile afterwards, and reconciliation
+ * is exactly what used to go wrong: an ambiguous entry answered with a confirmed
+ * cancel of zero executed was read as "this order's fill", so a pre-existing
+ * position became this order's fill; the protective stop was then armed with
+ * `closePosition` over the USER's whole position, and when that stop failed the
+ * emergency close MARKET-closed the user's position and cancelled the user's
+ * orders. Refusing up front needs no reconciliation at all.
+ *
+ * The check is made against the exposure the guard already read (the same
+ * account/positionRisk/openOrders/openAlgoOrders answers), so it costs no extra
+ * call and cannot disagree with the numbers the order was explained with.
+ */
+export function flatSymbolRefusal(exposure: Exposure, symbol: string): string | null {
+  const openPosition = exposure.positionSymbols.includes(symbol);
+  const resting = exposure.restingOrders.filter((order) => order.symbol === symbol && !order.reduces);
+  if (!openPosition && resting.length === 0) return null;
+  return `${symbol} already has an open position or orders; this tool only opens a position on a flat symbol. Use close_position or manage it manually.`;
+}
+
 /** Symbols with a non-zero net position, in first-seen order. */
 export function openPositionSymbols(positions: readonly Position[]): string[] {
   const out: string[] = [];

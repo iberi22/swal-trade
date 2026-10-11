@@ -72,6 +72,8 @@ export function makeExchange(options = {}) {
     reduceFailures = [],
     /** HTTP status positionRisk answers once a DELETE /fapi/v1/order has been sent (for example 500): an unreadable post-cancel position. */
     positionRiskHttpErrorAfterCancel = null,
+    // Answer positionRisk WITHOUT the zero rows of flat symbols (models a partial list).
+    positionRiskOmitsFlat = false,
     /** HTTP status GET /fapi/v1/openAlgoOrders answers once an algo order has been POSTed (for example 500): the confirmation read fails. */
     openAlgoOrdersHttpError = null,
   } = options;
@@ -133,6 +135,13 @@ export function makeExchange(options = {}) {
       const rows = [...positions, ...after, ...afterCancel]
         .filter((row) => !reducedSymbols.has(row.symbol))
         .map((row) => (closeRemainder.has(row.symbol) ? { ...row, positionAmt: closeRemainder.get(row.symbol) } : row));
+      // GET /fapi/v2/positionRisk without a symbol answers one row per listed
+      // symbol, with positionAmt "0" where there is no position. Model that: a
+      // symbol with no row of its own gets its zero row, so "no position" is a
+      // definitive read and not a missing one.
+      for (const symbol of positionRiskOmitsFlat ? [] : Object.keys(symbols)) {
+        if (!rows.some((row) => row.symbol === symbol)) rows.push({ symbol, positionAmt: "0", positionSide: "BOTH", entryPrice: "0", markPrice, unRealizedProfit: "0", liquidationPrice: "0", leverage: "1", notional: "0" });
+      }
       return json(rows);
     }
     if (path === "/fapi/v1/openAlgoOrders") {

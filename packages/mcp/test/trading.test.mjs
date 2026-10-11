@@ -13,6 +13,9 @@ const NOW = Date.UTC(2026, 9, 9, 3, 0);
 const tradeEnvFile = (extra = {}) => tradeEnv({ SWAL_MCP_JOURNAL: JOURNAL, ...extra });
 
 const JOURNAL = "/tmp/swal-trade-test-journal-trading.jsonl";
+/** Coarse filters and a journal of its own, for the grid_place tests in this file. */
+const GRID_SYMBOLS = { BTCUSDT: { stepSize: "0.01", minQty: "0.01", tickSize: "1", minNotional: "5" } };
+const GRID_JOURNAL = "/tmp/swal-trade-test-journal-trading-grid.jsonl";
 
 function journalLines(file = JOURNAL, event = null) {
   if (!fs.existsSync(file)) return [];
@@ -408,21 +411,22 @@ for (const testCase of guardCases) {
 }
 
 test("the notional cap counts resting open orders of the symbol, not only this order", async () => {
-  // A resting BUY for 900 USD plus a new 200 USD order is 1100 USD of exposure.
-  // Checking only the new order's notional passes both and doubles the cap.
+  // A resting BUY for 900 USD on ETHUSDT is exposure of ETHUSDT, not of BTCUSDT:
+  // the cap is per position, so it must not refuse a legitimate BTCUSDT order.
+  // A resting ENTRY on the symbol being traded is refused one step earlier, by
+  // the flat-symbol rule (see the flat-symbol tests below): it is not a cap
+  // problem, it is a symbol this tool must not open on.
   const exchange = makeExchange({
     openOrders: [
-      { symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.01", clientOrderId: "resting-1" },
-      { symbol: "ETHUSDT", side: "BUY", type: "LIMIT", price: "2000", quantity: "0.5", clientOrderId: "other-symbol" },
+      { symbol: "ETHUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.01", clientOrderId: "resting-1" },
       { symbol: "BTCUSDT", side: "SELL", type: "STOP_MARKET", stopPrice: "90000", quantity: "0.01", reduceOnly: true },
     ],
   });
-  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
-    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
-    assert.match(text, /already has 900 USD committed/);
-    assert.match(text, /order guard rejected/);
+  await withClient({ env: tradeEnvFile({ SWAL_MCP_MAX_POSITIONS: "2" }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true, "another symbol's resting order is not exposure of this one");
   });
-  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
   assert.equal(exchange.calls.some((call) => call.path === "/fapi/v1/openOrders"), true);
 });
 
@@ -440,15 +444,119 @@ test("resting protective algo orders never count as exposure", async () => {
   assert.equal(exchange.post("/fapi/v1/order").length, 1);
 });
 
-test("a resting entry order on the symbol counts as an open position slot", async () => {
+// ---------------------------------------------------------------------------
+// Round 6 (F1/F6): the flat-symbol invariant. place_order OPENS a position, so
+// it only runs on a symbol that is flat.
+//
+// The old behaviour reasoned about a pre-existing position as if it were its
+// own: an ambiguous entry answered with a confirmed cancel of zero executed was
+// read as "this order's fill", the protective stop was armed with closePosition
+// over the user's whole position, and when that stop failed the emergency close
+// MARKET-closed the user's position and cancelled the user's orders. Refusing
+// before the first order needs no reconciliation at all.
+// ---------------------------------------------------------------------------
+
+const FLAT_MESSAGE =
+  /BTCUSDT already has an open position or orders; this tool only opens a position on a flat symbol\. Use close_position or manage it manually\./;
+
+test("place_order refuses a symbol that already has an open position", async () => {
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, FLAT_MESSAGE);
+  });
+  // Nothing was written: not the entry, not the stop, not even the leverage.
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+  assert.equal(exchange.post("/fapi/v1/leverage").length, 0);
+  for (const call of exchange.calls) assert.equal(call.method, "GET", `${call.method} ${call.path} must not run`);
+  // The refusal is audited, with the reason, so the journal explains the no.
+  const lines = journalLines();
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].guard.allow, false);
+  assert.ok(lines[0].guard.reasons.some((reason) => /only opens a position on a flat symbol/.test(reason)), JSON.stringify(lines[0].guard));
+  assert.ok(lines[0].exchange.some((item) => item.step === "flat_symbol_refused"), JSON.stringify(lines[0].exchange));
+});
+
+test("place_order refuses a symbol with a resting entry order or a pending algo entry", async () => {
+  const restingEntry = makeExchange({
+    openOrders: [{ symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.001", clientOrderId: "resting-1" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: restingEntry.fetchFn, now: () => NOW }, async (client) => {
+    assert.match(errorText(await client.callTool({ name: "place_order", arguments: placeArgs })), FLAT_MESSAGE);
+  });
+  assert.equal(restingEntry.post("/fapi/v1/order").length, 0);
+  assert.equal(restingEntry.calls.some((call) => call.method === "DELETE"), false);
+
+  // A pending stop-entry (an algo order that OPENS exposure, without
+  // reduceOnly or closePosition) is the same refusal: it is a resting entry.
+  const pendingAlgo = makeExchange({
+    algoOrders: [{ symbol: "BTCUSDT", side: "BUY", type: "STOP", algoId: 12, quantity: "0.001", triggerPrice: "91000" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: pendingAlgo.fetchFn, now: () => NOW }, async (client) => {
+    assert.match(errorText(await client.callTool({ name: "place_order", arguments: placeArgs })), FLAT_MESSAGE);
+  });
+  assert.equal(pendingAlgo.post("/fapi/v1/order").length, 0);
+  assert.equal(pendingAlgo.post("/fapi/v1/algoOrder").length, 0);
+});
+
+test("place_order still opens on a symbol whose rows read as zero", async () => {
+  // positionRisk answers a row for the symbol with positionAmt "0": that is what
+  // a closed symbol looks like on a full list, and it is flat.
+  const exchange = makeExchange({
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0", notional: "0", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 1);
+});
+
+test("grid_place refuses a symbol that already has an open position", async () => {
+  // The fail-closed exit flattens the symbol and cancels its orders: on a symbol
+  // the user is holding by hand that closes THEIR position and strips THEIR
+  // stops. It is not a grid problem, it is a symbol this tool must not open on.
+  fs.rmSync(GRID_JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    positions: [{ symbol: "BTCUSDT", positionAmt: "0.3", notional: "29400", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+  });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "50000", SWAL_MCP_JOURNAL: GRID_JOURNAL }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(
+      await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", lower: 97000, upper: 99000, levels: 3, total_notional_usd: 30000, stop_loss_price: 95000 } }),
+    );
+    assert.match(text, FLAT_MESSAGE);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0, "no level is placed");
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed");
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0, "nothing of the user's is cancelled");
+  fs.rmSync(GRID_JOURNAL, { force: true });
+});
+
+test("a resting entry order on the symbol is refused by the flat-symbol rule", async () => {
+  // A resting BUY on BTCUSDT is committed money AND a position about to exist.
+  // The old guard answered "max open positions reached" and left the resting
+  // order in place while the tool went on to reason about exposure it did not
+  // own; the flat-symbol rule refuses up front instead.
   const exchange = makeExchange({
     openOrders: [{ symbol: "BTCUSDT", side: "BUY", type: "LIMIT", price: "90000", quantity: "0.001", clientOrderId: "resting-1" }],
   });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
-    assert.match(text, /max open positions reached: 1 open including resting open orders on BTCUSDT/);
+    assert.match(
+      text,
+      /BTCUSDT already has an open position or orders; this tool only opens a position on a flat symbol\. Use close_position or manage it manually\./,
+    );
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.calls.some((call) => call.path === "/fapi/v1/openOrders"), true);
+  const lines = journalLines();
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].guard.allow, false);
+  assert.ok(lines[0].guard.reasons.some((reason) => /only opens a position on a flat symbol/.test(reason)), JSON.stringify(lines[0].guard));
 });
 
 test("two write tools cannot interleave their reads and their orders", async () => {
@@ -702,9 +810,11 @@ test("place_order post_only treats a not-found cancel with an open position as a
 });
 
 test("place_order post_only with a 200 cancel, 0 executed, and 0 position resolves as no fill", async () => {
+  // A lookup that finds nothing answers -2013. (-2011 is a cancel-only code and
+  // no longer counts as "not found" on a lookup: see the F3 test.)
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
-    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    queryOrder: { code: -2013, msg: "Order does not exist." },
     cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
   });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
@@ -1060,6 +1170,46 @@ test("a timed-out entry is resolved by clientOrderId and the position, then prot
   assert.match(JSON.stringify(journalLines(JOURNAL, "place_order")[0]), /query_by_client_order_id/);
 });
 
+test("a lookup answering -2011 does not resolve as not-found", async () => {
+  // -2011 "Unknown order sent." is a cancel-only answer. Reading it as a
+  // definitive "the order is gone" in the LOOKUP resolves an intent the exchange
+  // never ruled on: the order may have filled, and the position read that would
+  // have said so is what actually failed here. No resolving outcome is written.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2011, msg: "Unknown order sent." },
+    positionRiskHttpError: 500,
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /the result is unknown/);
+    assert.match(text, /startup sweep will report it/);
+  });
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed on an unknown result");
+  assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+  assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
+});
+
+for (const [label, queryOrder] of [
+  ["a definitive -2013", { code: -2013, msg: "Order does not exist." }],
+  ["a resting NEW order with no fill", { clientOrderId: "x", status: "NEW", executedQty: "0", side: "BUY", type: "MARKET" }],
+]) {
+  test(`a timed-out MARKET entry whose lookup answers ${label} but whose position read fails stays pending (F2)`, async () => {
+    // The lookup alone is not the ground truth for a MARKET order: only a
+    // definitive position read can say nothing filled. With positionRisk
+    // failing, the result is unknown and the intent must stay pending.
+    const exchange = makeExchange({ networkErrorOnOrder: [1], queryOrder, positionRiskHttpError: 500 });
+    await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+      const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+      assert.match(text, /the result is unknown/);
+      assert.match(text, /startup sweep will report it/);
+    });
+    assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0, "no stop is armed on an unknown result");
+    assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+    assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0, "no resolving outcome: the intent stays pending for the sweep");
+  });
+}
+
 test("a timed-out entry with no fill anywhere sends no stop and says so", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
@@ -1389,12 +1539,26 @@ test("close_position works with the daily loss lock tripped: closing is protecti
 });
 
 test("close_position with no position only cancels the symbol's orders", async () => {
-  const exchange = makeExchange();
+  // A positionRisk answer with no row at all for the symbol.
+  const exchange = makeExchange({ positionRiskOmitsFlat: true });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
     assert.equal(body.positionQuantity, null);
     assert.equal(body.closeOrder, null);
     assert.match(body.notes.join(" "), /no row for BTCUSDT: treated as no open position/);
+    assert.equal(body.sent, false);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 2);
+});
+
+test("close_position with a zero row only cancels the symbol's orders", async () => {
+  // The realistic /fapi/v2/positionRisk answer: the symbol's row with positionAmt "0".
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
+    assert.equal(body.positionQuantity, 0);
+    assert.equal(body.closeOrder, null);
     assert.equal(body.sent, false);
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
