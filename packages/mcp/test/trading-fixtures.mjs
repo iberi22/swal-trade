@@ -54,6 +54,8 @@ export function makeExchange(options = {}) {
     closeReducesTo = {},
     /** Attempt numbers (1-based) whose POST /fapi/v1/order times out instead of answering. */
     networkErrorOnOrder = [],
+    /** HTTP status DELETE /fapi/v1/order answers (for example 500): an unconfirmed cancel. */
+    cancelOrderHttpError = null,
     /** What the MARKET entry fills at and for how much, when it differs from the request. */
     marketFill = null,
     /** Answer for GET /fapi/v1/order (the lookup by origClientOrderId). */
@@ -223,6 +225,13 @@ export function makeExchange(options = {}) {
       if (!algoNoId) answer.algoId = "algoId" in override ? override.algoId : 5000 + attempt;
       if (!algoNoTrigger && trigger != null) answer.triggerPrice = trigger;
       return json({ ...answer, ...override });
+    }
+    if (path === "/fapi/v1/order" && method === "DELETE") {
+      // Single-order cancel by origClientOrderId. A confirmed cancel answers 200;
+      // cancelOrderHttpError models a cancel that fails or is ambiguous, which is
+      // the case where the order may still be resting.
+      if (cancelOrderHttpError != null) return json({ code: -1000, msg: "cancel failed" }, cancelOrderHttpError);
+      return json({ code: 200, msg: "Cancelled", symbol: params.get("symbol"), origClientOrderId: params.get("origClientOrderId") });
     }
     if (path === "/fapi/v1/allOpenOrders" && method === "DELETE") return json({ code: 200, msg: "cancelled" });
     if (path === "/fapi/v1/algoOpenOrders" && method === "DELETE") return json({ code: 200, msg: "cancelled" });

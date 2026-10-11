@@ -590,6 +590,51 @@ test("place_order post_only refuses a reprice that would cross its own protectiv
   assert.equal(cross.post("/fapi/v1/algoOrder").length, 0, "no stop is armed when the entry never rested");
 });
 
+test("place_order post_only cancels the order it actually sent after an ambiguous timeout, and never calls a resting order not sent", async () => {
+  // EXPIRED -> reprice -> the 2nd POST times out -> the lookup answers NEW with
+  // no fill (a RESTING GTX). It must be cancelled by attempt-2's clientOrderId,
+  // never the first dead id, and reported as sent-then-cancelled. The old code
+  // cancelled the first dead id, reported "not sent" and resolved the intent,
+  // leaving a live GTX order with no stop and no trace.
+  const exchange = makeExchange({ orderStatus: "EXPIRED", orderExecutedQty: "0", networkErrorOnOrder: [2], queryOrder: { clientOrderId: "x", status: "NEW", executedQty: "0", side: "BUY", type: "LIMIT" } });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.doesNotMatch(text, /not sent/, "a resting order is never reported as not sent");
+    assert.match(text, /timed out/);
+    assert.match(text, /cancelled by clientOrderId/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2, "one expired attempt and one timed-out attempt");
+  const attempt2 = orders[1].params.clientOrderId;
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.ok(cancels.some((cancel) => cancel.params.origClientOrderId === attempt2), "the cancel targets the id actually sent");
+  assert.ok(!cancels.some((cancel) => cancel.params.origClientOrderId === orders[0].params.clientOrderId), "the first dead id is never the cancel target");
+  // The cancel was confirmed (200): the intent is resolved and no stop was armed
+  // on a resting order.
+  assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 1);
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+});
+
+test("place_order post_only leaves the intent pending when the cancel of a timed-out resting order is not confirmed", async () => {
+  // Same timeout and resting lookup, but the cancel itself fails (500): a GTX
+  // order may still be resting. No resolving outcome is written, so the startup
+  // sweep keeps the intent pending instead of being told the entry is done.
+  const exchange = makeExchange({ orderStatus: "EXPIRED", orderExecutedQty: "0", networkErrorOnOrder: [2], queryOrder: { clientOrderId: "x", status: "NEW", executedQty: "0", side: "BUY", type: "LIMIT" }, cancelOrderHttpError: 500 });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /cancel was not confirmed/);
+    assert.match(text, /startup sweep will report it/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  const attempt2 = orders[1].params.clientOrderId;
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.ok(cancels.some((cancel) => cancel.params.origClientOrderId === attempt2), "even the unconfirmed cancel targets the id actually sent");
+  // No resolving outcome: the intent stays pending for the sweep.
+  assert.equal(journalLines(JOURNAL, "place_order_intent").length, 1);
+  assert.equal(journalLines(JOURNAL, "place_order_outcome").length, 0);
+});
+
 test("place_order post_only stops after three attempts and cancels by clientOrderId", async () => {
   const exchange = makeExchange({ orderStatus: "EXPIRED", orderExecutedQty: "0" });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {

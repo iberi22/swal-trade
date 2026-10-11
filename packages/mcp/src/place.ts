@@ -91,6 +91,35 @@ interface EntryOutcome {
   /** True when the entry filled (fully or partially): a position exists. */
   filled?: boolean;
   filledQty?: number;
+  /** True when an order actually reached the exchange (so it is not "not sent"). */
+  sent?: boolean;
+  /** True when the outcome must NOT be journaled as resolved: an order may still be resting, so the intent stays pending for the sweep. */
+  unresolved?: boolean;
+}
+
+/**
+ * Cancels one order by clientOrderId. `confirmed` is true only when the exchange
+ * proved the order is gone: a 200 cancel, or a definitive -2013 "order does not
+ * exist" (it already filled, expired or was cancelled). Any other failure, or a
+ * cancel that itself times out, is NOT a confirmation: the caller must treat the
+ * order as perhaps still resting and refuse WITHOUT resolving the intent.
+ */
+async function cancelRestingEntry(
+  client: TradingClient,
+  symbol: string,
+  clientOrderId: string,
+  journal: JournalRecord,
+): Promise<{ confirmed: boolean; error?: string }> {
+  try {
+    const result = await client.cancelOrder(symbol, clientOrderId);
+    logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: true, result });
+    return { confirmed: true };
+  } catch (err) {
+    const message = redactSecrets(errorMessage(err), []);
+    logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: false, error: message });
+    if (isOrderNotFound(err)) return { confirmed: true };
+    return { confirmed: false, error: message };
+  }
 }
 
 /**
@@ -175,14 +204,42 @@ async function postOnlyEntry(
       const message = redactSecrets(errorMessage(err), []);
       logStep(journal, `entry_post_only_${attempt}`, { error: message });
       if (isAmbiguousError(err)) {
-        // A timeout on a post-only entry: resolve it before retrying, otherwise
-        // a second order doubles the position.
+        // A timeout on a post-only entry: resolve it before anything else,
+        // otherwise a retry doubles the position. This is the clientOrderId of
+        // THIS attempt, the only id a lookup or a cancel can act on: the first
+        // attempt's id is dead by now.
         const resolution = await resolveEntry(client, { symbol: input.symbol, side: input.side, clientOrderId, entryPrice: decimalNumber(aligned), quantity: input.quantity }, journal);
         if (resolution.filledQty > 0) {
           return { ok: true, order: resolution.order, price: aligned, clientOrderId, filled: true, filledQty: resolution.filledQty };
         }
+        // No fill proven. Whether the lookup found it RESTING or could not tell,
+        // cancel THIS attempt's order here: a GTX limit left resting is an entry
+        // with no stop and no journal trace. A confirmed cancel makes the order
+        // gone (resolve the intent); a cancel that fails or is itself ambiguous
+        // leaves it possibly resting, so no resolving outcome is written and the
+        // intent stays pending for the startup sweep.
+        const cancel = await cancelRestingEntry(client, input.symbol, clientOrderId, journal);
+        if (!cancel.confirmed) {
+          return {
+            ok: false,
+            clientOrderId,
+            sent: true,
+            unresolved: true,
+            error:
+              `the post-only ${input.side} at ${aligned} timed out and its cancel was not confirmed (${cancel.error}); ` +
+              `a GTX order may still be resting on the exchange. No resolving outcome was journaled: the startup sweep will report it.`,
+          };
+        }
+        return {
+          ok: false,
+          clientOrderId,
+          sent: true,
+          error: `the post-only ${input.side} at ${aligned} timed out; the lookup found no fill and the resting order was cancelled by clientOrderId.`,
+        };
       }
-      if (!isRepriceable(err)) return { ok: false, error: message };
+      // A definitive non-repriceable rejection: the order this attempt sent is
+      // named so the cleanup cancels the right id, never the first dead one.
+      if (!isRepriceable(err)) return { ok: false, clientOrderId: lastSent, error: message };
     }
     const next = repriceAway(price, input.tickSize, input.side);
     if (next == null) return { ok: false, error: `the post-only ${input.side} at ${price} could not be rested and cannot be repriced further.`, clientOrderId: lastSent };
@@ -671,11 +728,20 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         journal,
       );
       if (!entry.ok) {
-        // Nothing filled: cancel anything resting by clientOrderId and report. No
-        // position, so no stop was needed and the fail-closed exit is a cleanup.
-        await cancelEntry(client, entry.clientOrderId ?? clientOrderId, symbol, journal);
+        // Best-effort second cancel of the id ACTUALLY sent on this attempt (the
+        // first dead id is never the target). When the first cancel inside
+        // postOnlyEntry was not confirmed, an order may still be resting, so no
+        // resolving outcome is written and the intent stays pending for the sweep.
+        if (entry.clientOrderId != null) await cancelEntry(client, entry.clientOrderId, symbol, journal);
+        if (entry.unresolved) {
+          return refused(`the post-only entry could not be resolved and was NOT resolved: ${entry.error}`);
+        }
         await writeOutcome({ filled: false, error: entry.error });
-        return refused(`the order was not sent: ${entry.error}`);
+        // An order that reached the exchange and was then cancelled as cleanup was
+        // sent: reporting it as "not sent" hid the order the sweep must account
+        // for. A resting order cancelled by clientOrderId is reported as such.
+        const lead = entry.sent ? `the order was sent and then cancelled as a protective cleanup: ` : `the order was not sent: `;
+        return refused(`${lead}${entry.error}`);
       }
     } else {
       try {
