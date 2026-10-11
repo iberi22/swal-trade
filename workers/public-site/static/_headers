@@ -20,3 +20,20 @@
 /backup/*
   ! Content-Security-Policy
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; connect-src 'self' https://pay.swal.network
+
+/*.css
+  Cache-Control: public, max-age=300, must-revalidate
+/*.js
+  Cache-Control: public, max-age=300, must-revalidate
+/favicon.svg
+  Cache-Control: public, max-age=86400
+/*.html
+  Cache-Control: no-cache
+/*/
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+/robots.txt
+  Cache-Control: public, max-age=3600
