@@ -28,6 +28,9 @@ import {
 import { parseHello, withinShapeBudget, DrawRateLimit, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { ChartSession, type BridgeReport } from '../lib/tv-bridge/tv-session';
 import { chartFromWindow } from '../lib/tv-bridge/tv-chart';
+import { createBridgeMessageHandler } from '../lib/tv-bridge/message-handler';
+
+
 
 /** Marca de "hay un puente en la página que se encarga del gráfico". */
 const HOST_FLAG = '__swalTvBridgeHost';
@@ -99,53 +102,17 @@ export default defineContentScript({
     // El canal síncrono desvinculado (DOM)
     let channel: BridgeChannel | null = null;
     // F8: el bucle de vigilancia no arranca hasta el primer draw (encendido).
-    let running = false;
-    const rate = new DrawRateLimit(4);
-
-    const ensureRunning = () => {
-      if (running) return;
-      running = true;
-      session.start();
-    };
-
-    const stop = () => {
-      running = false;
-      session.stop();
-    };
-
-    let seenHello = false;
+    const handler = createBridgeMessageHandler({
+      start: () => session.start(),
+      stop: () => session.stop(),
+      apply: (msg) => session.apply(msg),
+    }, new DrawRateLimit(4));
 
     // Establecer la comunicación síncrona
-    establishLink(3000)
+    establishLink('bridge', 3000)
       .then((ch) => {
         channel = ch;
-        channel.onMessage((data: unknown) => {
-          if (!seenHello) {
-            const hello = parseHello(data);
-            if (!hello) return;
-            seenHello = true;
-            // El saludo dice si el interruptor ya está encendido; si lo está, arrancamos.
-            if (hello.enabled) ensureRunning();
-            return;
-          }
-
-          const raw = data as { type?: unknown; shapes?: unknown } | undefined;
-          // Rechazo temprano: una carga descomunal se tira sin validarla.
-          if (raw && raw.type === SWAL_DRAW && Array.isArray(raw.shapes) && !withinShapeBudget(raw.shapes.length)) {
-            return;
-          }
-          // Límite blando de 4 dibujos por segundo.
-          if (raw && raw.type === SWAL_DRAW && !rate.allow(Date.now())) return;
-          const message = parseBridgeMessage(data);
-          if (!message) return;
-          if (message.type === SWAL_DRAW) {
-            ensureRunning();
-          } else {
-            // clear: se apaga la vigilancia y se limpia.
-            stop();
-          }
-          session.apply(message as BridgeMessage);
-        });
+        channel.onMessage((data: unknown) => handler(data));
       })
       .catch(() => {
         // Falló el enlace, no hacemos nada (el otro lado lo marcará como unavailable)

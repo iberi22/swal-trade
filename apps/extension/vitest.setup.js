@@ -1,0 +1,1 @@
+globalThis.defineContentScript = (opts) => opts;

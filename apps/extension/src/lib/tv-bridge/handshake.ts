@@ -57,10 +57,11 @@ export interface BridgeChannel {
  * El primero que llega lo crea. El segundo lo encuentra, lo saca del DOM,
  * y usa ese nodo desvinculado (detached) como bus de eventos.
  */
-export function establishLink(timeoutMs = 3000): Promise<BridgeChannel> {
+export function establishLink(role: 'bridge' | 'content', timeoutMs = 3000): Promise<BridgeChannel> {
   return new Promise((resolve, reject) => {
     const TAG = 'SWAL-LINK';
-    const EVENT = 'swal:msg';
+    const INBOUND = role === 'bridge' ? 'swal:to-bridge' : 'swal:to-content';
+    const OUTBOUND = role === 'bridge' ? 'swal:to-content' : 'swal:to-bridge';
 
     // Si ya existe el elemento creado por la otra parte
     let el = document.documentElement.querySelector(TAG);
@@ -68,7 +69,7 @@ export function establishLink(timeoutMs = 3000): Promise<BridgeChannel> {
     if (el) {
       // Somos los segundos. Sacamos el elemento del DOM para que quede privado.
       el.remove();
-      const channel = createChannel(el as HTMLElement, EVENT);
+      const channel = createChannel(el as HTMLElement, INBOUND, OUTBOUND);
       // Avisamos al primero de que el enlace está listo
       el.dispatchEvent(new CustomEvent('swal:link'));
       resolve(channel);
@@ -85,13 +86,13 @@ export function establishLink(timeoutMs = 3000): Promise<BridgeChannel> {
       el.addEventListener('swal:link', () => {
         clearTimeout(timer);
         // Cuando nos avisan, el elemento ya ha sido sacado del DOM por el otro script
-        resolve(createChannel(el as HTMLElement, EVENT));
+        resolve(createChannel(el as HTMLElement, INBOUND, OUTBOUND));
       }, { once: true });
     }
   });
 }
 
-function createChannel(element: HTMLElement, eventName: string): BridgeChannel {
+function createChannel(element: HTMLElement, inboundEvent: string, outboundEvent: string): BridgeChannel {
   const listeners = new Set<(msg: unknown) => void>();
 
   const handleEvent = (ev: Event) => {
@@ -107,17 +108,17 @@ function createChannel(element: HTMLElement, eventName: string): BridgeChannel {
     }
   };
 
-  element.addEventListener(eventName, handleEvent);
+  element.addEventListener(inboundEvent, handleEvent);
 
   return {
     send(message: unknown) {
-      element.dispatchEvent(new CustomEvent(eventName, { detail: JSON.stringify(message) }));
+      element.dispatchEvent(new CustomEvent(outboundEvent, { detail: JSON.stringify(message) }));
     },
     onMessage(listener: (message: unknown) => void) {
       listeners.add(listener);
     },
     disconnect() {
-      element.removeEventListener(eventName, handleEvent);
+      element.removeEventListener(inboundEvent, handleEvent);
       listeners.clear();
     }
   };

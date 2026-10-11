@@ -243,7 +243,7 @@ export default defineContentScript({
     if (PAINTABLE_URL.test(location.href)) {
       const session = createSession();
 
-      establishLink(3000)
+      establishLink('content', 3000)
         .then((ch) => {
           channel = ch;
           channel.onMessage((data: unknown) => {

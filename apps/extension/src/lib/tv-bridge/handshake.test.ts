@@ -53,13 +53,13 @@ describe('establishLink', () => {
   });
 
   it('links when MAIN is first and ISOLATED is second', async () => {
-    const mainPromise = establishLink();
+    const mainPromise = establishLink('bridge');
 
     // MAIN creates the element
     const linkEl = document.documentElement.querySelector('swal-link');
     expect(linkEl).not.toBeNull();
 
-    const isolatedPromise = establishLink();
+    const isolatedPromise = establishLink('content');
 
     // ISOLATED should detach the element
     expect(document.documentElement.querySelector('swal-link')).toBeNull();
@@ -77,13 +77,13 @@ describe('establishLink', () => {
   });
 
   it('links when ISOLATED is first and MAIN is second', async () => {
-    const isolatedPromise = establishLink();
+    const isolatedPromise = establishLink('content');
 
     // ISOLATED creates the element
     const linkEl = document.documentElement.querySelector('swal-link');
     expect(linkEl).not.toBeNull();
 
-    const mainPromise = establishLink();
+    const mainPromise = establishLink('bridge');
 
     // MAIN should detach the element
     expect(document.documentElement.querySelector('swal-link')).toBeNull();
@@ -101,7 +101,7 @@ describe('establishLink', () => {
   });
 
   it('rejects on timeout if second script never runs', async () => {
-    const promise = establishLink(100);
+    const promise = establishLink('bridge', 100);
 
     expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
 
@@ -113,14 +113,14 @@ describe('establishLink', () => {
   });
 
   it('page script cannot eavesdrop or forge messages', async () => {
-    const mainPromise = establishLink();
-    const isolatedPromise = establishLink();
+    const mainPromise = establishLink('bridge');
+    const isolatedPromise = establishLink('content');
 
     const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
 
     let eavesdropped: any = null;
-    window.addEventListener('swal:msg', (e) => { eavesdropped = e; });
-    document.addEventListener('swal:msg', (e) => { eavesdropped = e; });
+    window.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
+    document.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
 
     let receivedByIsolated: any = null;
     isolatedChannel.onMessage((msg) => { receivedByIsolated = msg; });
@@ -132,8 +132,22 @@ describe('establishLink', () => {
     expect(eavesdropped).toBeNull();
 
     // Page script forging a message
-    document.dispatchEvent(new CustomEvent('swal:msg', { detail: JSON.stringify({ forged: true }) }));
+    document.dispatchEvent(new CustomEvent('swal:to-bridge', { detail: JSON.stringify({ forged: true }) }));
 
     expect(receivedByIsolated).toEqual({ secret: true }); // Still just the secret, forged didn't arrive
+  });
+
+  it('a side never receives its own send', async () => {
+    const mainPromise = establishLink('bridge');
+    const isolatedPromise = establishLink('content');
+
+    const [bridgeChannel, contentChannel] = await Promise.all([mainPromise, isolatedPromise]);
+
+    let bridgeReceived: any = null;
+    bridgeChannel.onMessage((msg) => { bridgeReceived = msg; });
+
+    bridgeChannel.send({ echo: true });
+
+    expect(bridgeReceived).toBeNull(); // Shouldn't receive its own message
   });
 });
