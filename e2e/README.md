@@ -43,12 +43,53 @@ Si en otra NixOS el dynamic linker rechaza ese binario:
 
 La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersistentContext`) y `ignoreDefaultArgs: ['--disable-extensions']`.
 
-## Qué cubre
+## Cobertura
 
-- Cada página (`/`, `/pricing/`, `/analisis/`, `/guardian/`, `/guardian/self-host/`, `/checkout/`, `/operativa/`, `/terms/`, `/privacy/`, `/risk/`, `/contact/`) responde 200, con las mismas directivas CSP que `cspFor` en `workers/public-site/src/worker.js` (el orden puede diferir: en local, `_headers` coloca `connect-src` antes de `base-uri` en las rutas sin bloque propio). Sin errores de consola ni `securitypolicyviolation`. Los enlaces visibles de nav y pie navegan (en `/guardian/` el enlace Self-host del plan Pro está oculto; se pulsa el visible).
-- Afirmaciones de rentabilidad: la misma expresión que `workers/public-site/test/site-pages.test.mjs`. `/risk/` puede decir «rentabilidad pasada». `/operativa/` conserva la etiqueta de KPI «Win Rate» (ese test de páginas no escanea el panel).
-- `/analisis/`: velas con un doble suelo conocido, canvas, lista con «fuerza» y sin «probabilidad», clic que enfoca, cambio de temporalidad que pide `interval=1h&limit=500`, miedo y codicia mockeado.
-- `/checkout/`: contrato de `billing-worker` (`/v1/plans`, alta, factura, poll pending→paid, `/v1/license`). El secreto se muestra una vez y el botón sigue al checkbox. Importe `10.0037`, QR SVG, `localStorage['swal.license']`.
-- `/guardian/`: cuenta firmada (mock) que rompe el límite diario y tiene BTC sin stop. El plan gratis vigila solo la posición grande. Pro entra con un token Ed25519 generado en el test (`node:crypto`) y la SPKI servida en el mock de `/v1/pubkey`.
-- Extensión: panel lateral `sidepanel.html`, gráfico y hallazgos.
-- MCP: `listTools` solo tiene `account_risk`, `analyze_chart`, `market_context`, `propose_order`. `analyze_chart` y `propose_order` (`sent: false`). Ningún POST.
+| Área | Archivo | Qué comprueba |
+|---|---|---|
+| Sitio | `site.spec.ts` | `/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/pricing/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/analisis/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/guardian/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/guardian/self-host/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/checkout/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/operativa/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/terms/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/privacy/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/risk/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/contact/` HTTP 200 y Content-Security-Policy |
+| Sitio | `site.spec.ts` | `/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/pricing/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/analisis/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/guardian/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/guardian/self-host/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/checkout/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/operativa/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/terms/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/privacy/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/risk/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | `/contact/` renderiza sin errores de consola, violaciones CSP, ni promesas de rentabilidad |
+| Sitio | `site.spec.ts` | los enlaces de nav y pie abren un documento 200 |
+| Sitio | `analisis.spec.ts` | gráfico, fuerza, foco, temporalidad y miedo y codicia |
+| Sitio | `analisis.spec.ts` | el panel de CVD se pinta bajo el gráfico con velas que traen volumen taker |
+| Sitio | `analisis.spec.ts` | sin volumen taker el panel de CVD lo dice en lugar de inventar flujo |
+| Sitio | `checkout.spec.ts` | secreto una vez, importe exacto, QR, sondeo hasta pago, licencia guardada |
+| Sitio | `guardian.spec.ts` | el plan gratis muestra el exceso diario y solo la posición mayor |
+| Sitio | `guardian.spec.ts` | una licencia Ed25519 válida desbloquea Pro |
+| Extensión | `extension.spec.ts` | el panel lateral renderiza el gráfico y hallazgos desde velas mockeadas |
+| Extensión | `extension.spec.ts` | la capa de gráfico renderiza cada hallazgo principal, no solo el seleccionado |
+| Extensión | `extension.spec.ts` | el panel de CVD pinta el flujo de volumen de las velas mockeadas |
+| Extensión | `extension.spec.ts` | la tarjeta de noticias muestra titulares de la api mockeada con tiempo relativo y sentimiento |
+| Extensión | `extension.spec.ts` | la tarjeta de noticias se degrada a una nota cuando el servicio no tiene nada |
+| Extensión | `extension.spec.ts` | los ajustes persisten en storage.local y controlan el símbolo y temporalidad |
+| MCP | `stdio.test.mjs` | `listTools` devuelve solo las 5 permitidas y ninguna es de escritura ni destructiva |
+| MCP | `stdio.test.mjs` | `analyze_chart` devuelve un doble suelo con fuerza y sin etiqueta de probabilidad |
+| MCP | `stdio.test.mjs` | `propose_order` formula una orden tipo MARKET con stop y `sent: false` |
+| MCP | `stdio.test.mjs` | no se hace ningún POST, solo peticiones GET a Binance (klines y premiumIndex) |
+
+## Fuera de alcance
+
+- Claves de Binance reales.
+- Pagos reales.
+- Despliegues.
+- El overlay del gráfico nativo de Binance.
