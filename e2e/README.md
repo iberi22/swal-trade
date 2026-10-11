@@ -53,7 +53,7 @@ La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersis
 - `/guardian/`: cuenta firmada (mock) que rompe el límite diario y tiene BTC sin stop. El plan gratis vigila solo la posición grande. Pro entra con un token Ed25519 generado en el test (`node:crypto`) y la SPKI servida en el mock de `/v1/pubkey`.
 - Extensión: panel lateral `sidepanel.html`, gráfico y hallazgos.
 - **Opcional**, `npm run e2e:binance-live` (o `E2E_BINANCE_LIVE=1 npx playwright test --project=binance-live`): contra la página pública `https://www.binance.com/en/futures/BTCUSDT`. Necesita red, descarga la página de verdad y tarda ~30 s. Comprueba que la extensión pinta los niveles en la pestaña Trading View del gráfico de Binance y que los borra al apagar el interruptor. Sin la variable de entorno la prueba se salta.
-- MCP: `listTools` solo tiene `account_risk`, `analyze_chart`, `market_context`, `propose_order`. `analyze_chart` y `propose_order` (`sent: false`). Ningún POST.
+- MCP: sin `SWAL_MCP_TRADING`, `listTools` solo tiene las de lectura: `account_risk`, `analyze_chart`, `explain_analysis`, `grid_plan`, `market_context`, `propose_order`. `analyze_chart` y `propose_order` (`sent: false`). Ningún POST.
 
 ## Cobertura
 
@@ -94,7 +94,7 @@ La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersis
 | Extensión | `extension.spec.ts` | la tarjeta de noticias muestra titulares de la api mockeada con tiempo relativo y sentimiento |
 | Extensión | `extension.spec.ts` | la tarjeta de noticias se degrada a una nota cuando el servicio no tiene nada |
 | Extensión | `extension.spec.ts` | los ajustes persisten en storage.local y controlan el símbolo y temporalidad |
-| MCP | `stdio.test.mjs` | `listTools` devuelve solo las 5 permitidas y ninguna es de escritura ni destructiva |
+| MCP | `stdio.test.mjs` | `listTools` (sin `SWAL_MCP_TRADING`) devuelve solo las 6 de lectura, incluido `grid_plan`, y ninguna es de escritura ni destructiva |
 | MCP | `stdio.test.mjs` | `analyze_chart` devuelve un doble suelo con fuerza y sin etiqueta de probabilidad |
 | MCP | `stdio.test.mjs` | `propose_order` formula una orden tipo MARKET con stop y `sent: false` |
 | MCP | `stdio.test.mjs` | no se hace ningún POST, solo peticiones GET a Binance (klines y premiumIndex) |

@@ -16,6 +16,15 @@ Variante de desarrollo local, desde la raíz del repo, después de `npm run buil
 claude mcp add swal-trade -- node packages/mcp/dist/index.js
 ```
 
+## Estado de las herramientas de escritura (2026-10-11)
+
+`place_order`, `close_position` y `grid_place` están **en desarrollo y no se deben usar con dinero real**. Vienen desactivadas por defecto y apuntan a testnet salvo doble confirmación. La última revisión independiente dejó dos puntos abiertos:
+
+- Una entrada post-only que se ejecuta en parte justo antes de cancelarla puede quedar como posición sin stop: la respuesta de la cancelación (`executedQty`) todavía no se lee.
+- Si el cierre de emergencia falla, el journal marca la intención como resuelta y el barrido de arranque no la vuelve a reportar.
+
+Hasta cerrarlos y pasar una prueba en testnet, úsalas solo en testnet.
+
 ## Tools
 
 | Tool | Tipo | Qué hace |

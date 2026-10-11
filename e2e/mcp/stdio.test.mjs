@@ -12,7 +12,7 @@ const repoRoot = path.resolve(e2eRoot, '..');
 const serverPath = path.join(repoRoot, 'packages/mcp/dist/index.js');
 const preload = path.join(here, 'fetch-preload.mjs');
 
-const WRITE = /place_order|cancel|withdraw|transfer|create_order|grid_place|grid_plan|modify_order|close_position|set_leverage/i;
+const WRITE = /place_order|cancel|withdraw|transfer|create_order|grid_place|modify_order|close_position|set_leverage/i;
 
 function textOf(result) {
   assert.notEqual(result.isError, true, JSON.stringify(result));
@@ -41,7 +41,7 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ['account_risk', 'analyze_chart', 'explain_analysis', 'market_context', 'propose_order']);
+  assert.deepEqual(names, ['account_risk', 'analyze_chart', 'explain_analysis', 'grid_plan', 'market_context', 'propose_order']);
   // explain_analysis habla con el hosting por POST: aquí solo se comprueba que existe y es de lectura.
   const explain = listed.tools.find((tool) => tool.name === 'explain_analysis');
   assert.match(explain.description, /deterministic fallback/);
@@ -83,7 +83,7 @@ try {
   assert.equal(proposal.markPrice, 100);
   assert.equal(proposal.stopPrice, 99);
   assert.equal(proposal.stopOrderType, 'STOP_MARKET');
-  assert.match(proposal.note, /Nothing was sent/);
+  assert.match(proposal.note, /nothing was sent/i);
 
   const log = await readFile(logFile, 'utf8');
   assert.match(log, /GET https:\/\/fapi\.binance\.com\/fapi\/v1\/klines\?.*interval=15m/);
