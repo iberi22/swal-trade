@@ -1,0 +1,34 @@
+{
+  "range": {
+    "from": 1778371200,
+    "to": 1792454400
+  },
+  "idIntrospection": {
+    "typeofId": "object",
+    "ctor": "Promise",
+    "ownKeys": [],
+    "json": "{}",
+    "str": "[object Promise]",
+    "entries": []
+  },
+  "id2Introspection": {
+    "typeofId": "object",
+    "ctor": "Promise",
+    "str": "[object Promise]",
+    "ownKeys": []
+  },
+  "count2": 2,
+  "afterObjectFormRemove": 2,
+  "afterStringFormRemove": 3,
+  "attempts": {
+    "objectForm": 2,
+    "id3Forms": {
+      "str": "[object Promise]",
+      "json": "{}"
+    },
+    "stringForm": 2
+  },
+  "getShapeByIdObject": "ERR Error: There is no such shape",
+  "getShapeByIdString": "ERR Error: There is no such shape",
+  "final": 4
+}

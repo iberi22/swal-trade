@@ -65,3 +65,36 @@ export function aggressiveBuyKlines() {
     { takerShare: 0.85 },
   );
 }
+
+/**
+ * Mueve una serie en el tiempo y la escala en precio sin tocar su forma. Los
+ * patrones que busca el núcleo son relativos, así que la serie sigue teniendo el
+ * mismo doble suelo; solo que ahora está donde la página de verdad lo tiene.
+ */
+export function rescaleCandles(candles, { baseTime, priceScale = 1 } = {}) {
+  const first = candles[0]?.time ?? 0;
+  return candles.map((candle) => {
+    const shift = baseTime - first;
+    return {
+      ...candle,
+      time: candle.time + shift,
+      open: candle.open * priceScale,
+      high: candle.high * priceScale,
+      low: candle.low * priceScale,
+      close: candle.close * priceScale,
+    };
+  });
+}
+
+/**
+ * Velas para la prueba en vivo de Binance: el doble suelo de siempre, escalado
+ * al precio que pasa `price` y terminado un día antes de `now` (en ms). Así los
+ * niveles que pinta la extensión caen dentro del gráfico que se ve.
+ */
+export function liveBinanceKlines({ now = Date.now(), price = 83_000 } = {}) {
+  const candles = rescaleCandles(doubleBottomCandles(), {
+    baseTime: Math.floor(now / 1000) - 86_400,
+    priceScale: price / 130,
+  });
+  return toBinanceKlines(candles);
+}

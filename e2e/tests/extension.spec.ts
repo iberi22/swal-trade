@@ -342,6 +342,17 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
     const stored = await readSettings();
     expect(stored.settings).toMatchObject({ defaultTimeframe: '1h', symbols: ['ETH'], autoSync: true });
 
+    // El interruptor de pintar en el gráfico de Binance arranca apagado.
+    const paintToggle = page.getByRole('checkbox', {
+      name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
+    });
+    await expect(paintToggle).not.toBeChecked();
+    expect((await readSettings()).settings).toMatchObject({ paintOnChart: false });
+    await paintToggle.check();
+    await expect.poll(async () => (await readSettings()).settings?.paintOnChart).toBe(true);
+    await paintToggle.uncheck();
+    await expect.poll(async () => (await readSettings()).settings?.paintOnChart).toBe(false);
+
     // El panel solo sigue al ETH: el BTC que trae por defecto se bloquea.
     await expect(page.locator('.header p.hint')).toContainText('Fuera de tu lista de símbolos');
 

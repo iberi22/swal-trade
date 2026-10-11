@@ -1,0 +1,20 @@
+{
+  "lineId": {
+    "type": "string",
+    "value": "UHh8X9",
+    "str": "UHh8X9"
+  },
+  "trendId": {
+    "type": "string",
+    "value": "gg4z5A",
+    "str": "gg4z5A"
+  },
+  "countAfterCreate": 2,
+  "getByIdResolves": true,
+  "removeReturns": "undefined",
+  "countAfterRemoveLine": 1,
+  "countAfterRemoveTrend": 0,
+  "zoneError": "Error: Passed color string does not match any of the known color representations",
+  "countMany": 5,
+  "countAfterManyRemove": 0
+}

@@ -58,6 +58,7 @@ En Firefox 140+ el instalador muestra que la extensión transmite "contenido del
 | `storage` | Ajustes en `storage.local`; último símbolo y temporalidad en `storage.session`, mientras el navegador sigue abierto |
 | `https://www.binance.com/*/futures/*` | Content script en `/*/futures/*`. Lee la URL, el botón de temporalidad activo y, si hace falta, la clave de `localStorage` que guarda el intervalo |
 | `https://www.tradingview.com/chart/*` | Content script en `/chart/*`. Lee la URL, el título de la página y el control de intervalo |
+| `https://www.binance.com/static/chart/tradingview/*` | El iframe del mismo origen donde la pestaña Trading View monta el gráfico. Es el único punto donde el puente MAIN-world puede pintar |
 | `https://trade.swal.network/api/news*` | Titulares públicos `GET /api/news?symbol=BTC\|ETH&limit=5` |
 | `https://fapi.binance.com/fapi/v1/klines*` | Velas públicas `GET /fapi/v1/klines` |
 | `wss://fstream.binance.com/*` | Websocket público de la vela en curso (`/market/ws/` y el respaldo `/ws/`) |
@@ -91,3 +92,61 @@ El núcleo (`analyzeSync`) devuelve un `top` diverso de hallazgos. La extensión
 Pulsar un hallazgo, en la leyenda o en la lista, lo resalta: el resto se queda en
 el mismo tono, más flojo. Sin rojo ni verde: un solo tono hueso, igual que
 `workers/public-site/static/tokens.css`.
+
+## Pintar sobre el gráfico de Binance (pestaña Trading View)
+
+Con el interruptor **"Pintar en el gráfico de Binance (pestaña Trading View)"** del
+panel (apagado por defecto), los niveles de los hallazgos se dibujan también
+sobre el gráfico de la página, no solo sobre el del panel.
+
+Cómo funciona:
+
+1. El panel calcula los hallazgos de siempre (mismas velas públicas, mismo
+   núcleo) y los convierte en formas: `src/lib/tv-bridge/shapes.ts`.
+2. Manda un mensaje de runtime al content script aislado de cada pestaña de
+   futuros abierta (`src/lib/tv-paint-send.ts`).
+3. El content script aislado (`src/entrypoints/content.ts`) publica un nonce por
+   carga de página en `<html data-swal-tv-nonce>` y reenvía la orden por
+   `window.postMessage`.
+4. El puente MAIN-world (`src/entrypoints/binance-tv-bridge.content.ts`) valida el
+   mensaje (tipo, versión, nonce, tope de 60 formas, puntos numéricos), busca
+   `tradingViewApi` en el iframe del mismo origen de la pestaña **Trading View**,
+   espera a que el chart tenga rango visible y dibuja.
+
+Detalles que importan:
+
+- **Solo la pestaña Trading View.** La pestaña "Original" es el lienzo propio de
+  Binance y no expone API: el panel lo dice ("cambia a la pestaña Trading View").
+- **Un tono neutro y opacidad baja**, igual que el gráfico del panel. Las formas
+  se crean bloqueadas (`locked` / `disableSelection`) para que no se muevan sin
+  querer.
+- **Solo se borra lo nuestro.** El puente lleva su propio libro de ids
+  (`src/lib/tv-bridge/registry.ts`); lo que haya dibujado el usuario se queda.
+- **Cambio de símbolo o temporalidad:** el puente se suscribe a
+  `onSymbolChanged` / `onIntervalChanged` (con sondeo de respaldo) y redibuja.
+- **Nada de cuenta.** No lee balances, órdenes ni formularios, y no pulsa nada en
+  la página salvo el banner de cookies en las pruebas.
+
+## Pruebas
+
+`npm test` en `apps/extension` cubre el contrato de mensajes (rechaza tipo,
+versión, nonce, formas hinchadas y NaN), la conversión de hallazgo a forma y el
+libro de ids de entidades.
+
+La prueba de extremo a extremo contra la página pública de Binance es **opt-in**
+porque necesita red y Binance puede cambiar su DOM:
+
+```bash
+cd e2e
+npm install && npx playwright install chromium
+(cd ../apps/extension && npm run build)   # hace falta el build
+E2E_BINANCE_LIVE=1 npx playwright test --project=binance-live
+# o
+npm run e2e:binance-live
+```
+
+Carga la página pública `https://www.binance.com/en/futures/BTCUSDT`, descarta el
+banner de cookies, cambia a la pestaña Trading View, enciende el interruptor y
+comprueba con `tradingViewApi.activeChart().getAllShapes()` que las formas
+aparecen y que desaparecen al apagarlo. Las velas van mockeadas
+(`e2e/fixtures/candles.mjs`), así que el resultado no depende del mercado de hoy.

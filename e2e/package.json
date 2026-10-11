@@ -9,6 +9,7 @@
     "test": "playwright test",
     "test:site": "playwright test --project=site",
     "test:extension": "playwright test --project=extension",
+    "e2e:binance-live": "playwright test --project=binance-live",
     "test:mcp": "node mcp/stdio.test.mjs",
     "install:browsers": "playwright install chromium"
   },

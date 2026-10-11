@@ -77,6 +77,7 @@ describe('normalizeSettings', () => {
       defaultTimeframe: '5m',
       symbols: [],
       autoSync: true,
+      paintOnChart: false,
     });
   });
 
@@ -87,7 +88,7 @@ describe('normalizeSettings', () => {
         symbols: 'BTC, ETH',
         autoSync: false,
       }),
-    ).toEqual({ defaultTimeframe: '4h', symbols: ['BTC', 'ETH'], autoSync: false });
+    ).toEqual({ defaultTimeframe: '4h', symbols: ['BTC', 'ETH'], autoSync: false, paintOnChart: false });
   });
 
   it('una temporalidad que el panel no dibuja vuelve al default', () => {
@@ -97,6 +98,7 @@ describe('normalizeSettings', () => {
       defaultTimeframe: '1h',
       symbols: [],
       autoSync: true,
+      paintOnChart: false,
     });
   });
 
@@ -104,6 +106,14 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ autoSync: false }).autoSync).toBe(false);
     expect(normalizeSettings({ autoSync: 'false' }).autoSync).toBe(true);
     expect(normalizeSettings({ autoSync: 0 }).autoSync).toBe(true);
+  });
+
+  it('pintar en el gráfico solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).paintOnChart).toBe(false);
+    expect(normalizeSettings({ paintOnChart: true }).paintOnChart).toBe(true);
+    expect(normalizeSettings({ paintOnChart: 'true' }).paintOnChart).toBe(false);
+    expect(normalizeSettings({ paintOnChart: 1 }).paintOnChart).toBe(false);
+    expect(DEFAULT_SETTINGS.paintOnChart).toBe(false);
   });
 
   it('no se deja intoxicar con campos inventados', () => {
@@ -114,7 +124,12 @@ describe('normalizeSettings', () => {
       isAdmin: true,
       host: 'https://evil.example',
     });
-    expect(Object.keys(settings).sort()).toEqual(['autoSync', 'defaultTimeframe', 'symbols']);
+    expect(Object.keys(settings).sort()).toEqual([
+      'autoSync',
+      'defaultTimeframe',
+      'paintOnChart',
+      'symbols',
+    ]);
   });
 });
 
@@ -132,7 +147,7 @@ describe('settingsFromStorage', () => {
   it('lee la clave settings', () => {
     expect(
       settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: '15m', symbols: 'ETH' } }),
-    ).toEqual({ defaultTimeframe: '15m', symbols: ['ETH'], autoSync: true });
+    ).toEqual({ defaultTimeframe: '15m', symbols: ['ETH'], autoSync: true, paintOnChart: false });
   });
 
   it('acepta el objeto pelado por si el formato cambia', () => {
@@ -140,6 +155,7 @@ describe('settingsFromStorage', () => {
       defaultTimeframe: '1d',
       symbols: [],
       autoSync: true,
+      paintOnChart: false,
     });
   });
 

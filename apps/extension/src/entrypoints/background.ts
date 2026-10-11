@@ -1,6 +1,7 @@
 import { browser } from 'wxt/browser';
-import type { MarketContext } from '../lib/types';
 import { parseRuntimeMessage } from '../lib/messages';
+import type { TvChartState } from '../lib/tv-paint';
+import type { MarketContext } from '../lib/types';
 
 const STORAGE_KEY = 'marketContext';
 
@@ -17,6 +18,14 @@ type ActionApi = {
 };
 
 let latest: MarketContext | null = null;
+
+/**
+ * Estado del gráfico de Binance abierto por última vez. No es dato de cuenta:
+ * solo dice si la pestaña del gráfico es la de Trading View y, si no casa, qué
+ * símbolo y temporalidad muestra.
+ */
+let tvState: TvChartState | null = null;
+let tvChart: { symbol: string; tf: string } | null = null;
 
 async function remember(context: MarketContext): Promise<void> {
   latest = context;
@@ -61,6 +70,15 @@ export default defineBackground(() => {
     if (!parsed) return;
     if (parsed.type === 'market-context') {
       void remember(parsed.context);
+      return;
+    }
+    if (parsed.type === 'tv-state') {
+      tvState = parsed.state;
+      tvChart = parsed.chart ?? null;
+      return;
+    }
+    if (parsed.type === 'get-tv-state') {
+      sendResponse({ type: 'tv-state-result', state: tvState, chart: tvChart ?? undefined });
       return;
     }
     if (parsed.type === 'get-context') {
