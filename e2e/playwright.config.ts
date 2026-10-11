@@ -34,6 +34,12 @@ export default defineConfig({
       name: 'extension',
       testMatch: /tests\/extension\.spec\.ts/,
     },
+    {
+      // Opcional: corre contra la página pública de Binance. Se salta si no está
+      // E2E_BINANCE_LIVE=1 (npm run e2e:binance-live).
+      name: 'binance-live',
+      testMatch: /tests\/binance-live\.spec\.ts/,
+    },
   ],
   webServer: {
     // wrangler 4.118 (workerd to 2026-08-06) cannot start compatibility_date 2026-09-16.
