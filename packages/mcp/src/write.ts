@@ -307,13 +307,15 @@ export function logStep(journal: JournalRecord, step: string, value: unknown): v
 
 /**
  * Sends one protective algo order and only accepts it when the exchange proved
- * it is live: an algoId in the answer plus a trigger echoed back on the side of
- * the reference price that this order is supposed to fire on.
+ * it is live. Two shapes prove it: an algoId plus a trigger echoed back on the
+ * side of the reference price the order has to fire on (and equal to the trigger
+ * sent), or an algoId plus a live status and no echoed trigger, which is the real
+ * Algo Service shape, CONFIRMED by one read of the open algo orders.
  *
  * A `stop` has to trigger on the LOSS side (a stop above a long entry fires
  * after the profit); a take profit has to trigger on the PROFIT side. An answer
- * without one of those is not a protective order, so the caller has to treat
- * the position as unprotected.
+ * that proves neither is not a protective order, so the caller has to treat the
+ * position as unprotected.
  */
 export async function placeProtectiveAlgoOrder(
   client: TradingClient,
@@ -345,8 +347,34 @@ export async function placeProtectiveAlgoOrder(
         sentTrigger: decimalNumber(input.triggerPrice),
       });
       if (verdict.accepted) {
-        logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response, ...(verdict.warning ? { warning: verdict.warning } : {}) });
-        return { ok: true, kind: input.kind, response, algoId: verdict.algoId, ...(verdict.warning ? { warning: verdict.warning } : {}) };
+        // Accepted on an algoId with no echoed trigger: that is a PROVISIONAL
+        // acceptance. Prove it with one read of the open algo orders before the
+        // position is called protected: a miss, or a read that failed, is a failed
+        // stop and not a stop with a warning.
+        if (verdict.warning) {
+          const confirmation = await confirmAlgoOrderLive(client, {
+            symbol: input.symbol,
+            kind: input.kind,
+            sentTrigger: decimalNumber(input.triggerPrice),
+            journal: input.journal,
+            label: input.label,
+            attempt,
+          });
+          if (!confirmation.confirmed) {
+            lastError = `${verdict.warning}; ${confirmation.reason}`;
+            logStep(input.journal, `${input.label}_${attempt}`, { rejected: lastError, response });
+            // No second attempt: the order IS live on the exchange (an algoId came
+            // back), so placing again would leave a duplicate stop behind. The
+            // caller flattens instead.
+            return { ok: false, kind: input.kind, error: lastError };
+          }
+          const warning =
+            `${verdict.warning}; it was then confirmed live in GET /fapi/v1/openAlgoOrders as a ${input.kind} closePosition order for ${input.symbol}`;
+          logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response, warning });
+          return { ok: true, kind: input.kind, response, algoId: verdict.algoId, warning };
+        }
+        logStep(input.journal, `${input.label}_${attempt}`, { ok: true, algoId: verdict.algoId, response });
+        return { ok: true, kind: input.kind, response, algoId: verdict.algoId };
       }
       lastError = verdict.reason;
       logStep(input.journal, `${input.label}_${attempt}`, { rejected: verdict.reason, response });
@@ -368,6 +396,72 @@ function algoStatusOf(response: unknown): string | null {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return null;
+}
+
+/**
+ * True when an openAlgoOrders row is a LIVE protective order of this kind for
+ * this symbol.
+ *
+ * `closePosition` is required because that is what makes the algo order an exit
+ * for the whole position: a STOP_MARKET without it closes a fixed quantity, and
+ * one that closed a quantity this tool never opened is not the protective order
+ * that was sent. The trigger, when the row carries one, has to be the trigger
+ * that was sent: a live order with a different trigger is a different stop.
+ */
+function isLiveAlgoRow(row: unknown, symbol: string, kind: ProtectiveKind, sentTrigger: number): boolean {
+  if (!isRecord(row)) return false;
+  if (typeof row.symbol === "string" && row.symbol.toUpperCase() !== symbol.toUpperCase()) return false;
+  const type = typeof row.type === "string" ? row.type : typeof row.orderType === "string" ? row.orderType : "";
+  if (type.toUpperCase() !== kind) return false;
+  const closes = row.closePosition === true || String(row.closePosition).toLowerCase() === "true";
+  if (!closes) return false;
+  const status = algoStatusOf(row);
+  if (status == null || !LIVE_ALGO_STATUSES.has(status.toUpperCase())) return false;
+  // Optional: the row may or may not echo the trigger it will fire on.
+  const echoed = echoedTrigger(row);
+  return echoed == null || Math.abs(echoed - sentTrigger) <= 1e-9;
+}
+
+/**
+ * Confirms a protective order the exchange accepted WITHOUT echoing a trigger.
+ *
+ * The real Algo Service answers {algoId, status: NEW} with no triggerPrice, and
+ * refusing that shape would flatten every order the exchange had accepted. So it
+ * is accepted provisionally, and then proven with ONE read of
+ * GET /fapi/v1/openAlgoOrders: a live STOP_MARKET (or TAKE_PROFIT_MARKET) with
+ * closePosition on the symbol is the order, live on the exchange. A miss, or a
+ * read that failed, is NOT a confirmation: the stop is reported as failed so the
+ * caller takes its flatten path, because "accepted but unverifiable" is exactly
+ * the state that leaves a position bare.
+ */
+async function confirmAlgoOrderLive(
+  client: TradingClient,
+  input: { symbol: string; kind: ProtectiveKind; sentTrigger: number; journal: JournalRecord; label: string; attempt: number },
+): Promise<{ confirmed: true } | { confirmed: false; reason: string }> {
+  try {
+    const rows = await client.openAlgoOrders();
+    const live = Array.isArray(rows) ? rows.filter((row) => isLiveAlgoRow(row, input.symbol, input.kind, input.sentTrigger)) : [];
+    logStep(input.journal, `${input.label}_confirm_${input.attempt}`, {
+      ok: live.length > 0,
+      live: live.length,
+      kind: input.kind,
+      sentTrigger: input.sentTrigger,
+    });
+    if (live.length === 0) {
+      return {
+        confirmed: false,
+        reason: `the open algo orders read afterwards shows no live ${input.kind} closePosition order for ${input.symbol}`,
+      };
+    }
+    return { confirmed: true };
+  } catch (err) {
+    const message = redactSecrets(errorMessage(err), []);
+    logStep(input.journal, `${input.label}_confirm_${input.attempt}`, { error: message });
+    return {
+      confirmed: false,
+      reason: `the open algo orders could not be read (${message}), so the accepted ${input.kind} could not be confirmed`,
+    };
+  }
 }
 
 /**
@@ -620,6 +714,55 @@ export function guardLimitsFrom(cfg: TradingConfig) {
 /** True when a lookup by clientOrderId answered "no such order". */
 export function isOrderNotFound(err: unknown): boolean {
   return err instanceof BinanceError && err.code === ORDER_NOT_FOUND_CODE;
+}
+
+/**
+ * What a cancel proved, out of the answer the exchange gave.
+ *
+ * `filledQty` matters because a cancel on USDⓈ-M futures is NOT only a cancel:
+ * DELETE /fapi/v1/order answers 200 with the executedQty and avgPrice of what was
+ * cancelled, so an order that filled before the cancel is visible in the cancel
+ * answer and nowhere else. Discarding that body ("200, so it is gone") is how a
+ * live position gets reported as unfilled.
+ */
+export interface CancelOutcome {
+  /** True only when the exchange proved the order is gone. */
+  confirmed: boolean;
+  /** Quantity the cancel answer reported as already filled. */
+  filledQty: number;
+  /** Average price the cancel answer reported, when it did. */
+  avgPrice: number | null;
+  /** The cancel answer itself, or null when there was none. */
+  order: unknown;
+  error: string | null;
+}
+
+/**
+ * Cancels one order by clientOrderId and keeps what the answer says.
+ *
+ * `confirmed` is true only when the exchange proved the order is gone: a 200
+ * cancel, or a definitive not-found (-2013, -2011), which is a real answer and
+ * not a confirmation that nothing filled. Any other failure, or a cancel that
+ * itself times out, is NOT a confirmation: the caller must treat the order as
+ * perhaps still resting and refuse WITHOUT resolving the intent.
+ */
+export async function cancelOrderByClientId(
+  client: TradingClient,
+  symbol: string,
+  clientOrderId: string,
+  journal: JournalRecord,
+  label = "cancel_by_client_order_id",
+): Promise<CancelOutcome> {
+  try {
+    const result = await client.cancelOrder(symbol, clientOrderId);
+    logStep(journal, label, { clientOrderId, canceled: true, result });
+    return { confirmed: true, filledQty: filledQuantityOf(result), avgPrice: averagePriceOf(result), order: result, error: null };
+  } catch (err) {
+    const message = redactSecrets(errorMessage(err), []);
+    logStep(journal, label, { clientOrderId, canceled: false, error: message });
+    if (isOrderNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null, error: null };
+    return { confirmed: false, filledQty: 0, avgPrice: null, order: null, error: message };
+  }
 }
 
 /** Reads the quantity actually filled out of any order response. */

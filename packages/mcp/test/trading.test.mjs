@@ -36,6 +36,25 @@ const placeArgs = {
   leverage: 2,
 };
 
+/** A live protective algo order, as GET /fapi/v1/openAlgoOrders reports one. */
+function liveAlgoRow(symbol, kind, trigger) {
+  return {
+    algoId: 5001,
+    algoType: "CONDITIONAL",
+    orderType: kind,
+    type: kind,
+    symbol,
+    side: "SELL",
+    positionSide: "BOTH",
+    quantity: "0",
+    algoStatus: "NEW",
+    triggerPrice: trigger,
+    priceProtect: true,
+    closePosition: true,
+    reduceOnly: false,
+  };
+}
+
 test.beforeEach(() => cleanJournal());
 
 // ---------------------------------------------------------------------------
@@ -463,22 +482,81 @@ test("place_order refuses to send when the journal cannot be written", async () 
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
 });
 
-test("place_order accepts the real Algo shape (algoId, status NEW) with no echoed trigger, and warns", async () => {
+test("place_order accepts the real Algo shape (algoId, status NEW) with no echoed trigger, once openAlgoOrders confirms it", async () => {
   // The real Algo Service answers {algoId, status: NEW} WITHOUT echoing
   // triggerPrice. Refusing that shape flattened every order the exchange had
-  // actually accepted, so a live algoId plus a live status is accepted now, with a
-  // warning that the trigger could not be verified.
-  const exchange = makeExchange({ algoNoTrigger: true, positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }] });
+  // actually accepted, so a live algoId plus a live status is accepted now: with
+  // a warning, and only after ONE read of the open algo orders proves the order
+  // is live on the exchange. "Accepted, unverified, never re-read" is the state
+  // that leaves a position bare.
+  const exchange = makeExchange({
+    algoNoTrigger: true,
+    algoOrders: [liveAlgoRow("BTCUSDT", "STOP_MARKET", "99500")],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
     assert.equal(body.sent, true, "a live algoId is not flattened");
     assert.equal(body.stop.response.algoId, 5001);
     assert.match(body.warnings.join(" "), /did not echo a triggerPrice/);
+    assert.match(body.warnings.join(" "), /confirmed live in GET \/fapi\/v1\/openAlgoOrders/);
   });
   // No flatten: the entry order and nothing else.
   assert.equal(exchange.post("/fapi/v1/order").length, 1, "a live algoId sends no reduceOnly");
   const stopStep = journalLines(JOURNAL, "place_order")[0].exchange.find((item) => item.step === "protective_stop_1");
   assert.match(JSON.stringify(stopStep), /did not echo a triggerPrice/);
+  // Exactly one confirmation read, after the algo order was sent.
+  const confirm = journalLines(JOURNAL, "place_order")[0].exchange.find((item) => item.step === "protective_stop_confirm_1");
+  assert.equal(confirm.ok, true);
+  const steps = exchange.paths();
+  assert.ok(
+    steps.lastIndexOf("GET /fapi/v1/openAlgoOrders") > steps.lastIndexOf("POST /fapi/v1/algoOrder"),
+    steps.join(", "),
+  );
+});
+
+test("a stop accepted with no echoed trigger and NOT found in openAlgoOrders is a failed stop", async () => {
+  // The Algo Service answered {algoId, status: NEW} with no trigger, and the open
+  // algo orders that were read to verify it show nothing. The order the exchange
+  // says it accepted is not there: the position is unprotected, so it is closed.
+  const exchange = makeExchange({
+    algoNoTrigger: true,
+    algoOrders: [],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /no live STOP_MARKET closePosition order for BTCUSDT/);
+    assert.match(text, /the position was closed with a MARKET reduceOnly order/);
+  });
+  // One algo attempt, not two: the order IS live on the exchange, so placing a
+  // second one would leave a duplicate stop behind.
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+});
+
+test("a stop whose openAlgoOrders read fails is a failed stop, not a warning", async () => {
+  // The confirmation read could not be made (a 500). An unverifiable stop is not
+  // a stop: the position is closed instead of being reported as protected.
+  const exchange = makeExchange({
+    algoNoTrigger: true,
+    openAlgoOrdersHttpError: 500,
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /protective stop failed after 2 attempts/);
+    assert.match(text, /open algo orders could not be read/);
+  });
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
+  // The position really was flattened: an unverifiable stop is a failed stop.
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+  const emergency = journalLines(JOURNAL, "place_order")[0].exchange.find((item) => item.step === "emergency_close");
+  assert.equal(emergency.flat, true);
 });
 
 test("place_order still flattens when the algo answer has neither an echoed trigger nor a live status", async () => {

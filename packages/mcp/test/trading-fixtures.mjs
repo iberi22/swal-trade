@@ -64,6 +64,16 @@ export function makeExchange(options = {}) {
     queryOrderHttpError = null,
     /** HTTP status positionRisk answers once an order POST has been sent (for example 500). */
     positionRiskHttpError = null,
+    /** Rows the reader starts seeing once a DELETE /fapi/v1/order has been sent. */
+    positionsAfterCancel = [],
+    /** Body DELETE /fapi/v1/order answers with, when it is not a plain "cancelled" 200. */
+    cancelOrderAnswer = null,
+    /** Answers for a MARKET reduceOnly order, in order: a failed reduction is not a failed close. */
+    reduceFailures = [],
+    /** HTTP status positionRisk answers once a DELETE /fapi/v1/order has been sent (for example 500): an unreadable post-cancel position. */
+    positionRiskHttpErrorAfterCancel = null,
+    /** HTTP status GET /fapi/v1/openAlgoOrders answers once an algo order has been POSTed (for example 500): the confirmation read fails. */
+    openAlgoOrdersHttpError = null,
   } = options;
 
   const calls = [];
@@ -109,16 +119,31 @@ export function makeExchange(options = {}) {
     if (path === "/fapi/v3/account") return json({ positions });
     if (path === "/fapi/v2/positionRisk") {
       const opened = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/order");
+      const cancelled = calls.some((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
       // Fail only once an order POST has been sent: the pre-estimate positionRisk
       // reads (the account snapshot, the liquidation estimate) must still work.
       if (opened && positionRiskHttpError != null) return json({ code: -1000, msg: "positionRisk read failed" }, positionRiskHttpError);
+      // And only once a cancel has been sent: that is the read that tells whether
+      // a confirmed cancel left a position behind.
+      if (cancelled && positionRiskHttpErrorAfterCancel != null) {
+        return json({ code: -1000, msg: "positionRisk read failed after the cancel" }, positionRiskHttpErrorAfterCancel);
+      }
       const after = opened ? positionsAfterOrder : [];
-      const rows = [...positions, ...after]
+      const afterCancel = cancelled ? positionsAfterCancel : [];
+      const rows = [...positions, ...after, ...afterCancel]
         .filter((row) => !reducedSymbols.has(row.symbol))
         .map((row) => (closeRemainder.has(row.symbol) ? { ...row, positionAmt: closeRemainder.get(row.symbol) } : row));
       return json(rows);
     }
-    if (path === "/fapi/v1/openAlgoOrders") return json(algoOrders);
+    if (path === "/fapi/v1/openAlgoOrders") {
+      const algoPosted = calls.some((call) => call.method === "POST" && call.path === "/fapi/v1/algoOrder");
+      // Only after an algo order has been sent: the earlier reads are the account
+      // snapshot, and the one that matters here is the confirmation read.
+      if (algoPosted && openAlgoOrdersHttpError != null) {
+        return json({ code: -1000, msg: "openAlgoOrders read failed" }, openAlgoOrdersHttpError);
+      }
+      return json(algoOrders);
+    }
     if (path === "/fapi/v1/income") return json(income);
     if (path === "/fapi/v1/leverageBracket") {
       return json([
@@ -167,6 +192,10 @@ export function makeExchange(options = {}) {
           } else {
             closeRemainder.set(key, left);
           }
+          // A reduceOnly order the exchange refuses stays refused, whether it is
+          // the emergency close or the reduction of a fill above the cap.
+          const reduceFailure = reduceFailures.length > 0 ? reduceFailures[0] : null;
+          if (reduceFailure) return json({ code: reduceFailure.code, msg: reduceFailure.msg }, 400);
           // A rejected close stays rejected: the exchange does not start
           // accepting a reduceOnly order just because it is asked again.
           if (closeFailures.length > 0) {
@@ -231,6 +260,14 @@ export function makeExchange(options = {}) {
       // cancelOrderHttpError models a cancel that fails or is ambiguous, which is
       // the case where the order may still be resting.
       if (cancelOrderHttpError != null) return json({ code: -1000, msg: "cancel failed" }, cancelOrderHttpError);
+      // A plain 200 cancel carries no executedQty. What Binance USD-M answers when
+      // the order had already filled is a body with the executedQty and avgPrice of
+      // what was cancelled; cancelOrderAnswer models that body, and the not-found
+      // shapes (-2013, -2011) with their 400.
+      if (cancelOrderAnswer != null) {
+        const code = typeof cancelOrderAnswer.code === "number" ? cancelOrderAnswer.code : 200;
+        return json(cancelOrderAnswer, code < 0 ? 400 : 200);
+      }
       return json({ code: 200, msg: "Cancelled", symbol: params.get("symbol"), origClientOrderId: params.get("origClientOrderId") });
     }
     if (path === "/fapi/v1/allOpenOrders" && method === "DELETE") return json({ code: 200, msg: "cancelled" });
