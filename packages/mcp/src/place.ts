@@ -466,6 +466,14 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       restingOrders: exposure.restingOrders.length,
       errors: exposure.errors,
     });
+    // A cap decided against an exposure that could not be read is not a cap: a
+    // 429 on openOrders would leave symbolNotionalUsd at 0 and sail through. Fail
+    // closed before the guard rather than trade against an unknown exposure.
+    if (exposure.errors.length > 0) {
+      return refused(
+        `the exposure could not be read (${exposure.errors.join(" ")}): refusing the order instead of trading against an unknown exposure.`,
+      );
+    }
     const guard: GuardDecision = checkOrder(
       { symbol, side, notionalUsd, stopLossPct, takeProfitPct, leverage, orderType },
       guardLimitsFrom(cfg.value),

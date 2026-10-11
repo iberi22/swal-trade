@@ -551,6 +551,20 @@ test("place_order post_only protects a fill that arrives with an EXPIRED answer"
   assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
 });
 
+test("place_order refuses when the exposure cannot be read instead of trading against an unknown exposure", async () => {
+  // A 429 on GET /fapi/v1/openOrders leaves symbolNotionalUsd at 0, so the cap
+  // would pass. A cap decided against an exposure that could not be read is not a
+  // cap: the order is refused before the guard.
+  const exchange = makeExchange({ openOrdersHttpError: 429 });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /the exposure could not be read/);
+    assert.match(text, /refusing the order instead of trading against an unknown exposure/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0, "nothing is sent when the exposure is unknown");
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+});
+
 test("place_order post_only refuses a reprice that would cross its own protective stop", async () => {
   // tickSize 1, entry at the bid 100, stop_loss_pct 1.5 -> stop rounds to 99. The
   // GTX at 100 expires (would immediately match); the reprice lands exactly ON

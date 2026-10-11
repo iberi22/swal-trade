@@ -46,6 +46,8 @@ export function makeExchange(options = {}) {
     algoAnswers = {},
     /** Working orders of the symbol, for the notional cap (item 8). */
     openOrders = [],
+    /** HTTP status GET /fapi/v1/openOrders answers (for example 429): exposure is unknown. */
+    openOrdersHttpError = null,
     /** Maintenance margin ratio the leverage bracket reports. */
     maintenanceMarginRatio = "0.004",
     /** Amounts each reduceOnly close leaves behind, in order; past the end it is zero. */
@@ -114,7 +116,10 @@ export function makeExchange(options = {}) {
         { symbol: params.get("symbol"), brackets: [{ bracket: 1, initialMarginRate: "0.2", maintMarginRatio: maintenanceMarginRatio, cum: "0" }] },
       ]);
     }
-    if (path === "/fapi/v1/openOrders") return json(openOrders);
+    if (path === "/fapi/v1/openOrders") {
+      if (openOrdersHttpError != null) return json({ code: -1003, msg: "Too many requests; please retry later." }, openOrdersHttpError);
+      return json(openOrders);
+    }
 
     if (path === "/fapi/v1/leverage") return json({ leverage: Number(params.get("leverage")), symbol: params.get("symbol") });
     if (path === "/fapi/v1/marginType") {

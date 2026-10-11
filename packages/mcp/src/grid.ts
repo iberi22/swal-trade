@@ -595,6 +595,14 @@ export async function gridPlace(deps: WriteDeps, args: GridPlaceArgs): Promise<T
       restingOrders: exposure.restingOrders.length,
       errors: exposure.errors,
     });
+    // A cap decided against an exposure that could not be read is not a cap: a
+    // 429 on openOrders would leave the exposure at 0 and pass. Fail closed
+    // before the guard rather than place over an unknown exposure.
+    if (exposure.errors.length > 0) {
+      return refused(
+        `the exposure could not be read (${exposure.errors.join(" ")}): refusing the grid instead of placing it against an unknown exposure.`,
+      );
+    }
     const guard = checkGridPlan(plan, guardLimitsFrom(cfg.value), {
       dayPnl: view.dayPnl,
       openPositions: exposure.openPositions,

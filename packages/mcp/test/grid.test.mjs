@@ -658,6 +658,24 @@ test("the same quotient sizes an order and a proposal, not only a grid", () => {
 // symbol that already had a resting entry passed the cap twice.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Item N3: the grid is checked against the exposure cap, like every order.
+//---------------------------------------------------------------------------
+
+test("grid_place refuses when the exposure cannot be read instead of placing against an unknown exposure", async () => {
+  // A 429 on GET /fapi/v1/openOrders leaves the exposure at 0 and the cap passes.
+  // Fail closed before the guard: no level is placed over an unknown exposure.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({ symbols: GRID_SYMBOLS, openOrdersHttpError: 429 });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /the exposure could not be read/);
+    assert.match(text, /refusing the grid instead of placing it against an unknown exposure/);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0, "no level is placed over an unknown exposure");
+  assert.equal(exchange.post("/fapi/v1/algoOrder").length, 0);
+});
+
 test("checkGridPlan refuses a grid that would take the account past the exposure cap", () => {
   const plan = buildGridPlan({
     args: { symbol: "BTCUSDT", lower: 100, upper: 102, levels: 3, total_notional_usd: 300, stop_loss_price: 95 },
