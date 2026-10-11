@@ -1129,3 +1129,25 @@ test("close_position journals an intent before the close and an outcome after it
   assert.ok(raw.findIndex((line) => line.event === "close_position_intent") < raw.findIndex((line) => line.event === "close_position_outcome"));
   assert.equal(exchange.post("/fapi/v1/order").length, 1);
 });
+
+test("the liquidation estimate is read after the leverage is set, not before", async () => {
+  // positionRisk only reports a liquidationPrice for the leverage that is live, so
+  // the estimate read BEFORE setLeverage belongs to whatever leverage the symbol
+  // had: a stop is then approved or refused against a liquidation that is not the
+  // one this order will trade at.
+  const exchange = makeExchange();
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    await client.callTool({ name: "place_order", arguments: placeArgs });
+  });
+  const steps = exchange.paths();
+  const leverage = steps.indexOf("POST /fapi/v1/leverage");
+  const margin = steps.indexOf("POST /fapi/v1/marginType");
+  const bracket = steps.lastIndexOf("GET /fapi/v1/leverageBracket");
+  const risk = steps.lastIndexOf("GET /fapi/v2/positionRisk");
+  assert.ok(leverage >= 0 && margin >= 0, steps.join(", "));
+  assert.ok(bracket > leverage, `leverageBracket at ${bracket} must come after setLeverage at ${leverage}: ${steps.join(", ")}`);
+  assert.ok(bracket > margin, steps.join(", "));
+  // The positionRisk read the estimate uses is the one AFTER the leverage: the
+  // earlier one is the account snapshot the guard ran against.
+  assert.ok(risk > leverage, `positionRisk at ${risk} must come after setLeverage at ${leverage}: ${steps.join(", ")}`);
+});

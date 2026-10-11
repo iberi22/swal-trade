@@ -504,24 +504,6 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       return refused(`the stop rounds to ${stopPrice}, which is not on the loss side of the entry price ${entryPrice}: the stop distance is smaller than one tickSize.`);
     }
 
-    // The exchange's own liquidation estimate, not the textbook 100/leverage:
-    // positionRisk after the leverage was set, or the maintenance margin ratio of
-    // the leverage bracket. A stop beyond that fires after the liquidation.
-    const liquidation = await fetchLiquidationInputs(client, { symbol, side, referencePrice: entryPrice, leverage });
-    const estimate = readLiquidationEstimate({
-      positionRisk: liquidation.positionRisk,
-      leverageBracket: liquidation.leverageBracket,
-      symbol,
-      side,
-      referencePrice: entryPrice,
-      leverage,
-    });
-    logStep(journal, "liquidation", estimate);
-    const insideLiquidation = stopInsideLiquidation({ side, entryPrice, stopPrice: stopNumber, estimate });
-    if (!insideLiquidation.ok) {
-      return refused(`the entry was not sent: ${insideLiquidation.reason ?? "the stop is not inside the liquidation estimate"}`);
-    }
-
     let takeProfitPrice: string | null = null;
     if (takeProfitPct != null) {
       const rawTp = side === "BUY" ? entryPrice * (1 + takeProfitPct / 100) : entryPrice * (1 - takeProfitPct / 100);
@@ -537,6 +519,27 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     const prelude = await applyLeverageAndMargin(client, symbol, leverage);
     logStep(journal, "leverage", prelude.leverage);
     logStep(journal, "marginType", prelude.margin);
+
+    // The exchange's own liquidation estimate, not the textbook 100/leverage: the
+    // liquidationPrice of an existing position in positionRisk, or the maintenance
+    // margin ratio of the leverage bracket. It is read AFTER the leverage is set,
+    // because positionRisk only reports a liquidationPrice for the leverage that is
+    // live: read first, the estimate belongs to the previous leverage and the stop
+    // is approved or refused against the wrong number.
+    const liquidation = await fetchLiquidationInputs(client, { symbol, side, referencePrice: entryPrice, leverage });
+    const estimate = readLiquidationEstimate({
+      positionRisk: liquidation.positionRisk,
+      leverageBracket: liquidation.leverageBracket,
+      symbol,
+      side,
+      referencePrice: entryPrice,
+      leverage,
+    });
+    logStep(journal, "liquidation", estimate);
+    const insideLiquidation = stopInsideLiquidation({ side, entryPrice, stopPrice: stopNumber, estimate });
+    if (!insideLiquidation.ok) {
+      return refused(`the entry was not sent: ${insideLiquidation.reason ?? "the stop is not inside the liquidation estimate"}`);
+    }
 
     // The intent is journaled BEFORE the entry is sent: a line that only exists
     // after the exchange answered cannot prove that an ambiguous answer (a
