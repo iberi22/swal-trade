@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { ChartSession, type BridgeReport } from './tv-session';
 import { buildDrawMessage, type BridgeShape } from './schema';
 
-/** Chart de mentira que apunta lo que se crea, se borra y sus suscripciones. */
-function makeChart(symbol: string, resolution: string) {
-  let sym = symbol;
-  let res = resolution;
-  let range = { from: 1_700_000_000, to: 1_700_100_000 };
-  const created: Array<{ name: string; points: Array<{ time: number; price: number }> }> = [];
+// Stub of TradingView chart API
+function makeChart(sym: string, res: string) {
+  const created: { name: string; points: any[] }[] = [];
   const removed: string[] = [];
+  let range = { from: 1_700_000_000, to: 1_700_100_000 };
   const cbs: Record<string, () => void> = {};
   let counter = 0;
   const chart = {
@@ -113,7 +111,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     session.start();
     await clock.tick();
     // Llega un draw sin gráfico: se encola, no pinta.
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1d'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1d'));
     expect(session.isReady).toBe(false);
     // Aparece el chart que casa con el análisis.
     const chart = makeChart('BTCUSDT@PRICETYPE=LAST', '1D');
@@ -136,7 +134,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'ETHUSDT@1h'));
+    session.apply(buildDrawMessage([levelShape('a')], 'ETHUSDT@1h'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.created.length).toBeGreaterThan(0);
     session.stop();
@@ -153,7 +151,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1h'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1h'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.created).toHaveLength(0);
     const last = reports[reports.length - 1]!;
@@ -173,7 +171,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1h'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1h'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.created).toHaveLength(0);
     expect(reports[reports.length - 1]?.status).toBe('mismatch');
@@ -191,7 +189,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1d'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1d'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.created.length).toBe(1);
     // El usuario cambia el par a ETH en la página.
@@ -219,7 +217,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1d'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1d'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chartA.created.length).toBe(1);
     // El iframe se recarga (Trading View ↔ Original): el chart desaparece.
@@ -251,9 +249,9 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     });
     session.start();
     await clock.tick();
-    session.apply(buildDrawMessage([levelShape('a')], 'nonce', 'BTCUSDT@1d'));
+    session.apply(buildDrawMessage([levelShape('a')], 'BTCUSDT@1d'));
     await new Promise((r) => setTimeout(r, 0));
-    session.apply({ type: 'swal:clear', version: 1, nonce: 'nonce' });
+    session.apply({ type: 'swal:clear', version: 2 });
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.removed).toContain('ent-1');
     session.stop();
@@ -273,7 +271,7 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     chart.setRange(1_500_000_000, 1_500_100_000);
     chart.fire('range');
     // Un punto fuera del rango se ancla dentro de los márgenes nuevos.
-    session.apply(buildDrawMessage([levelShape('a', 100)], 'nonce', 'BTCUSDT@1d'));
+    session.apply(buildDrawMessage([levelShape('a', 100)], 'BTCUSDT@1d'));
     await new Promise((r) => setTimeout(r, 0));
     expect(chart.created).toHaveLength(1);
     const point = chart.created[0]!.points[0]!;

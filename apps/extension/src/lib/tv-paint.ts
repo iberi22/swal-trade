@@ -44,7 +44,7 @@ export function tvStateHint(state: TvChartState | null | undefined): string | nu
     return 'El gráfico de Trading View está cargando. En cuanto tenga datos se pinta.';
   }
   if (state === 'unavailable') {
-    return 'El puente con el gráfico no está disponible: no se puede pintar en esta página.';
+    return 'no disponible en esta pestaña.';
   }
   // `ready`: no estorba. `mismatch`: lo compone el panel con los dos símbolos.
   return null;

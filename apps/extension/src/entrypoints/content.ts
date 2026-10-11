@@ -7,7 +7,7 @@ import {
   type PageSource,
 } from '../lib/page-probe';
 import { buildClearMessage, buildDrawMessage, coerceShapes, parseBridgeMessage } from '../lib/tv-bridge/schema';
-import { createNonce, publishNonce, readNonce } from '../lib/tv-bridge/nonce';
+import { buildHello, createSession, isPortFor } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
 import { TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 
@@ -77,6 +77,9 @@ function shouldRescan(records: MutationRecord[]): boolean {
 /** Cada cuánto se mira si la pestaña del gráfico ha cambiado. */
 const TV_PROBE_MS = 2_500;
 
+// Expresión regular para saber si estamos en una página que puede tener el gráfico
+const PAINTABLE_URL = /^https:\/\/www\.binance\.com\/[^\/]+\/futures\//;
+
 /**
  * Lee el símbolo y la temporalidad de la URL, del DOM (barra de intervalos) y,
  * si la página no la pinta, de la clave de storage que la guarda. No lee
@@ -84,7 +87,9 @@ const TV_PROBE_MS = 2_500;
  */
 export default defineContentScript({
   matches: ['https://www.binance.com/*/futures/*', 'https://www.tradingview.com/chart/*'],
-  runAt: 'document_idle',
+  // document_start: el saludo con el puente MAIN-world tiene que ocurrir antes
+  // de que corra el primer script de la página (ver tv-bridge/handshake).
+  runAt: 'document_start',
   allFrames: false,
   world: 'ISOLATED',
   main() {
@@ -175,19 +180,10 @@ export default defineContentScript({
     document.addEventListener('click', schedule, true);
 
     // --- Pintar en el gráfico de Trading View de Binance ------------------
-    // El nonce vive en el DOM: el puente MAIN-world no comparte objetos de
-    // JavaScript con este mundo aislado, pero sí el documento.
-    const nonce = createNonce();
-    publishNonce(document, nonce);
-
-    const post = (message: unknown) => {
-      try {
-        window.postMessage(message, location.origin);
-      } catch {
-        // Sin destino mismo origen no se pinta. No pasa nada.
-      }
-    };
-
+    // Canal privado: el puente MAIN-world entrega un puerto de MessageChannel en
+    // el saludo de document_start. Desde ahí draw/clear/ready viajan SOLO por el
+    // puerto; nunca por window. Ver tv-bridge/handshake. Si el saludo falla, no se
+    // pinta y el panel dice que no está disponible.
     const publishTvState = (state: TvChartState, chart?: { symbol: string; tf: string }) => {
       try {
         void browser.runtime.sendMessage({ type: TV_STATE, state, chart }).catch(() => {});
@@ -201,6 +197,28 @@ export default defineContentScript({
     /** Estado que refleja la sonda del DOM (sin puente que lo refinen). */
     const probedState = (): TvChartState =>
       probeTvChart(document).present ? 'tradingview' : 'original';
+    const applyReady = (
+      ready: boolean,
+      reason: string | undefined,
+      chart?: { symbol: string; tf: string },
+    ) => {
+      if (ready) {
+        lastTvState = 'ready';
+        lastTvChart = null;
+        publishTvState('ready');
+        return;
+      }
+      if (reason === 'mismatch' && chart) {
+        lastTvState = 'mismatch';
+        lastTvChart = chart;
+        publishTvState('mismatch', chart);
+        return;
+      }
+      const probed = probedState();
+      lastTvState = probed;
+      lastTvChart = null;
+      publishTvState(probed);
+    };
     const probeChart = () => {
       // El puente manda sobre la sonda cuando sabe si el chart está listo o no
       // casa: no lo pisamos mientras estemos en ready o mismatch.
@@ -212,39 +230,60 @@ export default defineContentScript({
       publishTvState(state);
     };
 
-    const onWindowMessage = (event: MessageEvent) => {
-      if (event.source !== window) return;
-      const message = parseBridgeMessage(event.data, readNonce(document));
-      // Se acepta el saludo del puente y nada más: lo que él dibuja no vuelve.
-      if (!message || message.type !== 'swal:ready') return;
-      if (message.ready) {
-        lastTvState = 'ready';
-        lastTvChart = null;
-        publishTvState('ready');
-        return;
+    let port: MessagePort | null = null;
+    let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+    let onHandshake: ((event: MessageEvent) => void) | null = null;
+    if (PAINTABLE_URL.test(location.href)) {
+      const session = createSession();
+      // Si el puente no responde al saludo, el pintado no está disponible.
+      handshakeTimer = setTimeout(() => {
+        if (!port) {
+          lastTvState = 'unavailable';
+          publishTvState('unavailable');
+        }
+      }, 3_000);
+      onHandshake = (event: MessageEvent) => {
+        if (event.source !== window || port) return;
+        if (!isPortFor(event.data, session, event.ports)) return;
+        const received = (event.ports as MessagePort[] | undefined)?.[0];
+        if (!received) return;
+        port = received;
+        if (handshakeTimer !== null) {
+          clearTimeout(handshakeTimer);
+          handshakeTimer = null;
+        }
+        port.onmessage = (ev: MessageEvent) => {
+          const message = parseBridgeMessage(ev.data);
+          if (!message || message.type !== 'swal:ready') return;
+          applyReady(message.ready, message.reason, message.chart);
+        };
+        try {
+          port.start?.();
+        } catch {
+          // Un puerto ya iniciado no pasa nada.
+        }
+      };
+      window.addEventListener('message', onHandshake);
+      try {
+        window.postMessage(buildHello(session, false), location.origin);
+      } catch {
+        // Sin destino mismo origen no hay saludo: quedará "no disponible".
       }
-      if (message.reason === 'mismatch' && message.chart) {
-        lastTvState = 'mismatch';
-        lastTvChart = message.chart;
-        publishTvState('mismatch', message.chart);
-        return;
-      }
-      // absent/booting: el puente no tiene chart listo. Refleja la sonda.
-      const probed = probedState();
-      lastTvState = probed;
-      lastTvChart = null;
-      publishTvState(probed);
-    };
-    window.addEventListener('message', onWindowMessage);
+    }
 
     const paint = (command: PaintCommand, enabled: boolean) => {
-      if (!enabled) {
-        post(buildClearMessage(nonce));
-        return;
+      if (!port) return; // sin canal privado no se pinta
+      try {
+        if (!enabled) {
+          port.postMessage(buildClearMessage());
+          return;
+        }
+        const shapes = coerceShapes(command.shapes);
+        if (shapes.length === 0) return;
+        port.postMessage(buildDrawMessage(shapes, command.key));
+      } catch {
+        // El puerto se cerró: no se pinta. No pasa nada.
       }
-      const shapes = coerceShapes(command.shapes);
-      if (shapes.length === 0) return;
-      post(buildDrawMessage(shapes, nonce, command.key));
     };
 
     const onRuntimeMessage = (message: unknown) => {
@@ -266,8 +305,15 @@ export default defineContentScript({
       clearInterval(poll);
       clearInterval(tvProbe);
       if (timer !== null) clearTimeout(timer);
-      window.removeEventListener('message', onWindowMessage);
+      if (onHandshake) window.removeEventListener('message', onHandshake);
+      if (handshakeTimer !== null) clearTimeout(handshakeTimer);
       browser.runtime.onMessage.removeListener(onRuntimeMessage);
+      try {
+        port?.close();
+      } catch {
+        // ya estaba cerrado
+      }
+      port = null;
     });
 
     schedule();
