@@ -270,10 +270,14 @@
     }
     painting = true;
     const top = current.top.length > 0 ? current.top : current.findings;
+    // Etiqueta el hallazgo elegido (o el primero si no hay ninguno): elegir
+    // otro hallazgo vuelve a pintar con sus rótulos, sin llenar de texto.
+    const labelId = selectedId ?? top[0]?.id ?? null;
     const shapes = shapesForFindings(top, {
       limit: CHART_FINDING_LIMIT,
       candleTimes: times,
       priceAt: priceAtTime,
+      labelId: labelId ? String(labelId) : null,
     });
     void sendPaintCommand({ key: `${symbol}@${timeframe}`, shapes });
   });

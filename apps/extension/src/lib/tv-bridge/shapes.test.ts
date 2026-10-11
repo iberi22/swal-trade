@@ -243,4 +243,26 @@ describe('shapesForFindings', () => {
   it('sin hallazgos no hay formas', () => {
     expect(shapesForFindings([])).toEqual([]);
   });
+
+  it('solo el hallazgo etiquetado conserva texto; el resto va sin rótulo (UX)', () => {
+    const findings = [
+      finding({ id: 'fuerte', levels: [{ role: 'neckline', price: 100, confirm: 105, invalidate: 95 }], strength: 0.9 }),
+      finding({ id: 'flojo', levels: [{ role: 'neckline', price: 200, confirm: 205, invalidate: 195 }], strength: 0.2 }),
+    ];
+    const shapes = shapesForFindings(findings, { limit: 2 });
+    const withText = shapes.filter((item) => item.text.length > 0);
+    // Por defecto etiqueta solo el mejor ranqueado (fuerte).
+    expect(withText.every((item) => item.id.startsWith('fuerte|'))).toBe(true);
+    expect(shapes.some((item) => item.id.startsWith('flojo|') && item.text === '')).toBe(true);
+  });
+
+  it('labelId elige qué hallazgo lleva el texto', () => {
+    const findings = [
+      finding({ id: 'fuerte', levels: [{ role: 'neckline', price: 100, confirm: 105, invalidate: 95 }], strength: 0.9 }),
+      finding({ id: 'flojo', levels: [{ role: 'neckline', price: 200, confirm: 205, invalidate: 195 }], strength: 0.2 }),
+    ];
+    const shapes = shapesForFindings(findings, { limit: 2, labelId: 'flojo' });
+    expect(shapes.some((item) => item.id.startsWith('flojo|') && item.text.length > 0)).toBe(true);
+    expect(shapes.some((item) => item.id.startsWith('fuerte|') && item.text === '')).toBe(true);
+  });
 });

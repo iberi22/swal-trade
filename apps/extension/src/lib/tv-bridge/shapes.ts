@@ -178,6 +178,11 @@ export interface ShapesOptions {
   candleTimes?: readonly number[];
   /** Precio de la vela más cercana a un instante. Sin ella no hay flechas. */
   priceAt?: (time: number) => number | null;
+  /**
+   * Id del hallazgo cuyos niveles llevan texto. Los demás se pintan sin
+   * etiqueta para no llenar el gráfico. Por defecto, el mejor ranqueado.
+   */
+  labelId?: string | null;
 }
 
 function nearestPrice(
@@ -311,16 +316,23 @@ export function shapesForFinding(finding: Finding, opts?: ShapesOptions): Bridge
 /**
  * Formas de todos los hallazgos que caben en el gráfico. Las líneas repetidas
  * (mismo id estable) se pintan una vez.
+ *
+ * Para no llenar el gráfico de texto, solo el hallazgo etiquetado (por defecto
+ * el mejor ranqueado; o `labelId` si se pasa) conserva los rótulos: los demás
+ * se pintan como líneas sueltas, sin texto.
  */
 export function shapesForFindings(findings: readonly Finding[], opts?: ShapesOptions): BridgeShape[] {
   const ranked = rankFindings(findings, opts?.limit ?? CHART_FINDING_LIMIT);
+  const labelId = opts?.labelId ?? (ranked[0] ? String(ranked[0].id) : null);
   const seen = new Set<string>();
   const out: BridgeShape[] = [];
   for (const finding of ranked) {
+    const labeled = labelId !== null && String(finding.id) === labelId;
     for (const shape of shapesForFinding(finding, opts)) {
       if (seen.has(shape.id)) continue;
       seen.add(shape.id);
-      out.push(shape);
+      // Sin etiqueta la forma sigue siendo la misma: solo cambia el texto.
+      out.push(labeled ? shape : { ...shape, text: '' });
       // El mensaje tiene tope: sobra lo que no quepa.
       if (out.length >= SWAL_MAX_SHAPES) return out;
     }
