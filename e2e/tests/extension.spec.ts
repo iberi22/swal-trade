@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect, test } from '@playwright/test';
 import { fulfillJson } from '../fixtures/browser';
-import { toBinanceKlines } from '../fixtures/candles.mjs';
+import { aggressiveBuyKlines, toBinanceKlines } from '../fixtures/candles.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const extensionDir = path.join(repoRoot, 'apps/extension/.output/chrome-mv3');
@@ -23,8 +23,12 @@ interface SidePanel {
 /**
  * Carga el build de la extensión en un Chromium persistente con las llamadas de
  * red interceptadas: velas de Binance y titulares de trade.swal.network.
+ * `klines` permite mockear otra ventana (por ejemplo con volumen taker).
  */
-async function openSidePanel(fetchImpl?: () => Promise<unknown>): Promise<SidePanel> {
+async function openSidePanel(
+  fetchImpl?: () => Promise<unknown>,
+  klines: unknown = toBinanceKlines(),
+): Promise<SidePanel> {
   const manifestPath = path.join(extensionDir, 'manifest.json');
   let manifestRaw: string;
   try {
@@ -63,7 +67,7 @@ async function openSidePanel(fetchImpl?: () => Promise<unknown>): Promise<SidePa
   });
   await page.routeWebSocket(/fstream\.binance\.com/, () => {});
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
-    fulfillJson(route, toBinanceKlines()),
+    fulfillJson(route, klines),
   );
   await page.route(new RegExp(NEWS_URL), async (route) => {
     newsRequests.push(route.request().url());
@@ -210,6 +214,42 @@ test('the chart overlay renders every top finding, not only the selected one', a
       'aria-pressed',
       'true',
     );
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('el panel de CVD pinta el flujo de volumen de las velas mockeadas', async () => {
+  const panel = await openSidePanel(undefined, aggressiveBuyKlines());
+  try {
+    const { page } = panel;
+    const flow = page.getByRole('region', { name: 'Flujo de volumen' });
+    await expect(flow).toBeVisible();
+
+    // La leyenda explica el CVD en una línea.
+    await expect(flow.locator('.flow-legend')).toContainText(
+      'CVD = compra agresiva acumulada − venta agresiva acumulada (volumen taker)',
+    );
+
+    // El panel vive debajo del gráfico de precio y pinta sus propias series.
+    const price = page.locator('.chart canvas').first();
+    const cvd = flow.locator('canvas').first();
+    await expect(price).toBeVisible();
+    await expect(cvd).toBeVisible();
+    const priceBox = await price.boundingBox();
+    const cvdBox = await cvd.boundingBox();
+    expect(priceBox && cvdBox).toBeTruthy();
+    expect(cvdBox!.width).toBeGreaterThan(100);
+    expect(cvdBox!.height).toBeGreaterThan(40);
+    expect(cvdBox!.y).toBeGreaterThan(priceBox!.y + priceBox!.height - 1);
+
+    // 71 velas mockeadas, ninguna inventada.
+    await expect(flow.locator('.flow-chart')).toHaveAttribute('data-cvd-points', '71');
+
+    // La compra agresiva sale en la lista con su etiqueta en español.
+    await expect(page.getByRole('region', { name: 'Hallazgos' })).toContainText('Compra agresiva');
 
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {

@@ -1,4 +1,6 @@
 import { expect, test, assertClean } from './site-test';
+import { fulfillJson } from '../fixtures/browser';
+import { aggressiveBuyKlines } from '../fixtures/candles.mjs';
 
 test('chart, fuerza, focus, timeframe and fear & greed', async ({ page, problems }) => {
   const klines: string[] = [];
@@ -35,4 +37,48 @@ test('chart, fuerza, focus, timeframe and fear & greed', async ({ page, problems
   await doble.click();
   await expect(doble).toHaveClass(/active/);
   await assertClean(page, problems);
+});
+
+test('el panel de CVD se pinta bajo el gráfico con velas que traen volumen taker', async ({ page, problems }) => {
+  // Ruta registrada después de los mocks genéricos: gana esta.
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
+    fulfillJson(route, aggressiveBuyKlines()),
+  );
+
+  await page.goto('/analisis/', { waitUntil: 'load' });
+
+  // La leyenda explica qué es el CVD, en una línea y sin jerga.
+  await expect(page.locator('#cvd-legend')).toContainText(
+    'CVD = compra agresiva acumulada − venta agresiva acumulada (volumen taker)',
+  );
+
+  // El panel vive debajo del de velas y pinta las dos series (línea e histograma).
+  const price = page.locator('#chart canvas').first();
+  const cvd = page.locator('#cvd-pane canvas').first();
+  await expect(price).toBeVisible();
+  await expect(cvd).toBeVisible();
+  const priceBox = await price.boundingBox();
+  const cvdBox = await cvd.boundingBox();
+  expect(priceBox && cvdBox).toBeTruthy();
+  expect(cvdBox!.width).toBeGreaterThan(100);
+  expect(cvdBox!.height).toBeGreaterThan(40);
+  expect(cvdBox!.y).toBeGreaterThan(priceBox!.y + priceBox!.height - 1);
+
+  // Los puntos pintados salen de las velas mockeadas (71), no de un hueco vacío.
+  await expect(page.locator('#cvd-pane')).toHaveAttribute('data-cvd-points', '71');
+  await expect(page.locator('#cvd-pane')).toHaveAttribute('data-delta-bars', '71');
+
+  // El choque de compra agresiva llega a la lista de hallazgos (y al gráfico).
+  await expect(page.locator('#findings')).toContainText('Compra agresiva');
+  await assertClean(page, problems);
+});
+
+test('sin volumen taker el panel de CVD lo dice en lugar de inventar flujo', async ({ page }) => {
+  // Filas sin índice 9: el campo no existe, no es que valga cero.
+  const rows = aggressiveBuyKlines().map((row) => row.slice(0, 9));
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) => fulfillJson(route, rows));
+  await page.goto('/analisis/', { waitUntil: 'load' });
+  await expect(page.locator('#cvd-legend')).toContainText('no trae volumen taker');
+  await expect(page.locator('#cvd-pane')).toHaveAttribute('data-cvd-points', '0');
+  await expect(page.locator('#findings')).not.toContainText('Compra agresiva');
 });
