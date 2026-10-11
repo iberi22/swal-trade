@@ -15,3 +15,7 @@ import './explain.test.mjs';
 import './backup.test.mjs';
 import './backup-security.test.mjs';
 import './backup-ui.test.mjs';
+import './headers.test.mjs';
+import './analisis-a11y.test.mjs';
+import './sitemap.test.mjs';
+import './news-sentiment.test.mjs';
