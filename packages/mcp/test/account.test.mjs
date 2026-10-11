@@ -158,3 +158,28 @@ test("readExposure nets hedge rows before deciding the symbol has a position", a
   assert.equal(exposure.openPositions, 0);
   void NOW;
 });
+
+test("readExposure does not count a closed (positionAmt 0) account row as an open position", async () => {
+  // GET /fapi/v3/account returns a row for every symbol the market lists, most of
+  // them with positionAmt "0". Counting them made every symbol an open position,
+  // so the max-open-positions guard refused orders on an empty account.
+  const exposure = await readExposure({
+    client: clientStub({
+      account: {
+        positions: [
+          { symbol: "BTCUSDT", positionAmt: "0.01", notional: "-500", unrealizedProfit: "0", positionSide: "BOTH" },
+          { symbol: "ETHUSDT", positionAmt: "0", notional: "0", unrealizedProfit: "0", positionSide: "BOTH" },
+          { symbol: "SOLUSDT", positionAmt: "0", notional: "0", unrealizedProfit: "0", positionSide: "BOTH" },
+        ],
+      },
+      positionRisk: [row("BTCUSDT", "0.01")],
+      openOrders: [],
+      algoOrders: [],
+    }),
+    symbol: "BTCUSDT",
+    markPrice: 40000,
+  });
+  assert.deepEqual(exposure.positionSymbols, ["BTCUSDT"], "a closed symbol is not an open position");
+  assert.equal(exposure.openPositions, 1);
+  assert.equal(exposure.openNotionalUsd, 500, "a zero row contributes no notional");
+});

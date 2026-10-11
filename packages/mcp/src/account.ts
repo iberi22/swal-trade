@@ -243,6 +243,13 @@ export async function readExposure(input: {
     const account = input.prefetched?.account ?? (await input.client.account());
     const positions = parseAccountPositions(account);
     for (const position of positions) {
+      // GET /fapi/v3/account lists a row for every symbol on the market, almost
+      // all of them with positionAmt "0". Counting a closed row made every
+      // symbol an open position, so the max-open-positions cap refused orders on
+      // an account with nothing open. A position is an open one only when its
+      // amount is a non-zero number.
+      const amount = Number.parseFloat(position.positionAmt);
+      if (!Number.isFinite(amount) || amount === 0) continue;
       if (!positionSymbols.includes(position.symbol)) positionSymbols.push(position.symbol);
       const notional = Math.abs(Number.parseFloat(position.notional) || 0);
       openNotionalUsd += notional;
