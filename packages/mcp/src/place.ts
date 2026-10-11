@@ -184,13 +184,6 @@ interface StopOutcome {
   error?: string;
 }
 
-/**
- * True (set) when a fill exceeded the notional cap by the tolerance and the
- * excess was reduced on the exchange. It is passed into `entryPayload` per call:
- * at module scope a reduction from one call would warn about a fill in the next
- * one, which is how a process that served two users reports a reduction that
- * never happened to them.
- */
 /** The success payload of place_order, in one shape for every path that reaches it. */
 function entryPayload(input: {
   cfg: { network: string; journalPath: string };
