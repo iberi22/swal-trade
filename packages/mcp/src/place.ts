@@ -104,7 +104,7 @@ function repriceAway(price: string, tickSize: string, side: "BUY" | "SELL"): str
 
 async function postOnlyEntry(
   client: TradingClient,
-  input: { symbol: string; side: "BUY" | "SELL"; quantity: string; price: string; tickSize: string; clientOrderId: string },
+  input: { symbol: string; side: "BUY" | "SELL"; quantity: string; price: string; tickSize: string; clientOrderId: string; stopPrice: string },
   journal: JournalRecord,
 ): Promise<EntryOutcome> {
   let price = input.price;
@@ -112,10 +112,26 @@ async function postOnlyEntry(
   // The id of the order that is actually resting right now. A cancelled attempt
   // is replaced, so this is what a cleanup has to target.
   let lastSent = input.clientOrderId;
+  // A reprice never crosses the order's own protective stop (the same rule the
+  // grid levels follow). Repricing a BUY below the stop, or a SELL above it, puts
+  // an entry on the far side of its own exit: it would fill only after the
+  // position was already stopped out. Only a repriceable answer reaches the next
+  // iteration, and a repriceable answer (EXPIRED, -5022) means the order is NOT
+  // resting, so refusing it cancels nothing new.
+  const stopNumber = decimalNumber(input.stopPrice);
+  const beyondStop = (value: string): boolean => (input.side === "BUY" ? decimalNumber(value) <= stopNumber : decimalNumber(value) >= stopNumber);
   for (let attempt = 1; attempt <= POST_ONLY_ATTEMPTS; attempt += 1) {
     lastSent = clientOrderId;
+    if (beyondStop(price)) {
+      return {
+        ok: false,
+        clientOrderId: lastSent,
+        error:
+          `the post-only ${input.side} reprice to ${price} would cross the protective stop ${input.stopPrice}: the entry cannot be rested closer to (or beyond) the stop.`,
+      };
+    }
     const aligned = floorToStep(price, input.tickSize);
-    if (aligned == null) return { ok: false, error: `price ${price} cannot be aligned to tickSize ${input.tickSize}.` };
+    if (aligned == null) return { ok: false, clientOrderId: lastSent, error: `price ${price} cannot be aligned to tickSize ${input.tickSize}.` };
     try {
       const order = await client.placeOrder({
         symbol: input.symbol,
@@ -578,7 +594,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     if (orderType === "post_only") {
       entry = await postOnlyEntry(
         client,
-        { symbol, side, quantity, price: bookPrice, tickSize: filters.value.tickSize, clientOrderId },
+        { symbol, side, quantity, price: bookPrice, tickSize: filters.value.tickSize, clientOrderId, stopPrice },
         journal,
       );
       if (!entry.ok) {

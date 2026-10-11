@@ -551,6 +551,31 @@ test("place_order post_only protects a fill that arrives with an EXPIRED answer"
   assert.equal(exchange.post("/fapi/v1/algoOrder").length, 1);
 });
 
+test("place_order post_only refuses a reprice that would cross its own protective stop", async () => {
+  // tickSize 1, entry at the bid 100, stop_loss_pct 1.5 -> stop rounds to 99. The
+  // GTX at 100 expires (would immediately match); the reprice lands exactly ON
+  // the stop. The old code kept repricing 100->99->98 and rested at 98, BEYOND
+  // the stop: an entry that would fill only after the position was already
+  // exited. The reprice is refused at 99 and nothing rests.
+  const cross = makeExchange({
+    symbols: { BTCUSDT: { stepSize: "0.01", minQty: "0.01", tickSize: "1", minNotional: "5" } },
+    markPrice: "100",
+    book: { bidPrice: "100", askPrice: "101" },
+    orderStatus: "EXPIRED",
+    orderExecutedQty: "0",
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: cross.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, notional_usd: 200, stop_loss_pct: 1.5, type: "post_only" } }));
+    assert.match(text, /cross the protective stop/);
+  });
+  const orders = cross.post("/fapi/v1/order");
+  // Only the first attempt at 100 is ever sent: the reprice onto the stop is
+  // refused before it is placed, so no order rests at or beyond the stop.
+  assert.equal(orders.length, 1, "a reprice onto the stop is never sent");
+  assert.equal(orders[0].params.price, "100");
+  assert.equal(cross.post("/fapi/v1/algoOrder").length, 0, "no stop is armed when the entry never rested");
+});
+
 test("place_order post_only stops after three attempts and cancels by clientOrderId", async () => {
   const exchange = makeExchange({ orderStatus: "EXPIRED", orderExecutedQty: "0" });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
