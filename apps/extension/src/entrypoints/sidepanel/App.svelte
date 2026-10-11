@@ -57,7 +57,7 @@
   /** Velas cargadas: el pintado las usa para anclar flechas a precios reales. */
   let rows: Candle[] = [];
   /** true en cuanto se ha mandado algo al gráfico, para no repetir el limpiado. */
-  let painting = $state(false);
+  let painting = false;
 
   const views = $derived(renderAnalysis(result));
   const topFindings = $derived(result.top.length > 0 ? result.top : result.findings);

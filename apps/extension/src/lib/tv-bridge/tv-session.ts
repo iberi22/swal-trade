@@ -27,8 +27,6 @@ export interface SessionDeps {
   onStatus(status: BridgeStatus): void;
   /** Espera inyectable para los tests. */
   sleep?: (ms: number) => Promise<void>;
-  /** Reloj inyectable. */
-  now?: () => number;
 }
 
 /** Espera total al primer gráfico utilizable, en milisegundos. */

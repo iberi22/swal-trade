@@ -37,8 +37,3 @@ export function randomHex(bytes: number): string {
   }
   return out.slice(0, bytes * 2);
 }
-
-/** Alias semántico: el nonce se genera así. */
-export function createNonce(bytes = 32): string {
-  return randomHex(bytes);
-}

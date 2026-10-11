@@ -10,7 +10,7 @@
  * sale de `crypto.getRandomValues` y nadie más lo conoce.
  */
 
-import { createNonce as makeNonce } from './random';
+import { randomHex } from './random';
 
 export const NONCE_ATTRIBUTE = 'data-swal-tv-nonce';
 
@@ -22,9 +22,9 @@ export interface NonceDocument {
   } | null;
 }
 
-/** 32 caracteres hexadecimales. */
+/** 32 caracteres hexadecimales: lo que rompe las conjeturas, no la cripto. */
 export function createNonce(): string {
-  return makeNonce(32);
+  return randomHex(32);
 }
 
 export function publishNonce(doc: NonceDocument | null | undefined, nonce: string): void {

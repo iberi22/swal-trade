@@ -125,11 +125,14 @@ describe('parseBridgeMessage', () => {
   });
 
   it('descarta un nonce que no es el de esta página', () => {
-    expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), 'b'.repeat(32))).toBeNull();
+    expect(parseBridgeMessage(buildDrawMessage([shape()], 'b'.repeat(32)), NONCE)).toBeNull();
     // Sin nonce publicado todavía, no se acepta nada.
     expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), null)).toBeNull();
     expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), '')).toBeNull();
-    expect(parseBridgeMessage(buildDrawMessage([shape()], undefined), NONCE)).toBeNull();
+    expect(parseBridgeMessage(buildDrawMessage([shape()], NONCE), undefined)).toBeNull();
+    // Un mensaje sin nonce tampoco.
+    const noNonce = { ...buildDrawMessage([shape()], NONCE), nonce: undefined };
+    expect(parseBridgeMessage(noNonce, NONCE)).toBeNull();
   });
 
   it('un dibujo viaja con las formas ya filtradas', () => {

@@ -19,12 +19,7 @@
 
 import { CHART_FINDING_LIMIT, kindLabel, rankFindings, roleLabel } from '../findings-view';
 import type { Finding, FindingLevel } from '../types';
-import {
-  MAX_SHAPE_TEXT,
-  SWAL_MAX_SHAPES,
-  type BridgeShape,
-  type BridgeShapeStyle,
-} from './schema';
+import { MAX_SHAPE_TEXT, SWAL_MAX_SHAPES, type BridgeShape } from './schema';
 
 /** Precio formateado en español: 82977.7 → "82.977,7". */
 export function formatPrice(value: number): string {
@@ -330,9 +325,4 @@ export function shapesForFindings(findings: readonly Finding[], opts?: ShapesOpt
     }
   }
   return out;
-}
-
-/** Estilo de una forma según el tipo de línea, para los tests y el puente. */
-export function styleForKind(kind: 'level' | 'confirm' | 'invalidate'): BridgeShapeStyle {
-  return kind === 'invalidate' ? 'dashed' : 'solid';
 }
