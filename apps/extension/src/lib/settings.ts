@@ -8,12 +8,18 @@ export interface ExtensionSettings {
   symbols: string[];
   /** Si el panel sigue la página abierta. */
   autoSync: boolean;
+  /**
+   * Pinta los niveles en el gráfico de Binance (pestaña Trading View).
+   * Arranca apagado: es una anotación sobre la página, no un añadido del panel.
+   */
+  paintOnChart: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   defaultTimeframe: '5m',
   symbols: [],
   autoSync: true,
+  paintOnChart: false,
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -77,6 +83,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     // Solo un `false` explícito apaga el seguimiento. Cualquier otra cosa es
     // basura y se queda con el valor por defecto.
     autoSync: record.autoSync === false ? false : DEFAULT_SETTINGS.autoSync,
+    // Pintar en el gráfico necesita un `true` explícito: se sale del panel.
+    paintOnChart: record.paintOnChart === true,
   };
 }
 

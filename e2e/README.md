@@ -27,6 +27,7 @@ npx playwright install chromium
 export E2E_PORT=18787   # o un puerto libre
 npx playwright test --project=site
 npx playwright test --project=extension   # exige apps/extension/.output/chrome-mv3
+npm run e2e:binance-live                  # opcional: red + página pública de Binance
 node mcp/stdio.test.mjs                   # exige packages/mcp/dist
 ```
 
@@ -51,4 +52,5 @@ La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersis
 - `/checkout/`: contrato de `billing-worker` (`/v1/plans`, alta, factura, poll pending→paid, `/v1/license`). El secreto se muestra una vez y el botón sigue al checkbox. Importe `10.0037`, QR SVG, `localStorage['swal.license']`.
 - `/guardian/`: cuenta firmada (mock) que rompe el límite diario y tiene BTC sin stop. El plan gratis vigila solo la posición grande. Pro entra con un token Ed25519 generado en el test (`node:crypto`) y la SPKI servida en el mock de `/v1/pubkey`.
 - Extensión: panel lateral `sidepanel.html`, gráfico y hallazgos.
+- **Opcional**, `npm run e2e:binance-live` (o `E2E_BINANCE_LIVE=1 npx playwright test --project=binance-live`): contra la página pública `https://www.binance.com/en/futures/BTCUSDT`. Necesita red, descarga la página de verdad y tarda ~30 s. Comprueba que la extensión pinta los niveles en la pestaña Trading View del gráfico de Binance y que los borra al apagar el interruptor. Sin la variable de entorno la prueba se salta.
 - MCP: `listTools` solo tiene `account_risk`, `analyze_chart`, `market_context`, `propose_order`. `analyze_chart` y `propose_order` (`sent: false`). Ningún POST.

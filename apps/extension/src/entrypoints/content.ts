@@ -6,6 +6,10 @@ import {
   probeStorageInterval,
   type PageSource,
 } from '../lib/page-probe';
+import { buildClearMessage, buildDrawMessage, coerceShapes, parseBridgeMessage } from '../lib/tv-bridge/schema';
+import { createNonce, publishNonce, readNonce } from '../lib/tv-bridge/nonce';
+import { probeTvChart } from '../lib/tv-chart-state';
+import { TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 
 /** Atributos que cambian cuando el usuario pulsa otro intervalo. */
 const OBSERVED_ATTRS = [
@@ -69,6 +73,9 @@ function shouldRescan(records: MutationRecord[]): boolean {
   }
   return false;
 }
+
+/** Cada cuánto se mira si la pestaña del gráfico ha cambiado. */
+const TV_PROBE_MS = 2_500;
 
 /**
  * Lee el símbolo y la temporalidad de la URL, del DOM (barra de intervalos) y,
@@ -167,10 +174,84 @@ export default defineContentScript({
 
     document.addEventListener('click', schedule, true);
 
+    // --- Pintar en el gráfico de Trading View de Binance ------------------
+    // El nonce vive en el DOM: el puente MAIN-world no comparte objetos de
+    // JavaScript con este mundo aislado, pero sí el documento.
+    const nonce = createNonce();
+    publishNonce(document, nonce);
+
+    const post = (message: unknown) => {
+      try {
+        window.postMessage(message, location.origin);
+      } catch {
+        // Sin destino mismo origen no se pinta. No pasa nada.
+      }
+    };
+
+    const publishTvState = (state: TvChartState) => {
+      try {
+        void browser.runtime.sendMessage({ type: TV_STATE, state }).catch(() => {});
+      } catch {
+        // La extensión se recargó: este content script quedó viejo.
+      }
+    };
+
+    let lastTvState: TvChartState | null = null;
+    const probeChart = () => {
+      // ready lo dice el puente, que es quien sabe si el chart tiene rango.
+      if (lastTvState === 'ready') return;
+      const state: TvChartState = probeTvChart(document).present ? 'tradingview' : 'original';
+      if (state === lastTvState) return;
+      lastTvState = state;
+      publishTvState(state);
+    };
+
+    const onWindowMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      const message = parseBridgeMessage(event.data, readNonce(document));
+      // Se acepta el saludo del puente y nada más: lo que él dibuja no vuelve.
+      if (!message || message.type !== 'swal:ready') return;
+      if (message.ready) {
+        lastTvState = 'ready';
+        publishTvState('ready');
+      } else if (lastTvState === 'ready') {
+        lastTvState = probeTvChart(document).present ? 'tradingview' : 'original';
+        publishTvState(lastTvState);
+      }
+    };
+    window.addEventListener('message', onWindowMessage);
+
+    const paint = (command: PaintCommand, enabled: boolean) => {
+      if (!enabled) {
+        post(buildClearMessage(nonce));
+        return;
+      }
+      const shapes = coerceShapes(command.shapes);
+      if (shapes.length === 0) return;
+      post(buildDrawMessage(shapes, nonce, command.key));
+    };
+
+    const onRuntimeMessage = (message: unknown) => {
+      if (!message || typeof message !== 'object') return;
+      const record = message as { type?: unknown; shapes?: unknown; key?: unknown; enabled?: unknown };
+      if (record.type !== TV_PAINT) return;
+      paint(
+        { key: typeof record.key === 'string' ? record.key : '', shapes: coerceShapes(record.shapes) },
+        record.enabled === true,
+      );
+    };
+    browser.runtime.onMessage.addListener(onRuntimeMessage);
+
+    const tvProbe = setInterval(probeChart, TV_PROBE_MS);
+    probeChart();
+
     window.addEventListener('pagehide', () => {
       observer.disconnect();
       clearInterval(poll);
+      clearInterval(tvProbe);
       if (timer !== null) clearTimeout(timer);
+      window.removeEventListener('message', onWindowMessage);
+      browser.runtime.onMessage.removeListener(onRuntimeMessage);
     });
 
     schedule();

@@ -3,6 +3,9 @@
   import { browser } from 'wxt/browser';
   import { analyze, usingAnalysisStub } from '../../lib/analysis';
   import { mountChart, type ChartHandle } from '../../lib/chart';
+  import { onTvState, requestTvState, sendPaintCommand } from '../../lib/tv-paint-send';
+  import { shapesForFindings } from '../../lib/tv-bridge/shapes';
+  import { tvStateHint, type TvChartState } from '../../lib/tv-paint';
   import {
     CHART_FINDING_LIMIT,
     NO_ANNOTATIONS,
@@ -49,6 +52,12 @@
   let newsNote = $state<string | null>(null);
   let newsLoading = $state(false);
   let nowMs = $state(Date.now());
+  /** Estado del gráfico de Binance: para saber si se puede pintar. */
+  let tvState = $state<TvChartState | null>(null);
+  /** Velas cargadas: el pintado las usa para anclar flechas a precios reales. */
+  let rows: Candle[] = [];
+  /** true en cuanto se ha mandado algo al gráfico, para no repetir el limpiado. */
+  let painting = $state(false);
 
   const views = $derived(renderAnalysis(result));
   const topFindings = $derived(result.top.length > 0 ? result.top : result.findings);
@@ -125,6 +134,16 @@
     };
     browser.runtime.onMessage.addListener(onMessage);
     void browser.runtime.sendMessage({ type: 'get-context' }).then(applyContext).catch(() => {});
+    // Estado del gráfico: lo empuja el content script y se refresca por si la
+    // pestaña cambia mientras el panel está abierto.
+    const unsubscribeTv = onTvState((state) => {
+      tvState = state;
+    });
+    const refreshTv = () => {
+      void requestTvState().then((state) => {
+        if (state !== null) tvState = state;
+      });
+    };
     void browser.storage.local
       ?.get(SETTINGS_KEY)
       .then((stored) => {
@@ -138,9 +157,13 @@
     const clock = setInterval(() => {
       nowMs = Date.now();
     }, 30_000);
+    const tvClock = setInterval(refreshTv, 5_000);
+    refreshTv();
     return () => {
       browser.runtime.onMessage.removeListener(onMessage);
+      unsubscribeTv();
       clearInterval(clock);
+      clearInterval(tvClock);
     };
   });
 
@@ -154,7 +177,6 @@
     chartApi = handle;
     let alive = true;
     let stream: LiveSocket | null = null;
-    let rows: Candle[] = [];
     loading = true;
     error = null;
     live = false;
@@ -218,6 +240,44 @@
     api.setAnnotations(annotation, id);
   });
 
+  /** Precio de cierre de la vela más cercana a un instante, o null. */
+  function priceAtTime(time: number): number | null {
+    if (rows.length === 0) return null;
+    let best = rows[0]!;
+    let distance = Math.abs(best.time - time);
+    for (const row of rows) {
+      const candidate = Math.abs(row.time - time);
+      if (candidate < distance) {
+        best = row;
+        distance = candidate;
+      }
+    }
+    return best.close;
+  }
+
+  // Pintar en el gráfico de Binance. Con el interruptor apagado se limpia una
+  // sola vez; con él encendido se manda el análisis del símbolo y la
+  // temporalidad que el panel tenga cargados, que son los mismos de la página.
+  $effect(() => {
+    const enabled = settings.paintOnChart && settingsLoaded;
+    const current = result;
+    const times = chartApi?.times() ?? [];
+    if (!enabled) {
+      if (!painting) return;
+      painting = false;
+      void sendPaintCommand(null);
+      return;
+    }
+    painting = true;
+    const top = current.top.length > 0 ? current.top : current.findings;
+    const shapes = shapesForFindings(top, {
+      limit: CHART_FINDING_LIMIT,
+      candleTimes: times,
+      priceAt: priceAtTime,
+    });
+    void sendPaintCommand({ key: `${symbol}@${timeframe}`, shapes });
+  });
+
   $effect(() => {
     const sym = symbol;
     let alive = true;
@@ -270,6 +330,26 @@
       <p class="hint">Abre un futuro en Binance o un gráfico en TradingView.</p>
     {:else if inferred}
       <p class="hint">La página no muestra la temporalidad. Gráfico en {timeframe}.</p>
+    {/if}
+    <label class="field check paint-toggle">
+      <input
+        type="checkbox"
+        disabled={!settingsLoaded}
+        checked={settings.paintOnChart}
+        onchange={(event) => {
+          applySettings({
+            ...settings,
+            paintOnChart: (event.currentTarget as HTMLInputElement).checked,
+          });
+        }}
+      />
+      <span>Pintar en el gráfico de Binance (pestaña Trading View)</span>
+    </label>
+    {#if settings.paintOnChart}
+      <p class="hint" data-testid="paint-hint">
+        {tvStateHint(tvState) ??
+          'Pintando los niveles sobre el gráfico de Binance. Se borran al apagar el interruptor.'}
+      </p>
     {/if}
   </header>
 
