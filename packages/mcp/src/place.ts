@@ -109,16 +109,16 @@ async function cancelRestingEntry(
   symbol: string,
   clientOrderId: string,
   journal: JournalRecord,
-): Promise<{ confirmed: boolean; error?: string }> {
+): Promise<{ confirmed: boolean; filledQty: number; avgPrice: number | null; order: unknown; error?: string }> {
   try {
     const result = await client.cancelOrder(symbol, clientOrderId);
     logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: true, result });
-    return { confirmed: true };
+    return { confirmed: true, filledQty: filledQuantityOf(result), avgPrice: averagePriceOf(result), order: result };
   } catch (err) {
     const message = redactSecrets(errorMessage(err), []);
     logStep(journal, "cancel_after_ambiguous_entry", { clientOrderId, canceled: false, error: message });
-    if (isOrderNotFound(err)) return { confirmed: true };
-    return { confirmed: false, error: message };
+    if (isOrderNotFound(err)) return { confirmed: true, filledQty: 0, avgPrice: null, order: null };
+    return { confirmed: false, filledQty: 0, avgPrice: null, order: null, error: message };
   }
 }
 
@@ -230,6 +230,55 @@ async function postOnlyEntry(
               `a GTX order may still be resting on the exchange. No resolving outcome was journaled: the startup sweep will report it.`,
           };
         }
+        if (cancel.filledQty > 0) {
+          return { ok: true, order: cancel.order, price: aligned, clientOrderId, filled: true, filledQty: cancel.filledQty };
+        }
+        try {
+          const risk = await client.positionRisk();
+          const net = netPosition(risk, input.symbol);
+          logStep(journal, "position_after_cancel", { net: net.amount, rows: net.rows, error: net.error });
+          const actualAmount = net.amount == null && net.error == null ? 0 : net.amount;
+          if (net.error == null && actualAmount != null) {
+            if (actualAmount !== 0) {
+              return { ok: true, order: cancel.order, price: aligned, clientOrderId, filled: true, filledQty: Math.abs(actualAmount) };
+            }
+          } else {
+            return {
+              ok: false,
+              clientOrderId,
+              sent: true,
+              unresolved: true,
+              error:
+                `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be parsed (${net.error}). ` +
+                `No resolving outcome was journaled: the startup sweep will report it.`,
+            };
+          }
+        } catch (err) {
+          const msg = redactSecrets(errorMessage(err), []);
+          logStep(journal, "position_after_cancel", { error: msg });
+          return {
+            ok: false,
+            clientOrderId,
+            sent: true,
+            unresolved: true,
+            error:
+              `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be read (${msg}). ` +
+              `No resolving outcome was journaled: the startup sweep will report it.`,
+          };
+        }
+
+        if (!resolution.resolved) {
+          return {
+            ok: false,
+            clientOrderId,
+            sent: true,
+            unresolved: true,
+            error:
+              `the post-only ${input.side} at ${aligned} timed out and could not be resolved; ` +
+              `a GTX order may still be resting on the exchange. No resolving outcome was journaled: the startup sweep will report it.`,
+          };
+        }
+
         return {
           ok: false,
           clientOrderId,
@@ -773,7 +822,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
             const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
             if (!stop.ok) {
               const aborted = await emergencyClose(client, filters.value, symbol, journal);
-              await writeOutcome({ filled: true, filledQty: resolution.filledQty, stopPlaced: false, error: stop.error });
+              if (aborted.flatten.flat) await writeOutcome({ filled: true, filledQty: resolution.filledQty, stopPlaced: false, error: stop.error });
               return refused(
                 `the entry answer was ambiguous (${message}); ${describeFlatten(aborted)}. The protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}).`,
               );
@@ -843,7 +892,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
     if (!stop.ok) {
       const aborted = await emergencyClose(client, filters.value, symbol, journal);
-      await writeOutcome({ filled: entry.filled ?? false, stopPlaced: false, error: stop.error });
+      if (aborted.flatten.flat) await writeOutcome({ filled: entry.filled ?? false, stopPlaced: false, error: stop.error });
       return refused(`the protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}); ${describeFlatten(aborted)}.`);
     }
 
