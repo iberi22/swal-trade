@@ -93,21 +93,28 @@ def get_cfg():
                "enforce": e("GUARDIAN_ENFORCE", "false").lower() in ("1", "true", "yes"),
                "require_stop": e("GUARDIAN_REQUIRE_STOP", "true").lower() in ("1", "true", "yes"),
                "stop_every": max(1, float(e("GUARDIAN_STOP_ALERT_MINUTES", "15"))) * 60,
-               "heartbeat": e("GUARDIAN_HEARTBEAT_URL", "")}
+               "heartbeat": e("GUARDIAN_HEARTBEAT_URL", ""),
+               # Con ~0,5 s de ida y vuelta, 5 s no bastaban en picos de red (-1021). Binance admite hasta 60 s.
+               "recv_window": min(60000, max(5000, int(float(e("GUARDIAN_RECV_WINDOW_MS", "15000")))))}
     except ValueError as x:
         sys.exit(f"ERROR: GUARDIAN_* no numerico ({x})")
     if not (cfg["key"] and cfg["secret"]) or cfg["limit"] <= 0:
         sys.exit("ERROR: faltan BINANCE_API_KEY/SECRET o GUARDIAN_DAILY_LOSS_USD>0. Ver docs/RISK_GUARDIAN.md")
     return cfg
 
-def call(cfg, method, path, params=None):
-    q = urllib.parse.urlencode({**(params or {}), "timestamp": int(time.time() * 1000), "recvWindow": 5000})
+def call(cfg, method, path, params=None, _retry=True):
+    q = urllib.parse.urlencode({**(params or {}), "timestamp": int(time.time() * 1000),
+                                "recvWindow": cfg.get("recv_window", 15000)})
     q += "&signature=" + hmac.new(cfg["secret"].encode(), q.encode(), hashlib.sha256).hexdigest()
     r = urllib.request.Request(f"{cfg['url']}{path}?{q}", method=method, headers={"X-MBX-APIKEY": cfg["key"]})
     try:
         return json.load(urllib.request.urlopen(r, timeout=10))
     except urllib.error.HTTPError as x:
-        raise RuntimeError(f"HTTP {x.code} {x.read().decode(errors='replace')[:200]}") from None
+        body = x.read().decode(errors="replace")[:200]
+        # -1021: llego tarde o con la hora corrida; Binance no la ejecuto, asi que un reintento firmado de nuevo es seguro.
+        if _retry and '"code":-1021' in body.replace(" ", ""):
+            return call(cfg, method, path, params, _retry=False)
+        raise RuntimeError(f"HTTP {x.code} {body}") from None
     except Exception as x:
         raise RuntimeError(type(x).__name__ + ": " + str(x)[:150]) from None
 
