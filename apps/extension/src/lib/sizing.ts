@@ -31,7 +31,8 @@ export interface SizingPreferences {
 
 export const SIZING_STORAGE_KEY = 'sizing_prefs';
 export const DEFAULT_SIZING_PREFERENCES: SizingPreferences = { capital: 1000, riskPct: 1, direction: 'long' };
-export const TAKER_ROUND_TRIP_FEE_RATE = 0.0005;
+/** Taker 0,05 % al entrar y otro 0,05 % al salir (USDT; en USDC es 0,04 %): estimación prudente. */
+export const TAKER_ROUND_TRIP_FEE_RATE = 0.001;
 
 export function roundToDecimals(value: number, decimals = 4): number {
   if (!Number.isFinite(value)) return 0;

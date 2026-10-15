@@ -121,7 +121,7 @@
         <div class="metric"><span class="m-title">Apalancamiento mín.</span><span class="m-val">{result.minLeverage}×</span></div>
       </div>
       <p class="summary-line" data-testid="sizing-summary">{result.summary}</p>
-      <p class="fee-line">comisiones aprox. ~{usdFmt.format(result.feeUsd)} USD (taker 0.05% ida y vuelta)</p>
+      <p class="fee-line">comisiones aprox. ~{usdFmt.format(result.feeUsd)} USD (taker 0,05 % al entrar y al salir)</p>
       <p class="leverage-note">Más apalancamiento no cambia la pérdida si salta el stop; solo acerca la liquidación.</p>
     {:else}
       <p class="error-line" data-testid="sizing-error">{result.error}</p>
@@ -136,12 +136,12 @@
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
   .card-head h2 { margin: 0; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
   .head-hint { font-size: 0.7rem; color: hsl(var(--subtle-foreground)); }
-  .fields-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.45rem; }
-  .field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+  .field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
   .field-wide { grid-column: span 2; }
   .label-text { font-size: 0.72rem; color: hsl(var(--muted-foreground)); }
   .tag { font-size: 0.64rem; color: hsl(var(--subtle-foreground)); text-transform: uppercase; letter-spacing: 0.03em; }
-  .field input { background: hsl(var(--background)); border: 0; border-radius: calc(var(--radius) - 0.2rem); padding: 0.35rem 0.5rem; font-family: var(--font-mono); color: hsl(var(--foreground)); font-size: 0.8rem; }
+  .field input { background: hsl(var(--background)); border: 0; border-radius: calc(var(--radius) - 0.2rem); padding: 0.35rem 0.5rem; font-family: var(--font-mono); color: hsl(var(--foreground)); font-size: 0.8rem; width: 100%; min-width: 0; box-sizing: border-box; }
   .dir-group { display: flex; gap: 0.25rem; height: 100%; }
   .dir-btn { flex: 1; background: hsl(var(--background)); color: hsl(var(--muted-foreground)); border: 0; border-radius: calc(var(--radius) - 0.2rem); padding: 0.35rem 0.45rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
   .dir-btn.selected { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }

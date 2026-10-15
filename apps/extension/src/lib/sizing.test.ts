@@ -19,7 +19,7 @@ describe('position sizing math (pure)', () => {
     expect(result.quantity).toBe(2);
     expect(result.notionalUsd).toBe(200);
     expect(result.minLeverage).toBe(1);
-    expect(result.feeUsd).toBe(0.1);
+    expect(result.feeUsd).toBe(0.2);
     expect(result.summary).toBe('Si el stop salta pierdes 10 USD (1 % de tu cuenta)');
   });
 
@@ -33,7 +33,7 @@ describe('position sizing math (pure)', () => {
     expect(result.quantity).toBe(2);
     expect(result.notionalUsd).toBe(200);
     expect(result.minLeverage).toBe(1);
-    expect(result.feeUsd).toBe(0.1);
+    expect(result.feeUsd).toBe(0.2);
     expect(result.summary).toBe('Si el stop salta pierdes 10 USD (1 % de tu cuenta)');
   });
 
@@ -90,14 +90,14 @@ describe('position sizing math (pure)', () => {
     expect(decimals.length).toBeLessThanOrEqual(4);
   });
 
-  it('calculates fee line with 0.05% round-trip taker estimate', () => {
-    expect(TAKER_ROUND_TRIP_FEE_RATE).toBe(0.0005);
+  it('calculates fees as 0.05% taker on entry plus 0.05% on exit', () => {
+    expect(TAKER_ROUND_TRIP_FEE_RATE).toBe(0.001);
     const input: SizingInput = { capital: 10000, riskPct: 1, direction: 'long', entry: 50000, stop: 49000 };
     const result = calculatePositionSize(input);
     expect(result.valid).toBe(true);
     if (!result.valid) return;
     expect(result.notionalUsd).toBe(5000);
-    expect(result.feeUsd).toBe(2.5);
+    expect(result.feeUsd).toBe(5);
   });
 
   it('extracts invalidation level from finding when available', () => {
