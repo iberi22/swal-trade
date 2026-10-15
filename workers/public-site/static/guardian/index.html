@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Guardian de riesgo — swal-trade</title>
+  <title>Guardián de riesgo — swal-trade</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="guardian.css">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -12,27 +13,27 @@
   <script src="/pwa-register.js" defer></script>
 </head>
 <body>
-  <h1>Guardian de riesgo <small id="tier-badge" class="muted"></small></h1>
-  <p class="muted">Vigila tu cuenta de Binance USD-M Futures desde este navegador: limite de perdida diaria, apalancamiento, nocional y posiciones sin stop. Solo avisa; nunca crea ni cancela ordenes. Funciona solo mientras esta pestana este abierta. No es asesoria financiera.</p>
+  <h1>Guardián de riesgo <small id="tier-badge" class="muted"></small></h1>
+  <p class="muted">Vigila tu cuenta de Binance USD-M Futures desde este navegador: límite de pérdida diaria, apalancamiento, nocional y posiciones sin stop. Solo avisa; nunca crea ni cancela órdenes. Funciona solo mientras esta pestaña esté abierta. No es asesoría financiera.</p>
   <p id="lic-info" class="muted"></p>
 
   <section id="setup">
-    <h2>Configuracion</h2>
+    <h2>Configuración</h2>
     <div class="warn-box">
       <strong>Crea una API key SOLO de lectura.</strong>
       <ol>
-        <li>Binance, Gestion de API, crear clave.</li>
-        <li>Marca unicamente <em>Enable Reading</em>. Deja desmarcados trading de futuros, spot/margen y retiros.</li>
+        <li>Binance, Gestión de API, crear clave.</li>
+        <li>Marca únicamente <em>Enable Reading</em>. Deja desmarcados trading de futuros, spot/margen y retiros.</li>
         <li>Restringe por IP si puedes.</li>
       </ol>
-      Tus claves se quedan en este navegador (el secreto se guarda como clave criptografica no extraible) y solo se usan para firmar consultas a fapi.binance.com. Nunca pasan por nuestros servidores.
+      Tus claves se quedan en este navegador (el secreto se guarda como clave criptográfica no extraible) y solo se usan para firmar consultas a fapi.binance.com. Nunca pasan por nuestros servidores.
     </div>
     <form id="setup-form" autocomplete="off">
       <label>API key <input name="apiKey" required></label>
       <label>API secret <input name="secret" type="password" required></label>
-      <label>Limite de perdida diaria (USD) <input name="limit" type="number" step="any" min="0" required></label>
-      <label>Apalancamiento maximo (opcional) <input name="maxLev" type="number" step="any" min="0"></label>
-      <label>Nocional maximo por posicion, USD (opcional) <input name="maxNotional" type="number" step="any" min="0"></label>
+      <label>Límite de pérdida diaria (USD) <input name="limit" type="number" step="any" min="0" required></label>
+      <label>Apalancamiento máximo (opcional) <input name="maxLev" type="number" step="any" min="0"></label>
+      <label>Nocional máximo por posición, USD (opcional) <input name="maxNotional" type="number" step="any" min="0"></label>
       <label>Zona horaria (horas UTC) <input name="tz" type="number" step="any" value="-5"></label>
       <button type="submit">Guardar y empezar</button>
       <p id="setup-err" class="err"></p>
@@ -48,19 +49,19 @@
     <p id="free-note" class="muted"></p>
     <h3>Posiciones</h3>
     <table>
-      <thead><tr><th>Simbolo</th><th>Cantidad</th><th>Apal.</th><th>Nocional USD</th><th>PnL abierto</th><th>Stop</th></tr></thead>
+      <thead><tr><th>Símbolo</th><th>Cantidad</th><th>Apal.</th><th>Nocional USD</th><th>PnL abierto</th><th>Stop</th></tr></thead>
       <tbody id="pos-body"></tbody>
     </table>
     <h3>Alertas activas</h3>
     <ul id="breach-list"></ul>
-    <button id="reset" class="secondary" type="button">Borrar claves y configuracion</button>
+    <button id="reset" class="secondary" type="button">Borrar claves y configuración</button>
   </section>
 
   <section>
     <h2>Telegram (Pro)</h2>
     <p id="tg-locked" class="muted">Las alertas por Telegram son parte del plan Pro. <a href="/checkout/">Obtener Pro</a></p>
     <div id="tg-section" class="hidden">
-      <p class="muted">Usa tu propio bot (BotFather). El navegador envia texto plano directo a api.telegram.org; si el navegador lo bloquea (CORS) veras un error aqui.</p>
+      <p class="muted">Usa tu propio bot (BotFather). El navegador envía texto plano directo a api.telegram.org; si el navegador lo bloquea (CORS) verás un error aquí.</p>
       <form id="tg-form" autocomplete="off">
         <label>Token del bot <input name="token" type="password" required></label>
         <label>Chat id <input name="chat" required></label>
@@ -71,8 +72,8 @@
   </section>
 
   <p><a href="/backup/">Respaldo cifrado de extremo a extremo (Socio)</a></p>
-  <p id="selfhost-link" class="hidden"><a href="/guardian/self-host/">Guia para ejecutar el guardian 24/7 en tu propio servidor</a></p>
-  <p class="muted"><a href="/guardian/self-host/">Self-host</a> · Codigo abierto AGPL</p>
+  <p id="selfhost-link" class="hidden"><a href="/guardian/self-host/">Guía para ejecutar el guardián 24/7 en tu propio servidor</a></p>
+  <p class="muted"><a href="/guardian/self-host/">Self-host</a> · Código abierto AGPL</p>
   <script type="module" src="guardian.js"></script>
 </body>
 </html>

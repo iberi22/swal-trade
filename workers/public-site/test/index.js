@@ -5,6 +5,7 @@ import './site-pages.test.mjs';
 import './checkout-lib.test.mjs';
 import './guardian-core.test.mjs';
 import './guardian-io.test.mjs';
+import './guardian-page.test.mjs';
 import './csp.test.mjs';
 import './license-contract.test.mjs';
 import './analisis-core.test.mjs';

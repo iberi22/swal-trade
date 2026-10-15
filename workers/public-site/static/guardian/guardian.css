@@ -23,9 +23,9 @@ td:first-child{border-radius:.5rem 0 0 .5rem}td:last-child{border-radius:0 .5rem
 .bar.hit>div{background:hsl(var(--foreground))}
 .warn-box{background:hsl(var(--surface-strong));border-radius:var(--radius);padding:.85rem 1.1rem;font-size:.9rem}
 .err{color:hsl(var(--foreground));font-weight:600}
-.err::before{content:"● "}
+.err:not(:empty)::before{content:"● "}
 .ok{color:hsl(var(--muted-foreground))}
-.ok::before{content:"○ "}
+.ok:not(:empty)::before{content:"○ "}
 .hidden{display:none}
 .muted{color:hsl(var(--muted-foreground));font-size:.9rem}
 code,pre{font-family:var(--font-mono);font-size:.85em;background:hsl(var(--surface));border-radius:.4rem;padding:.1rem .35rem}
