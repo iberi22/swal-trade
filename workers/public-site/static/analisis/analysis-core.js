@@ -90,6 +90,13 @@ export const NO_HISTORY_TEXT = 'no superó al azar en nuestra medición (2026-10
 // ---------- utilidades ----------
 const clamp01 = (x) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
 const r4 = (x) => Math.round(x * 1e4) / 1e4;
+/**
+ * Decimales de un precio: al menos 4 (como r4, así BTC no cambia) y, para precios bajos,
+ * los necesarios para 8 cifras significativas (PEPE ~0.004 necesita 10 decimales).
+ */
+const priceDecimals = (x) => Math.max(4, 8 - Math.floor(Math.log10(Math.abs(x))) - 1);
+/** Redondeo de PRECIOS: nunca destruye los dígitos de un precio bajo. Usar solo para precios. */
+const rp = (x) => (Number.isFinite(x) && x !== 0 ? Math.round(x * 10 ** priceDecimals(x)) / 10 ** priceDecimals(x) : x);
 const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
 export function median(a) {
   if (!a.length) return 0;
@@ -97,7 +104,13 @@ export function median(a) {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
-const fmt = (p) => (Math.abs(p) >= 100 ? p.toFixed(1) : Math.abs(p) >= 1 ? p.toFixed(3) : p.toPrecision(4));
+/** Texto de precio: igual que el numero publicado (mismos decimales que rp) para precios bajos. */
+const fmt = (p) => {
+  if (!Number.isFinite(p) || p === 0) return p.toPrecision(4);
+  if (Math.abs(p) >= 100) return p.toFixed(1);
+  if (Math.abs(p) >= 1) return p.toFixed(3);
+  return rp(p).toFixed(priceDecimals(p)).replace(/\.?0+$/, '');
+};
 
 export function ema(values, period) {
   const out = new Array(values.length).fill(null);
@@ -141,7 +154,7 @@ function finding(f) {
 
 /** Copia precios de decision del backtest en cada nivel: `confirm` e `invalidate`. */
 function stamp(levels, confirm, invalidate) {
-  const c = r4(confirm), inv = r4(invalidate);
+  const c = rp(confirm), inv = rp(invalidate);
   return levels.map((l) => ({ ...l, confirm: c, invalidate: inv }));
 }
 
@@ -221,7 +234,7 @@ export function pivotFindings(candles, pivots) {
       : `Mínimo local en ${fmt(p.price)}: el precio bajó hasta aquí y luego rebotó. Sigue vigente si las velas vecinas no lo pierden. Se invalida si cierra por debajo de ${fmt(p.price)}.`,
     from: p.time, to: p.time,
     levels: stamp(
-      [{ role: p.type === 'high' ? 'pivot_high' : 'pivot_low', price: p.price }],
+      [{ role: p.type === 'high' ? 'pivot_high' : 'pivot_low', price: rp(p.price) }],
       p.price,
       p.price,
     ),
@@ -261,7 +274,7 @@ export function trendOf(candles, opts = {}) {
   const label = direction === 'up' ? 'Alcista' : direction === 'down' ? 'Bajista' : 'Lateral / mixta';
   return {
     direction, strength: r4(strength), label,
-    evidence: { ema20: r4(e20[n]), ema50: r4(e50[n]), spread: r4(spread), slope10: r4(slope), structure, votes, close: last },
+    evidence: { ema20: rp(e20[n]), ema50: rp(e50[n]), spread: rp(spread), slope10: r4(slope), structure, votes, close: last },
   };
 }
 
@@ -358,20 +371,20 @@ export function srZones(candles, pivots, opts = {}) {
       ? `Zona de soporte en ${fmt(price)} (rango ${band}): el precio rebotó ${touches} veces aquí. Si cierra por encima de ${fmt(low)} al volver a la zona, el soporte se confirma. Se invalida si cierra por debajo de ${fmt(low)}.`
       : `Zona de resistencia en ${fmt(price)} (rango ${band}): el precio fue frenado ${touches} veces aquí. Si cierra por debajo de ${fmt(high)} al volver a la zona, la resistencia se confirma. Se invalida si cierra por encima de ${fmt(high)}.`;
     return finding({
-      id: `sr:${role}:${Math.round(price * 100)}`,
+      id: `sr:${role}:${rp(price)}`,
       kind: 'sr_zone',
       label: role === 'support' ? 'Zona de soporte' : 'Zona de resistencia',
       explanation,
       from: candles[first].time, to: candles[n].time,
       levels: stamp(
-        [{ role, price: r4(price), low: r4(low), high: r4(high), touches }],
+        [{ role, price: rp(price), low: rp(low), high: rp(high), touches }],
         role === 'support' ? high : low,
         role === 'support' ? low : high,
       ),
       direction: 'neutral', strength: scored.strength, status: 'confirmed',
       evidence: {
-        touches, low: r4(low), high: r4(high), firstIndex: first, lastIndex: lastIdx,
-        tolerance: r4(tol), mergeGap: r4(mergeGap), mergedFrom: parts,
+        touches, low: rp(low), high: rp(high), firstIndex: first, lastIndex: lastIdx,
+        tolerance: rp(tol), mergeGap: rp(mergeGap), mergedFrom: parts,
         candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
       },
     });
@@ -436,13 +449,13 @@ function doubleExtreme(candles, pivots, type, o) {
       explanation,
       from: p1.time, to: candles[n].time,
       levels: stamp([
-        { role: 'neckline', price: r4(neck) },
-        { role: top ? 'peak' : 'trough', price: r4(p1.price), time: p1.time },
-        { role: top ? 'peak' : 'trough', price: r4(p2.price), time: p2.time },
+        { role: 'neckline', price: rp(neck) },
+        { role: top ? 'peak' : 'trough', price: rp(p1.price), time: p1.time },
+        { role: top ? 'peak' : 'trough', price: rp(p2.price), time: p2.time },
       ], neck, extreme),
       direction: top ? 'down' : 'up', strength: scored.strength, status,
       evidence: {
-        peak1: p1.price, peak2: p2.price, diffAtr: r4(diff / a), depthAtr: r4(depth), neckline: r4(neck),
+        peak1: rp(p1.price), peak2: rp(p2.price), diffAtr: r4(diff / a), depthAtr: r4(depth), neckline: rp(neck),
         distToNeckline: r4(distNeck), volumeRatio2vs1: r4(volRatio), broken,
         candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
       },
@@ -520,13 +533,13 @@ export function triangles(candles, pivots, opts = {}) {
     explanation: copy[kind][1],
     from: candles[x0].time, to: candles[n].time,
     levels: stamp([
-      { role: 'triangle_upper', price: r4(upper), line: { from: { time: candles[x0].time, price: r4(hi(x0)) }, to: { time: candles[n].time, price: r4(upper) } } },
-      { role: 'triangle_lower', price: r4(lower), line: { from: { time: candles[x0].time, price: r4(lo(x0)) }, to: { time: candles[n].time, price: r4(lower) } } },
+      { role: 'triangle_upper', price: rp(upper), line: { from: { time: candles[x0].time, price: rp(hi(x0)) }, to: { time: candles[n].time, price: rp(upper) } } },
+      { role: 'triangle_lower', price: rp(lower), line: { from: { time: candles[x0].time, price: rp(lo(x0)) }, to: { time: candles[n].time, price: rp(lower) } } },
     ], confirmPx, invalidatePx),
     direction: bias, strength: scored.strength, status: 'forming',
     evidence: {
       touchesHigh: hs.length, touchesLow: ls.length, fit: r4(fit), convergence: r4(convergence),
-      widthStart: r4(w0), widthNow: r4(w1), distToBreakout: r4(dist),
+      widthStart: rp(w0), widthNow: rp(w1), distToBreakout: r4(dist),
       candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
     },
   })];
@@ -583,7 +596,7 @@ export function rangeBreakout(candles, opts = {}) {
     id: `range_breakout:${box[0].time}:${status}`,
     kind: 'range_breakout', label: status === 'confirmed' ? 'Ruptura de rango' : 'Rango comprimido',
     explanation: expl, from: box[0].time, to: last.time,
-    levels: stamp([{ role: 'range_high', price: r4(hi) }, { role: 'range_low', price: r4(lo) }], confirmPx, invalidatePx),
+    levels: stamp([{ role: 'range_high', price: rp(hi) }, { role: 'range_low', price: rp(lo) }], confirmPx, invalidatePx),
     direction: dir, strength: scored.strength, status,
     evidence: { widthAtr: r4(width / a), touches, volumeRatio: r4(volRatio), bars: L, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
   })];
@@ -660,14 +673,14 @@ export function volumeProfile(candles, opts = {}) {
     explanation: `Perfil de volumen: el precio donde más se negoció es ${fmt(pocP)} (POC), dentro del área de valor ${fmt(val)}–${fmt(vah)}. El precio actual está ${last > pocP ? 'por encima' : 'por debajo'}. Si se acerca y cierra respetando ${fmt(pocP)} como ${last > pocP ? 'soporte' : 'resistencia'}, el nivel se confirma. Se invalida como imán si cierra fuera del área de valor y no regresa.`,
     from: candles[0].time, to: candles[candles.length - 1].time,
     levels: stamp(
-      [{ role: 'poc', price: r4(pocP) }, { role: 'vah', price: r4(vah) }, { role: 'val', price: r4(val) }],
+      [{ role: 'poc', price: rp(pocP) }, { role: 'vah', price: rp(vah) }, { role: 'val', price: rp(val) }],
       pocP,
       last >= pocP ? val : vah,
     ),
     direction: 'neutral', strength: scored.strength, status: 'confirmed',
     evidence: {
-      pocShare: r4(vol[poc] / total), bins: vol.map((v, i) => ({ price: r4(price(i)), volume: r4(v) })),
-      valueAreaLow: r4(val), valueAreaHigh: r4(vah), candlesSince: 0, distAtr: r4(distAtr), exceptional: scored.exceptional,
+      pocShare: r4(vol[poc] / total), bins: vol.map((v, i) => ({ price: rp(price(i)), volume: r4(v) })),
+      valueAreaLow: rp(val), valueAreaHigh: rp(vah), candlesSince: 0, distAtr: r4(distAtr), exceptional: scored.exceptional,
     },
   })];
 }
@@ -747,7 +760,7 @@ export function volumeShocks(candles, opts = {}) {
     groups[kind].push(finding({
       id: `${kind}:${k.time}`, kind, label: buy ? 'Compra agresiva' : 'Venta agresiva',
       explanation, from: k.time, to: k.time,
-      levels: stamp([{ role: 'volume_shock', price: r4(k.close) }], confirmPx, invalidatePx),
+      levels: stamp([{ role: 'volume_shock', price: rp(k.close) }], confirmPx, invalidatePx),
       direction: buy ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
       evidence: { index: i, volumeRatio: r4(rV), buyShare: r4(share), k: o.shockK, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional },
     }));
@@ -798,12 +811,12 @@ export function deltaDivergence(candles, pivots, opts = {}) {
         label: bull ? 'Divergencia de delta alcista' : 'Divergencia de delta bajista',
         explanation, from: p1.time, to: p2.time,
         levels: stamp([
-          { role: 'divergence_start', price: r4(p1.price), time: p1.time },
-          { role: 'divergence_end', price: r4(p2.price), time: p2.time },
+          { role: 'divergence_start', price: rp(p1.price), time: p1.time },
+          { role: 'divergence_end', price: rp(p2.price), time: p2.time },
         ], confirmPx, p2.price),
         direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
         evidence: {
-          price1: p1.price, price2: p2.price, cvd1: r4(cvd[p1.index]), cvd2: r4(cvd[p2.index]),
+          price1: rp(p1.price), price2: rp(p2.price), cvd1: r4(cvd[p1.index]), cvd2: r4(cvd[p2.index]),
           cvdGap: r4(cvdDiff), priceGapAtr: r4(priceDiff / a), conviction: r4(conviction),
           barsBetween: gap, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
         },
@@ -882,7 +895,7 @@ export function absorption(candles, pivots, zones = [], opts = {}) {
       id: `absorption:${side}:${k.time}`, kind: 'absorption',
       label: buyers ? 'Absorción compradora' : 'Absorción vendedora',
       explanation, from: k.time, to: k.time,
-      levels: stamp([{ role: 'absorption', price: r4(k.close) }], confirmPx, invalidatePx),
+      levels: stamp([{ role: 'absorption', price: rp(k.close) }], confirmPx, invalidatePx),
       direction: buyers ? 'up' : 'down', strength: it.scored.strength, status: 'confirmed',
       evidence: {
         index: it.i, volumeRatio: r4(it.rV), rangeAtAtr: r4(it.range / a), buyShare: it.share == null ? null : r4(it.share),
@@ -947,7 +960,7 @@ export function climax(candles, opts = {}) {
       id: `climax:${dir}:${k.time}`, kind: 'climax',
       label: buying ? 'Clímax de compra' : 'Clímax de venta',
       explanation, from: candles[it.i - L].time, to: k.time,
-      levels: stamp([{ role: 'climax', price: r4(k.close) }], confirmPx, invalidatePx),
+      levels: stamp([{ role: 'climax', price: rp(k.close) }], confirmPx, invalidatePx),
       direction: buying ? 'down' : 'up', strength: it.scored.strength, status: 'confirmed',
       evidence: {
         index: it.i, volumeRatio: r4(it.rV), driftAtr: r4(it.driftMag), reversal: r4(it.rex),
@@ -999,13 +1012,13 @@ export function rsiDivergence(candles, pivots, opts = {}) {
         explanation,
         from: p1.time, to: p2.time,
         levels: stamp(
-          [{ role: 'divergence_start', price: r4(p1.price), time: p1.time }, { role: 'divergence_end', price: r4(p2.price), time: p2.time }],
+          [{ role: 'divergence_start', price: rp(p1.price), time: p1.time }, { role: 'divergence_end', price: rp(p2.price), time: p2.time }],
           confirmPx,
           p2.price,
         ),
         direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
         evidence: {
-          rsi1: r4(r[p1.index]), rsi2: r4(r[p2.index]), price1: p1.price, price2: p2.price,
+          rsi1: r4(r[p1.index]), rsi2: r4(r[p2.index]), price1: rp(p1.price), price2: rp(p2.price),
           rsiGap: r4(rsiDiff), priceGapAtr: r4(priceDiff / a), barsBetween: gap,
           candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
         },
@@ -1122,12 +1135,12 @@ export function fairValueGaps(candles, opts = {}) {
       explanation,
       from: prev.time, to: candles[n].time,
       levels: stamp([
-        { role: 'fvg_top', price: r4(top) },
-        { role: 'fvg_bottom', price: r4(bottom) },
+        { role: 'fvg_top', price: rp(top) },
+        { role: 'fvg_bottom', price: rp(bottom) },
       ], confirmPx, invalidatePx),
       direction: dir, strength: scored.strength, status: 'forming',
       evidence: {
-        top: r4(top), bottom: r4(bottom), heightAtr: r4(height / a), displacementAtr: r4(disp),
+        top: rp(top), bottom: rp(bottom), heightAtr: r4(height / a), displacementAtr: r4(disp),
         touched, index: i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
       },
     }));
@@ -1179,10 +1192,10 @@ export function marketStructure(candles, pivots, opts = {}) {
     id: `${kind}:${candles[e.swing.index].time}:${candles[e.i].time}`,
     kind, label, explanation,
     from: candles[e.swing.index].time, to: candles[n].time,
-    levels: stamp([{ role: 'structure_level', price: r4(e.level), time: e.swing.time }], e.level, opp),
+    levels: stamp([{ role: 'structure_level', price: rp(e.level), time: e.swing.time }], e.level, opp),
     direction: e.dir, strength: scored.strength, status: 'confirmed',
     evidence: {
-      breakAtr: r4(breakAtr), bos: e.bos, level: r4(e.level), invalidate: r4(opp),
+      breakAtr: r4(breakAtr), bos: e.bos, level: rp(e.level), invalidate: rp(opp),
       breakIndex: e.i, candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
     },
   })];
@@ -1245,8 +1258,8 @@ export function orderBlocks(candles, pivots, opts = {}) {
         explanation,
         from: candles[obI].time, to: candles[n].time,
         levels: stamp([
-          { role: 'ob_high', price: r4(top) },
-          { role: 'ob_low', price: r4(bottom) },
+          { role: 'ob_high', price: rp(top) },
+          { role: 'ob_low', price: rp(bottom) },
         ], confirmPx, invalidatePx),
         direction: dir, strength: scored.strength, status: tested ? 'forming' : 'confirmed',
         evidence: {
@@ -1319,13 +1332,13 @@ export function liquiditySweeps(candles, pivots, opts = {}) {
       explanation,
       from: best.p1.time, to: candles[n].time,
       levels: stamp([
-        { role: 'equal_level', price: r4(best.level) },
-        { role: 'sweep_extreme', price: r4(best.extreme), time: candles[best.k].time },
+        { role: 'equal_level', price: rp(best.level) },
+        { role: 'sweep_extreme', price: rp(best.extreme), time: candles[best.k].time },
       ], confirmPx, invalidatePx),
       direction: bull ? 'up' : 'down', strength: scored.strength, status: 'confirmed',
       evidence: {
-        level: r4(best.level), extreme: r4(best.extreme), sweepAtr: r4(best.sweepAtr),
-        left: r4(best.p1.price), right: r4(best.p2.price),
+        level: rp(best.level), extreme: rp(best.extreme), sweepAtr: r4(best.sweepAtr),
+        left: rp(best.p1.price), right: rp(best.p2.price),
         candlesSince: best.candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
       },
     }));
@@ -1394,14 +1407,14 @@ export function headAndShoulders(candles, pivots, opts = {}) {
         explanation,
         from: ls.time, to: candles[n].time,
         levels: stamp([
-          { role: 'neckline', price: r4(neck) },
-          { role: 'head', price: r4(head.price), time: head.time },
-          { role: 'shoulder', price: r4(ls.price), time: ls.time },
-          { role: 'shoulder', price: r4(rs.price), time: rs.time },
+          { role: 'neckline', price: rp(neck) },
+          { role: 'head', price: rp(head.price), time: head.time },
+          { role: 'shoulder', price: rp(ls.price), time: ls.time },
+          { role: 'shoulder', price: rp(rs.price), time: rs.time },
         ], confirmPx, invalidatePx),
         direction: inverse ? 'up' : 'down', strength: scored.strength, status,
         evidence: {
-          head: r4(head.price), left: r4(ls.price), right: r4(rs.price), neckline: r4(neck),
+          head: rp(head.price), left: rp(ls.price), right: rp(rs.price), neckline: rp(neck),
           prominenceAtr: r4(headBeyond / a), shoulderDiffAtr: r4(shoulderDiff / a), broken,
           candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
         },
@@ -1469,12 +1482,12 @@ export function wedges(candles, pivots, opts = {}) {
     explanation,
     from: candles[x0].time, to: candles[n].time,
     levels: stamp([
-      { role: 'wedge_upper', price: r4(upper) },
-      { role: 'wedge_lower', price: r4(lower) },
+      { role: 'wedge_upper', price: rp(upper) },
+      { role: 'wedge_lower', price: rp(lower) },
     ], confirmPx, invalidatePx),
     direction: rising ? 'down' : 'up', strength: scored.strength, status,
     evidence: {
-      fit: r4(fit), convergence: r4(convergence), widthStart: r4(w0), widthNow: r4(w1),
+      fit: r4(fit), convergence: r4(convergence), widthStart: rp(w0), widthNow: rp(w1),
       candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
     },
   })];
@@ -1531,13 +1544,13 @@ export function flags(candles, pivots, opts = {}) {
       explanation,
       from: start.time, to: candles[n].time,
       levels: stamp([
-        { role: 'pole_end', price: r4(end.price), time: end.time },
-        { role: bull ? 'flag_low' : 'flag_high', price: r4(bull ? flagLow : flagHigh) },
+        { role: 'pole_end', price: rp(end.price), time: end.time },
+        { role: bull ? 'flag_low' : 'flag_high', price: rp(bull ? flagLow : flagHigh) },
       ], confirmPx, invalidatePx),
       direction: bull ? 'up' : 'down', strength: scored.strength, status,
       evidence: {
         poleAtr: r4(pole / a), efficiency: r4(eff), retrace: r4(retrace), tightness: r4(tightness),
-        flagLow: r4(flagLow), flagHigh: r4(flagHigh), broken: broke,
+        flagLow: rp(flagLow), flagHigh: rp(flagHigh), broken: broke,
         candlesSince, distAtr: r4(distAtr), exceptional: scored.exceptional,
       },
     }));
@@ -1607,7 +1620,7 @@ function pushCandle(out, candles, spec) {
     id: `${kind}:${candles[i].time}`,
     kind, label, explanation,
     from: candles[Math.max(0, i - 2)].time, to: candles[i].time,
-    levels: stamp([{ role: 'candle', price: r4(candles[i].close), time: candles[i].time }], confirmPx, invalidatePx),
+    levels: stamp([{ role: 'candle', price: rp(candles[i].close), time: candles[i].time }], confirmPx, invalidatePx),
     direction, strength: scored.strength, status: 'confirmed',
     evidence: {
       ...evidence, shape: r4(shape), atSwing: ctx.swing, atZone: ctx.zone,
@@ -1877,7 +1890,7 @@ export function depthWalls(depth, opts = {}) {
     .slice(0, o.maxWalls)
     .map((w) => ({ ...w, usd: r4(w.usd), distancePct: r4(w.distancePct) }));
   return {
-    mid: r4(mid),
+    mid: rp(mid),
     spreadPct: r4(((bestAsk - bestBid) / mid) * 100),
     medianSize: r4(medianSize),
     bids: wallsOf(bids, 'bid'),
