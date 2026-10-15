@@ -194,9 +194,12 @@ async function main() {
     const targetQty = Math.max(minQty, qtyByNotional);
     const stepCount = Math.ceil(targetQty / stepSize);
     const alignedQty = stepCount * stepSize;
-    let orderNotional = Number((alignedQty * markPrice).toFixed(2));
-    if (minNotional > 0 && orderNotional < minNotional) {
-      orderNotional = Number((minNotional + 0.1).toFixed(2));
+    // The server turns notional_usd back into a quantity and rounds it DOWN to the step:
+    // the exact aligned notional can land one step short (0.0007 BTC -> 0.0006, below
+    // MIN_NOTIONAL). A 1% margin keeps the same step and absorbs small price moves.
+    let orderNotional = Number((alignedQty * markPrice * 1.01).toFixed(2));
+    if (minNotional > 0 && orderNotional < minNotional * 1.01) {
+      orderNotional = Number((minNotional * 1.01).toFixed(2));
     }
 
     const placeRes = await client.callTool({
