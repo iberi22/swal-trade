@@ -232,6 +232,8 @@ export class ChartBridgeServer implements ChartBridge {
   readonly requestTimeoutMs: number;
 
   private server: http.Server | null = null;
+  /** Why the server is not listening (e.g. another Claude session already owns the port). */
+  public startError: string | null = null;
   private activeClient: ActiveClient | null = null;
   private sockets = new Set<Duplex>();
   private pendingRequests = new Map<string, PendingRequest>();
@@ -524,6 +526,7 @@ export class ChartBridgeServer implements ChartBridge {
   }
 
   private async request(type: string, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<unknown> {
+    if (this.startError) throw new Error(this.startError);
     if (!this.activeClient || !this.activeClient.authenticated || this.activeClient.closed) {
       throw new Error(
         "extension not connected: open Binance futures and enable \"Permitir que Claude use el gráfico\" in Ajustes"
@@ -593,8 +596,13 @@ export function getOrCreateBridge(env: NodeJS.ProcessEnv): ChartBridgeServer {
   if (!sharedBridge) {
     const port = env.SWAL_MCP_CHART_PORT ? parseInt(env.SWAL_MCP_CHART_PORT, 10) : DEFAULT_CHART_BRIDGE_PORT;
     sharedBridge = new ChartBridgeServer({ port });
-    void sharedBridge.start().catch((err) => {
-      console.error("Failed to start chart bridge server:", err);
+    const bridge = sharedBridge;
+    void bridge.start().catch((err: NodeJS.ErrnoException) => {
+      bridge.startError =
+        err?.code === "EADDRINUSE"
+          ? `chart bridge port ${port} is already in use (another Claude Code session owns the chart): use that session or close it`
+          : `chart bridge failed to start: ${err?.message ?? String(err)}`;
+      console.error(bridge.startError);
     });
   }
   return sharedBridge;

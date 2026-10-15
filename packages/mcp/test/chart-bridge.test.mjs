@@ -376,3 +376,17 @@ test("bridge server drops a client that announces a frame larger than the cap", 
     await server.close();
   }
 });
+
+test("a bridge that could not bind its port reports why instead of 'not connected'", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-bridge-busy-"));
+  const first = new ChartBridgeServer({ port: 0, tokenPath: path.join(tmpDir, "t1") });
+  await first.start();
+  const second = new ChartBridgeServer({ port: first.port, tokenPath: path.join(tmpDir, "t2") });
+  try {
+    await assert.rejects(second.start(), (err) => err.code === "EADDRINUSE");
+    second.startError = "chart bridge port in use (another Claude Code session owns the chart)";
+    await assert.rejects(second.setTimeframe("15m"), /another Claude Code session/);
+  } finally {
+    await first.close();
+  }
+});
