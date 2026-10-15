@@ -165,18 +165,32 @@ test('sw.js: no intercepta POST, otro origen, /api/*, /backup/*, /checkout/*, /i
   assert.deepEqual(sw.fetched, []);
 });
 
-test('sw.js: los estaticos se sirven de la cache y se revalidan en segundo plano', async () => {
-  const cachedCss = new Response('body{color:red}', {
-    status: 200,
-    headers: { 'Content-Type': 'text/css' },
+test('sw.js: con red los estaticos salen de la red, nunca de una copia vieja', async () => {
+  // Las URLs de JS/CSS no llevan version: una copia vieja tras un despliegue mezclaria
+  // HTML nuevo con JS viejo.
+  const oldCss = new Response('body{color:red}', { status: 200, headers: { 'Content-Type': 'text/css' } });
+  const sw = loadServiceWorker({
+    cached: new Map([[`${SITE}/tokens.css`, oldCss]]),
+    fetch: async () => new Response('body{color:blue}', { status: 200, headers: { 'Content-Type': 'text/css' } }),
   });
-  const sw = loadServiceWorker({ cached: new Map([[`${SITE}/tokens.css`, cachedCss]]) });
   const event = sw.dispatch(new Request(`${SITE}/tokens.css`));
-
   const response = await event.response;
-  assert.equal(await response.text(), 'body{color:red}', 'debe ganar la copia cacheada');
-  await event.waited;
-  assert.deepEqual(sw.fetched, [`${SITE}/tokens.css`], 'y aun asi se revalida contra la red');
+  assert.equal(await response.text(), 'body{color:blue}', 'gana la version de la red');
+  assert.deepEqual(sw.fetched, [`${SITE}/tokens.css`]);
+  assert.ok(sw.puts.includes(`${SITE}/tokens.css`), 'y se guarda para usarla sin conexion');
+});
+
+test('sw.js: sin red los estaticos salen de la copia guardada', async () => {
+  const savedCss = new Response('body{color:red}', { status: 200, headers: { 'Content-Type': 'text/css' } });
+  const sw = loadServiceWorker({
+    cached: new Map([[`${SITE}/tokens.css`, savedCss]]),
+    fetch: async () => {
+      throw new TypeError('Failed to fetch');
+    },
+  });
+  const event = sw.dispatch(new Request(`${SITE}/tokens.css`));
+  const response = await event.response;
+  assert.equal(await response.text(), 'body{color:red}', 'sin conexion se usa la copia guardada');
 });
 
 test('sw.js: solo guarda respuestas 200 sin Cache-Control: no-store', async () => {

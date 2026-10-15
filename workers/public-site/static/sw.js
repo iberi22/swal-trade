@@ -34,7 +34,7 @@ function isNeverCached(pathname) {
   return NEVER_CACHE.some((re) => re.test(pathname));
 }
 
-/* Estaticos con stale-while-revalidate: css, js, iconos y el favicon. */
+/* Estaticos que se guardan para usarlos sin conexion: css, js, iconos y el favicon. */
 function isCacheableAsset(pathname) {
   return (
     pathname.endsWith('.css') ||
@@ -110,15 +110,21 @@ async function networkFirstNavigation(event) {
   }
 }
 
-function staleWhileRevalidate(event) {
+/* Los JS y CSS no llevan version en la URL: servir una copia vieja tras un despliegue
+ * mezclaria HTML nuevo con JS viejo. Con red se sirve siempre la version actual; la
+ * copia guardada solo se usa sin conexion. */
+async function networkFirstAsset(event) {
   const request = event.request;
-  const revalidate = caches.open(RUNTIME_CACHE).then(async (cache) => {
-    const response = await fetch(request);
-    if (isStorable(response)) await cache.put(request, response.clone());
+  const runtime = await caches.open(RUNTIME_CACHE);
+  try {
+    const response = await fetchWithTimeout(request, NAVIGATION_TIMEOUT_MS);
+    if (isStorable(response)) await runtime.put(request, response.clone());
     return response;
-  });
-  event.waitUntil(revalidate.catch(() => {}));
-  return caches.match(request).then((cached) => cached || revalidate);
+  } catch (err) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw err;
+  }
 }
 
 self.addEventListener('fetch', (event) => {
@@ -135,6 +141,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isCacheableAsset(url.pathname)) {
-    event.respondWith(staleWhileRevalidate(event));
+    event.respondWith(networkFirstAsset(event));
   }
 });
