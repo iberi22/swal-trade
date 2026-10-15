@@ -15,7 +15,7 @@ function assertSigned(url, init) {
   const idx = qs.lastIndexOf("&signature=");
   const payload = qs.slice(0, idx);
   assert.equal(qs.slice(idx + "&signature=".length), crypto.createHmac("sha256", SECRET).update(payload).digest("hex"));
-  assert.ok(payload.includes("recvWindow=5000"));
+  assert.ok(payload.includes("recvWindow=15000"));
   assert.ok(payload.includes("timestamp=1000500"));
 }
 
@@ -179,4 +179,118 @@ test("income pagination fails closed when the page cap is reached", async () => 
 
   // The error names the cap, so the operator can widen it or narrow the day.
   await assert.rejects(client(incomeExchange(pages).fetchFn).incomeSince(0), /50 page cap/);
+});
+
+test("read-only client: retries once on -1021 after time sync, then succeeds", async () => {
+  let timeCalls = 0;
+  let accountCalls = 0;
+  let serverTime = 1_000_500;
+  const fetchFn = async (url) => {
+    if (String(url).includes("/fapi/v1/time")) {
+      timeCalls += 1;
+      serverTime += 2000;
+      return { ok: true, status: 200, json: async () => ({ serverTime }), text: async () => "" };
+    }
+    if (String(url).includes("/fapi/v3/account")) {
+      accountCalls += 1;
+      if (accountCalls === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => '{"code":-1021,"msg":"Timestamp for this request is outside of the recvWindow."}',
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: 1 }), text: async () => "" };
+    }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  const c = createReadOnlyClient({
+    apiKey: "AK-test-key",
+    apiSecret: SECRET,
+    fetchFn,
+    now: () => 1_000_000,
+  });
+  const res = await c.account();
+  assert.deepEqual(res, { ok: 1 });
+  assert.equal(accountCalls, 2);
+  assert.equal(timeCalls, 1);
+});
+
+test("read-only client: other HTTP errors are not retried", async () => {
+  let accountCalls = 0;
+  const fetchFn = async (url) => {
+    if (String(url).includes("/fapi/v3/account")) {
+      accountCalls += 1;
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}',
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  const c = createReadOnlyClient({
+    apiKey: "AK-test-key",
+    apiSecret: SECRET,
+    fetchFn,
+    now: () => 1_000_000,
+  });
+  await assert.rejects(() => c.account(), /Invalid API-key/);
+  assert.equal(accountCalls, 1);
+});
+
+test("read-only client: does not retry more than once if second call also fails with -1021", async () => {
+  let accountCalls = 0;
+  let timeCalls = 0;
+  const fetchFn = async (url) => {
+    if (String(url).includes("/fapi/v1/time")) {
+      timeCalls += 1;
+      return { ok: true, status: 200, json: async () => ({ serverTime: 1_000_500 }), text: async () => "" };
+    }
+    if (String(url).includes("/fapi/v3/account")) {
+      accountCalls += 1;
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"code":-1021,"msg":"Timestamp for this request is outside of the recvWindow."}',
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  const c = createReadOnlyClient({
+    apiKey: "AK-test-key",
+    apiSecret: SECRET,
+    fetchFn,
+    now: () => 1_000_000,
+  });
+  await assert.rejects(() => c.account(), /-1021/);
+  assert.equal(accountCalls, 2);
+  assert.equal(timeCalls, 1);
+});
+
+test("trading client: write requests use recvWindow 15000 and do NOT retry on -1021", async () => {
+  const { createTradingClient } = await import("../dist/trade-client.js");
+  const calls = [];
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    if (String(url).includes("/fapi/v1/order")) {
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"code":-1021,"msg":"Timestamp for this request is outside of the recvWindow."}',
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+  };
+  const tc = createTradingClient({
+    apiKey: "AK-test-key",
+    apiSecret: SECRET,
+    fetchFn,
+    base: "https://fapi.binance.com",
+    now: () => 1_000_000,
+  });
+  await assert.rejects(() => tc.placeOrder({ symbol: "BTCUSDT", side: "BUY", type: "MARKET" }), /-1021/);
+  const orderCalls = calls.filter((c) => c.url.includes("/fapi/v1/order"));
+  assert.equal(orderCalls.length, 1);
+  assert.ok(orderCalls[0].init.body.includes("recvWindow=15000"));
 });

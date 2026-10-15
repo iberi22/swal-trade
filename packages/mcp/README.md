@@ -130,7 +130,7 @@ El stop se comprueba además contra la estimación de liquidación del exchange 
 - Las estrategias y las señales automáticas del laboratorio siguen privadas y no se exponen por este MCP.
 - El journal local guarda una línea por escritura con la petición, la decisión del guard y las respuestas del exchange, más una línea de intención antes de cada envío y su resultado. Ni la key, ni la firma, ni una URL firmada se escriben. La comprobación previa abre el fichero en modo append: un journal de solo lectura detiene la escritura antes de que se envíe nada, no después.
 
-La firma es HMAC-SHA256 sobre el query (`recvWindow` 5000) más el desfase del reloj del servidor; los `POST` llevan el payload en el cuerpo y los `DELETE` en el query. Los errores de red no incluyen el secreto ni el query firmado.
+La firma es HMAC-SHA256 sobre el query (`recvWindow` 15000) más el desfase del reloj del servidor; los `POST` llevan el payload en el cuerpo y los `DELETE` en el query. Los errores de red no incluyen el secreto ni el query firmado.
 
 `strength` es calidad del patrón, no una probabilidad. Sin una tabla de acierto medida, el núcleo no inventa porcentajes.
 
