@@ -353,14 +353,18 @@ export async function explainPatterns(input: ExplainInput, deps: ExplainDeps = {
   const hit = cache.get(key);
   if (hit && nowMs - hit.at < EXPLAIN_CACHE_MS) return { ...hit.view, fromCache: true };
 
-  if (inFlight) {
-    // Una sola petición en vuelo a la vez. La misma clave se reutiliza; otra espera.
+  // Una sola petición en vuelo a la vez. La misma clave se reutiliza; otra espera
+  // y, al despertar, vuelve a mirar: otra espera pudo lanzar la suya antes, o
+  // dejar en la caché justo lo que esta necesitaba.
+  while (inFlight) {
     if (inFlight.key === key) return inFlight.promise;
     try {
       await inFlight.promise;
     } catch {
       /* nunca rechaza; si lo hiciera, se sigue igual */
     }
+    const again = cache.get(key);
+    if (again && nowMs - again.at < EXPLAIN_CACHE_MS) return { ...again.view, fromCache: true };
   }
 
   const promise = (async (): Promise<ExplainView> => {

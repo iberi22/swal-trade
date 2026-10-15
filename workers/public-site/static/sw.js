@@ -117,7 +117,9 @@ async function networkFirstAsset(event) {
   const request = event.request;
   const runtime = await caches.open(RUNTIME_CACHE);
   try {
-    const response = await fetchWithTimeout(request, NAVIGATION_TIMEOUT_MS);
+    // Sin tope de tiempo: cortar una red lenta pero viva serviría el JS viejo con el
+    // HTML nuevo. La copia guardada solo responde a un error de red de verdad.
+    const response = await fetch(request);
     if (isStorable(response)) await runtime.put(request, response.clone());
     return response;
   } catch (err) {

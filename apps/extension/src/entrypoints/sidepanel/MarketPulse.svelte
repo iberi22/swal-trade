@@ -19,6 +19,13 @@
   const cache = browserCache(FEAR_GREED_KEY);
 
   $effect(() => {
+    // Lo que depende del símbolo se borra al cambiar de par: el pulso nuevo no
+    // emite en el arranque y el anterior se vería bajo el símbolo nuevo.
+    // Miedo/codicia no depende del par y se conserva.
+    walls = null;
+    liquidations = null;
+    regimen = null;
+    live = false;
     const handle = startMarketPulse(symbol, {
       cache,
       onChange: (snapshot: MarketPulseSnapshot) => {

@@ -438,6 +438,9 @@ export function startMarketPulse(symbol: string, options: MarketPulseOptions): M
       stream?.close();
       stream = null;
       live = false;
+      // close() no avisa de onLive(false): sin este emit la cabecera seguiría
+      // diciendo "en vivo" con el panel oculto.
+      emit();
     }
   };
 

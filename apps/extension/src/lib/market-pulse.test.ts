@@ -392,6 +392,19 @@ describe('startMarketPulse', () => {
     h.handle.stop();
   });
 
+  it('al ocultar el panel emite live=false: la cabecera no sigue en vivo', async () => {
+    const h = harness();
+    await flush();
+    FakeSocket.last.open();
+    await flush();
+    expect(h.last().live).toBe(true);
+    const before = h.snapshots.length;
+    h.setVisible(false);
+    expect(h.snapshots.length).toBeGreaterThan(before);
+    expect(h.last().live).toBe(false);
+    h.handle.stop();
+  });
+
   it('stop cierra el stream y deja de refrescar', async () => {
     const h = harness();
     await flush();

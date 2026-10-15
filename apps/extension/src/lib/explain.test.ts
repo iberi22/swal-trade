@@ -337,3 +337,25 @@ describe('localFallbackExplain', () => {
     expect(conflict.caution).not.toMatch(/probabilidad/i);
   });
 });
+
+describe('explainPatterns: una sola petición en vuelo', () => {
+  it('tres llamadas con claves distintas nunca mandan dos POST a la vez', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const fetchImpl = vi.fn(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return new Response(JSON.stringify(aiPayload()), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    const deps = { fetchImpl: fetchImpl as unknown as typeof fetch, nowMs: NOW };
+    await Promise.all([
+      explainPatterns(input({ timeframe: '1h' }), deps),
+      explainPatterns(input({ timeframe: '4h' }), deps),
+      explainPatterns(input({ timeframe: '15m' }), deps),
+    ]);
+    expect(maxActive).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+});
