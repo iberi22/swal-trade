@@ -1,5 +1,5 @@
 // analisis.js — UI de /analisis/. Toda la logica de deteccion vive en analysis-core.js (pura).
-import { analyzeSync, trendOf, NO_HISTORY_TEXT } from './analysis-core.js';
+import { analyzeSync, trendOf, NO_HISTORY_TEXT, chartPriceFormat } from './analysis-core.js';
 import { cvdHistogramData, cvdLineData, flowLegend, volumeShockMarkers } from './volume-flow-view.js';
 import {
   EXPLAIN_DISCLAIMER,
@@ -558,6 +558,9 @@ async function load() {
     if (gen !== state.gen) return;
     state.candles = c;
     series.setData(c);
+    // La escala de precios sigue la magnitud del precio (PEPE necesita 8 decimales, BTC 2).
+    const last = c[c.length - 1];
+    if (last) series.applyOptions({ priceFormat: chartPriceFormat(last.close) });
     setFlowData(c);
     runAnalysis(true);
     connectWs();

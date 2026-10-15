@@ -898,3 +898,18 @@ const BTC_GOLDEN = [
   ['flag', 'volume_profile', 'vah', 141902.2838, 148708.2715],
   ['flag', 'volume_profile', 'val', 141902.2838, 148708.2715],
 ];
+
+// ---------- escala de precios de la pagina /analisis (lightweight-charts priceFormat) ----------
+test('chartPriceFormat: PEPE necesita 8 decimales; BTC y entradas no validas, 2', async () => {
+  const { chartPriceFormat } = await import('../static/analisis/analysis-core.js');
+  assert.deepEqual(chartPriceFormat(0.0041558), { type: 'price', precision: 8, minMove: 1e-8 });
+  assert.deepEqual(chartPriceFormat(82313.85), { type: 'price', precision: 2, minMove: 0.01 });
+  assert.deepEqual(chartPriceFormat(0), { type: 'price', precision: 2, minMove: 0.01 });
+  assert.deepEqual(chartPriceFormat(Number.NaN), { type: 'price', precision: 2, minMove: 0.01 });
+});
+
+test('analisis.js aplica el formato de precio a la serie de velas (regresion PEPE)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../static/analisis/analisis.js', import.meta.url), 'utf8');
+  assert.match(page, /series\.applyOptions\(\{ priceFormat: chartPriceFormat\(last\.close\) \}\)/);
+});

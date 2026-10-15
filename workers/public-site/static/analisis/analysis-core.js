@@ -97,6 +97,15 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4;
 const priceDecimals = (x) => Math.max(4, 8 - Math.floor(Math.log10(Math.abs(x))) - 1);
 /** Redondeo de PRECIOS: nunca destruye los dígitos de un precio bajo. Usar solo para precios. */
 const rp = (x) => (Number.isFinite(x) && x !== 0 ? Math.round(x * 10 ** priceDecimals(x)) / 10 ** priceDecimals(x) : x);
+/**
+ * Formato de la escala de precios (lightweight-charts priceFormat): decimales para 6 cifras
+ * significativas del precio actual, mínimo 2 y máximo 10. PEPE ~0,0041 necesita 8 decimales.
+ */
+export function chartPriceFormat(price) {
+  if (!Number.isFinite(price) || price <= 0) return { type: 'price', precision: 2, minMove: 0.01 };
+  const precision = Math.min(10, Math.max(2, 5 - Math.floor(Math.log10(price))));
+  return { type: 'price', precision, minMove: 10 ** -precision };
+}
 const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
 export function median(a) {
   if (!a.length) return 0;
