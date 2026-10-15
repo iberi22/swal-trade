@@ -82,3 +82,32 @@ test('sin volumen taker el panel de CVD lo dice en lugar de inventar flujo', asy
   await expect(page.locator('#cvd-pane')).toHaveAttribute('data-cvd-points', '0');
   await expect(page.locator('#findings')).not.toContainText('Compra agresiva');
 });
+
+test('el panel de Pulso de mercado muestra muros, liquidaciones, miedo y codicia y regimen', async ({ page, problems }) => {
+  await page.goto('/analisis/?symbol=BTCUSDC', { waitUntil: 'load' });
+
+  const pulse = page.locator('.pulse');
+  await expect(pulse).toBeVisible();
+  await expect(pulse.locator('h2')).toContainText('Pulso de mercado');
+
+  // Muros del libro
+  const walls = page.locator('#pulse-walls');
+  await expect(walls).toBeVisible();
+  await expect(walls.locator('li[data-side="bid"], li[data-side="ask"]').first()).toBeVisible();
+  await expect(walls).toContainText('USDC');
+
+  // Liquidaciones recientes
+  const liqs = page.locator('#pulse-liquidations');
+  await expect(liqs).toBeVisible();
+
+  // Miedo y codicia
+  await expect(page.locator('#fng')).toHaveText('12');
+  await expect(page.locator('#fng-label')).toContainText('Miedo extremo');
+
+  // Régimen
+  const trends = page.locator('#trends');
+  await expect(trends).toBeVisible();
+  await expect(trends.locator('li').first()).toBeVisible();
+
+  await assertClean(page, problems);
+});

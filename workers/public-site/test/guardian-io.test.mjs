@@ -36,7 +36,7 @@ test('binance client: signed read-only GETs, non-extractable key, time offset, p
     const idx = qs.lastIndexOf('&signature=');
     const q = qs.slice(0, idx);
     assert.equal(qs.slice(idx + 11), crypto.createHmac('sha256', 's3cret').update(q).digest('hex'));
-    assert.ok(q.includes('recvWindow=5000'));
+    assert.ok(q.includes('recvWindow=15000'));
     assert.ok(q.includes('timestamp=1000500'));
     assert.ok(!base.includes('s3cret'));
   }
@@ -83,4 +83,79 @@ test('telegram: plain text POST, errors do not leak token', async () => {
   const e = await sendTelegram({ token: 'TOK', chatId: '1', text: 'x', fetchFn: async () => { throw new TypeError('fetch failed https://api.telegram.org/botTOK'); } });
   assert.equal(e.ok, false);
   assert.ok(!e.error.includes('TOK'));
+});
+
+test('binance client: retries once on -1021 after refreshing time offset, then succeeds', async () => {
+  const hmacKey = await importSecret('s3cret', subtle);
+  let timeCalls = 0;
+  let accountCalls = 0;
+  let serverTime = 1_000_500;
+  const fetchFn = async (url) => {
+    if (url.includes('/fapi/v1/time')) {
+      timeCalls += 1;
+      serverTime += 2000;
+      return { ok: true, json: async () => ({ serverTime }) };
+    }
+    if (url.includes('/fapi/v3/account')) {
+      accountCalls += 1;
+      if (accountCalls === 1) {
+        return {
+          ok: false,
+          status: 400,
+          text: async () => '{"code":-1021,"msg":"Timestamp for this request is outside of the recvWindow."}',
+        };
+      }
+      return { ok: true, json: async () => ({ ok: 1 }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  const c = createClient({ apiKey: 'AK', hmacKey, fetchFn, subtle, now: () => 1_000_000 });
+  const res = await c.account();
+  assert.deepEqual(res, { ok: 1 });
+  assert.equal(accountCalls, 2);
+  assert.equal(timeCalls, 1);
+});
+
+test('binance client: does not retry non-1021 errors', async () => {
+  const hmacKey = await importSecret('s3cret', subtle);
+  let accountCalls = 0;
+  const fetchFn = async (url) => {
+    if (url.includes('/fapi/v3/account')) {
+      accountCalls += 1;
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}',
+      };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  const c = createClient({ apiKey: 'AK', hmacKey, fetchFn, subtle, now: () => 1_000_000 });
+  await assert.rejects(() => c.account(), /HTTP 400/);
+  assert.equal(accountCalls, 1);
+});
+
+test('binance client: does not retry more than once if second call also fails with -1021', async () => {
+  const hmacKey = await importSecret('s3cret', subtle);
+  let accountCalls = 0;
+  let timeCalls = 0;
+  const fetchFn = async (url) => {
+    if (url.includes('/fapi/v1/time')) {
+      timeCalls += 1;
+      return { ok: true, json: async () => ({ serverTime: 1_000_500 }) };
+    }
+    if (url.includes('/fapi/v3/account')) {
+      accountCalls += 1;
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"code":-1021,"msg":"Timestamp for this request is outside of the recvWindow."}',
+      };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  const c = createClient({ apiKey: 'AK', hmacKey, fetchFn, subtle, now: () => 1_000_000 });
+  await assert.rejects(() => c.account(), /HTTP 400.*-1021/);
+  assert.equal(accountCalls, 2);
+  assert.equal(timeCalls, 1);
 });

@@ -35,15 +35,15 @@ export function breaches(dayPnl, pos, leverages, cfg) {
   const out = {};
   const lim = cfg.limit;
   const open = pos.reduce((a, p) => a + p.unrealized, 0);
-  const det = `PnL del dia ${f2(dayPnl)} USD (realizado ${f2(dayPnl - open)}, abierto ${f2(open)}), limite -${f2(lim)}.`;
-  if (dayPnl <= -lim) out.daily_hit = `GUARDIAN: limite diario alcanzado. ${det} Para de operar hoy.`;
-  else if (dayPnl <= -lim * (cfg.warn ?? 0.7)) out.daily_warn = `GUARDIAN: cerca del limite diario. ${det} Cuidado.`;
+  const det = `PnL del día ${f2(dayPnl)} USD (realizado ${f2(dayPnl - open)}, abierto ${f2(open)}), límite -${f2(lim)}.`;
+  if (dayPnl <= -lim) out.daily_hit = `GUARDIAN: límite diario alcanzado. ${det} Para de operar hoy.`;
+  else if (dayPnl <= -lim * (cfg.warn ?? 0.7)) out.daily_warn = `GUARDIAN: cerca del límite diario. ${det} Cuidado.`;
   for (const p of pos) {
     const s = p.symbol;
     const mx = cfg.maxNotional;
     const lv = cfg.maxLev;
-    if (mx && p.notional > mx) out[`notional:${s}`] = `GUARDIAN: ${s} nocional ${p.notional.toFixed(0)} USD supera el maximo ${mx.toFixed(0)}.`;
-    if (lv && (leverages[s] || 0) > lv) out[`lev:${s}`] = `GUARDIAN: ${s} apalancamiento ${leverages[s]}x supera el maximo ${lv}x.`;
+    if (mx && p.notional > mx) out[`notional:${s}`] = `GUARDIAN: ${s} nocional ${p.notional.toFixed(0)} USD supera el máximo ${mx.toFixed(0)}.`;
+    if (lv && (leverages[s] || 0) > lv) out[`lev:${s}`] = `GUARDIAN: ${s} apalancamiento ${leverages[s]}x supera el máximo ${lv}x.`;
   }
   return out;
 }
@@ -90,11 +90,11 @@ export function newBreaches(br, alerted) {
 export function parseConfig({ limit, maxNotional, maxLev, tz }) {
   const num = (v) => (v === '' || v == null ? null : Number(v));
   const l = num(limit);
-  if (!(l > 0)) return { error: 'El limite diario debe ser mayor que 0.' };
+  if (!(l > 0)) return { error: 'El límite diario debe ser mayor que 0.' };
   const mn = num(maxNotional);
   const ml = num(maxLev);
   const z = num(tz) ?? -5;
-  if ([mn, ml].some((x) => x !== null && !(x > 0))) return { error: 'Nocional y apalancamiento maximos deben ser positivos o vacios.' };
+  if ([mn, ml].some((x) => x !== null && !(x > 0))) return { error: 'Nocional y apalancamiento máximos deben ser positivos o vacíos.' };
   if (!(z >= -12 && z <= 14)) return { error: 'Zona horaria fuera de rango (-12 a 14).' };
   return { cfg: { limit: l, warn: 0.7, maxNotional: mn, maxLev: ml, tz: z } };
 }

@@ -6,6 +6,7 @@
     startMarketPulse,
     type MarketPulseSnapshot,
   } from '../../lib/market-pulse';
+  import { formatPanelPrice, typicalLevelUsd } from '../../lib/price-format';
   import type { DepthWalls, FearGreed, LiquidationSummary, TimeframeTrend } from '../../lib/types';
 
   let { symbol }: { symbol: string } = $props();
@@ -47,8 +48,8 @@
     return `${value.toFixed(1).replace('.', ',')} USDT`;
   }
 
-  const priceFmt = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 });
-  const price = (value: number) => priceFmt.format(value);
+  /** Precios del libro y precio medio: 2 decimales desde 1; hasta 8 cifras si son menores. */
+  const price = (value: number) => formatPanelPrice(value);
 
   function pct(value: number | null): string {
     if (value === null || !Number.isFinite(value)) return '—';
@@ -58,6 +59,10 @@
   const fiveMin = $derived(liquidations?.windows[0] ?? null);
   const fifteenMin = $derived(liquidations?.windows[1] ?? null);
   const wallCount = $derived((walls?.bids.length ?? 0) + (walls?.asks.length ?? 0));
+  /** La cantidad mediana está en el activo base (PEPE, BTC...): se pasa a USDT con el precio medio. */
+  const typicalUsd = $derived(
+    walls ? typicalLevelUsd(walls.medianSize, walls.mid) : null,
+  );
 </script>
 
 <section class="pulse" aria-label="Pulso de mercado">
@@ -88,7 +93,7 @@
         </ul>
         <p class="note">
           Precio medio {walls.mid === null ? '—' : price(walls.mid)} · margen {pct(walls.spreadPct)} · nivel
-          típico {usd(walls.medianSize)}
+          típico ≈ {typicalUsd === null ? '—' : usd(typicalUsd)} (cantidad × precio medio)
         </p>
       {:else}
         <p class="empty">{NO_DATA}</p>

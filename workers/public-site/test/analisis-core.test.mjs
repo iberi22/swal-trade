@@ -4,7 +4,7 @@ import {
   analyze, analyzeSync, TOOL_SPEC, historicalHitRate, findPivots, trendOf, srZones, doubleTopBottom,
   triangles, rangeBreakout, shocks, volumeProfile, rsiDivergence, ema, rsi, CHART_KINDS,
   fairValueGaps, marketStructure, orderBlocks, liquiditySweeps, headAndShoulders, wedges, flags,
-  candlestickPatterns,
+  candlestickPatterns, pivotFindings,
   volumeFlow, volumeShocks, deltaDivergence, absorption, climax,
 } from '../static/analisis/analysis-core.js';
 
@@ -766,4 +766,150 @@ test('liquidationSummary: descarta basura y aguanta la lista vacía', () => {
   assert.equal(none.largest, null);
   assert.deepEqual(none.windows.map((w) => w.totalUsd), [0, 0]);
   assert.deepEqual(LIQUIDATION_DEFAULTS.windowsMinutes, [5, 15]);
+});
+
+// ---------- precio bajo (tipo PEPE) y precio alto (tipo BTC): los niveles no pierden digitos ----------
+// Las mismas formas de precio a dos escalas: ~100 (referencia), ~0.004 (PEPE) y ~1e5 (BTC).
+const PRICE_SHAPES = [
+  [[0, 90], [30, 110], [45, 100], [60, 110.2], [70, 104]],
+  [[0, 130], [30, 110], [45, 120], [60, 109.8], [70, 116]],
+  [[0, 90], [10, 110], [18, 100], [28, 120], [36, 101], [46, 111], [54, 104]],
+  [[0, 110], [6, 100], [18, 145], [22, 138], [26, 142], [30, 136], [34, 140], [38, 134]],
+];
+const PEPE_K = 3.8e-5; // 110 -> 0.00418
+const BTC_K = 1023.4567891; // 110 -> 112,579 aprox.
+const scaledShape = (pts, k) => path(pts.map(([i, p]) => [i, p * k]), { wick: 0.3 * k });
+
+test('precio bajo tipo PEPE: confirm, invalidate y precio conservan >= 6 cifras significativas', () => {
+  for (const pts of PRICE_SHAPES) {
+    const base = analyzeSync({ symbol: 'BTCUSDT', timeframe: '1h', candles: path(pts) }).findings;
+    const pepe = analyzeSync({ symbol: '1000PEPEUSDC', timeframe: '5m', candles: scaledShape(pts, PEPE_K) }).findings;
+    assert.ok(base.length >= 1);
+    const pool = new Map();
+    for (const g of pepe) {
+      const key = `${g.kind}|${g.from}|${g.to}`;
+      if (!pool.has(key)) pool.set(key, []);
+      pool.get(key).push(g);
+    }
+    for (const f of base) {
+      // El perfil de volumen usa celdas de precio: con velas planas, la celda del POC empata y el desempate
+      // depende de redondeo de punto flotante al cambiar de escala. Ese caso se cubre abajo, con el texto.
+      if (f.kind === 'volume_profile') continue;
+      const list = pool.get(`${f.kind}|${f.from}|${f.to}`) || [];
+      const g = list.shift();
+      assert.ok(g, `falta ${f.kind} en la serie PEPE`);
+      assert.equal(g.levels.length, f.levels.length, f.kind);
+      f.levels.forEach((l, j) => {
+        for (const field of ['price', 'confirm', 'invalidate']) {
+          if (!Number.isFinite(l[field])) continue;
+          const want = l[field] * PEPE_K;
+          const got = g.levels[j][field];
+          // La referencia a ~100 ya trae 4 decimales (error relativo <= 6e-7); el nivel PEPE debe quedar dentro de 1e-6.
+          assert.ok(Math.abs(got - want) <= Math.abs(want) * 1e-6, `${g.kind}.${l.role}.${field}: ${got} frente a ${want}`);
+        }
+      });
+    }
+  }
+});
+
+test('precio bajo tipo PEPE: el texto del hallazgo muestra los mismos digitos que el numero', () => {
+  const pepe = analyzeSync({ symbol: '1000PEPEUSDC', timeframe: '5m', candles: scaledShape(PRICE_SHAPES[0], PEPE_K) }).findings;
+  const c = scaledShape(PRICE_SHAPES[0], PEPE_K);
+  const texts = [...pepe.filter((f) => f.kind === 'sr_zone'), ...pivotFindings(c, findPivots(c, 3))];
+  assert.ok(texts.some((f) => f.kind === 'pivot') && texts.some((f) => f.kind === 'sr_zone'));
+  for (const f of texts) {
+    assert.ok(f.explanation.includes(String(f.levels[0].price)), `${f.explanation} sin ${f.levels[0].price}`);
+  }
+});
+
+test('precio bajo: las zonas sr tienen id distinto por precio (no colapsan a 0)', () => {
+  const c = scaledShape(PRICE_SHAPES[0], PEPE_K);
+  const zones = srZones(c, findPivots(c, 3));
+  assert.ok(zones.length >= 1);
+  for (const z of zones) {
+    assert.ok(z.id.endsWith(`:${z.levels[0].price}`), z.id);
+    assert.notEqual(z.id, `sr:${z.levels[0].role}:0`);
+  }
+});
+
+test('precio alto tipo BTC: los niveles no cambian respecto a la version con redondeo de 4 decimales', () => {
+  const rows = [];
+  for (const [name, pts] of [['dtop', PRICE_SHAPES[0]], ['dbot', PRICE_SHAPES[1]], ['hs', PRICE_SHAPES[2]], ['flag', PRICE_SHAPES[3]]]) {
+    const candles = path(pts.map(([i, p]) => [i, p * BTC_K]), { wick: 0.3 * BTC_K });
+    const out = analyzeSync({ symbol: 'BTCUSDT', timeframe: '1h', candles });
+    for (const f of out.findings) for (const l of f.levels) rows.push([name, f.kind, l.role, l.confirm, l.invalidate]);
+  }
+  // Golden tomado del core antes del cambio (r4 en todos los precios).
+  assert.deepEqual(rows, BTC_GOLDEN);
+});
+
+const BTC_GOLDEN = [
+  ['dtop', 'double_top', 'neckline', 102038.6419, 113091.9752],
+  ['dtop', 'double_top', 'peak', 102038.6419, 113091.9752],
+  ['dtop', 'double_top', 'peak', 102038.6419, 113091.9752],
+  ['dtop', 'rsi_divergence_bearish', 'divergence_start', 102038.6419, 113091.9752],
+  ['dtop', 'rsi_divergence_bearish', 'divergence_end', 102038.6419, 113091.9752],
+  ['dtop', 'sr_zone', 'resistance', 112887.2838, 113091.9752],
+  ['dtop', 'volume_profile', 'poc', 109100.4937, 112204.9793],
+  ['dtop', 'volume_profile', 'vah', 109100.4937, 112204.9793],
+  ['dtop', 'volume_profile', 'val', 109100.4937, 112204.9793],
+  ['dbot', 'double_bottom', 'neckline', 123121.8517, 112068.5184],
+  ['dbot', 'double_bottom', 'trough', 123121.8517, 112068.5184],
+  ['dbot', 'double_bottom', 'trough', 123121.8517, 112068.5184],
+  ['dbot', 'rsi_divergence_bullish', 'divergence_start', 123121.8517, 112068.5184],
+  ['dbot', 'rsi_divergence_bullish', 'divergence_end', 123121.8517, 112068.5184],
+  ['dbot', 'sr_zone', 'support', 112273.2098, 112068.5184],
+  ['dbot', 'volume_profile', 'poc', 116059.9999, 112955.5143],
+  ['dbot', 'volume_profile', 'vah', 116059.9999, 112955.5143],
+  ['dbot', 'volume_profile', 'val', 116059.9999, 112955.5143],
+  ['hs', 'head_shoulders', 'neckline', 104085.5555, 123121.8517],
+  ['hs', 'head_shoulders', 'head', 104085.5555, 123121.8517],
+  ['hs', 'head_shoulders', 'shoulder', 104085.5555, 123121.8517],
+  ['hs', 'head_shoulders', 'shoulder', 104085.5555, 123121.8517],
+  ['hs', 'order_block_bullish', 'ob_high', 103932.0369, 102038.6419],
+  ['hs', 'order_block_bullish', 'ob_low', 103932.0369, 102038.6419],
+  ['hs', 'bear_flag', 'pole_end', 103062.0987, 113910.7406],
+  ['hs', 'bear_flag', 'flag_high', 103062.0987, 113910.7406],
+  ['hs', 'candle_morning_star', 'candle', 105723.0863, 103062.0987],
+  ['hs', 'candle_engulfing_bullish', 'candle', 104699.6295, 102038.6419],
+  ['hs', 'candle_engulfing_bearish', 'candle', 120077.0678, 123121.8517],
+  ['hs', 'fvg_bullish', 'fvg_top', 102038.6419, 100605.8024],
+  ['hs', 'fvg_bullish', 'fvg_bottom', 102038.6419, 100605.8024],
+  ['hs', 'fvg_bearish', 'fvg_top', 113399.0122, 115215.648],
+  ['hs', 'fvg_bearish', 'fvg_bottom', 113399.0122, 115215.648],
+  ['hs', 'fvg_bullish', 'fvg_top', 99991.7283, 98558.8888],
+  ['hs', 'fvg_bullish', 'fvg_bottom', 99991.7283, 98558.8888],
+  ['hs', 'volume_profile', 'poc', 110725.2314, 113987.4999],
+  ['hs', 'volume_profile', 'vah', 110725.2314, 113987.4999],
+  ['hs', 'volume_profile', 'val', 110725.2314, 113987.4999],
+  ['flag', 'fvg_bullish', 'fvg_top', 136580.3085, 133356.4196],
+  ['flag', 'fvg_bullish', 'fvg_bottom', 136580.3085, 133356.4196],
+  ['flag', 'fvg_bullish', 'fvg_top', 132742.3455, 129518.4567],
+  ['flag', 'fvg_bullish', 'fvg_bottom', 132742.3455, 129518.4567],
+  ['flag', 'order_block_bearish', 'ob_high', 141953.4566, 143590.9875],
+  ['flag', 'order_block_bearish', 'ob_low', 141953.4566, 143590.9875],
+  ['flag', 'bull_flag', 'pole_end', 148708.2715, 136836.1727],
+  ['flag', 'bull_flag', 'flag_low', 148708.2715, 136836.1727],
+  ['flag', 'candle_engulfing_bullish', 'candle', 106490.6789, 102038.6419],
+  ['flag', 'bos_bearish', 'structure_level', 138883.0863, 143590.9875],
+  ['flag', 'bear_flag', 'pole_end', 140929.9999, 145637.9011],
+  ['flag', 'bear_flag', 'flag_high', 140929.9999, 145637.9011],
+  ['flag', 'volume_profile', 'poc', 141902.2838, 148708.2715],
+  ['flag', 'volume_profile', 'vah', 141902.2838, 148708.2715],
+  ['flag', 'volume_profile', 'val', 141902.2838, 148708.2715],
+];
+
+// ---------- escala de precios de la pagina /analisis (lightweight-charts priceFormat) ----------
+test('chartPriceFormat: PEPE necesita 8 decimales; BTC y entradas no validas, 2', async () => {
+  const { chartPriceFormat } = await import('../static/analisis/analysis-core.js');
+  assert.deepEqual(chartPriceFormat(0.0041558), { type: 'price', precision: 8, minMove: 1e-8 });
+  assert.deepEqual(chartPriceFormat(82313.85), { type: 'price', precision: 2, minMove: 0.01 });
+  assert.deepEqual(chartPriceFormat(0), { type: 'price', precision: 2, minMove: 0.01 });
+  assert.deepEqual(chartPriceFormat(Number.NaN), { type: 'price', precision: 2, minMove: 0.01 });
+});
+
+test('analisis.js aplica el formato de precio a la serie de velas (regresion PEPE)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../static/analisis/analisis.js', import.meta.url), 'utf8');
+  assert.match(page, /series\.applyOptions\(\{ priceFormat: chartPriceFormat\(last\.close\) \}\)/);
 });

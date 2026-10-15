@@ -5,17 +5,17 @@ import { expect, test, assertClean } from './site-test';
 async function saveAndWatch(page: import('@playwright/test').Page) {
   await page.getByLabel('API key').fill('e2e-read-only-key');
   await page.getByLabel('API secret').fill('e2e-read-only-secret');
-  await page.getByLabel('Limite de perdida diaria (USD)').fill('50');
+  await page.getByLabel('Límite de pérdida diaria (USD)').fill('50');
   await page.getByLabel('Zona horaria (horas UTC)').fill('0');
   await page.getByRole('button', { name: 'Guardar y empezar' }).click();
-  await expect(page.locator('#breach-list')).toContainText('limite diario alcanzado');
+  await expect(page.locator('#breach-list')).toContainText('límite diario alcanzado');
   await expect(page.locator('#breach-list')).toContainText('SIN STOP: BTCUSDT');
   await expect(page.locator('#perm-status')).toHaveText('Permisos: solo lectura.');
 }
 
 test('free tier shows the daily breach and only the largest position', async ({ page, problems }) => {
   await page.goto('/guardian/', { waitUntil: 'load' });
-  await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posicion vigilada)');
+  await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posición vigilada)');
   await expect(page.locator('#tg-section')).toBeHidden();
   await expect(page.locator('#tg-locked')).toBeVisible();
   await expect(page.locator('#selfhost-link')).toBeHidden();
@@ -59,7 +59,7 @@ test('a valid Ed25519 license unlocks Pro', async ({ page, problems }) => {
 
   await page.goto('/guardian/', { waitUntil: 'load' });
   await pubkeyHit;
-  await expect(page.locator('#lic-info')).toHaveText('Licencia Pro valida.');
+  await expect(page.locator('#lic-info')).toHaveText('Licencia Pro válida.');
   await expect(page.locator('#tier-badge')).toHaveText('Pro');
   await expect(page.locator('#tg-locked')).toBeHidden();
   await expect(page.locator('#tg-section')).toBeVisible();

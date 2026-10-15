@@ -35,7 +35,7 @@ Explicar, sobre el gráfico del símbolo abierto en Binance Futures o TradingVie
 Descripción completa:
 
 ```
-SWAL Trade — Análisis de gráficos es un panel lateral para Chrome y una barra lateral para Firefox. Lee el símbolo que tienes abierto en Binance Futures o en un gráfico de TradingView, descarga las velas públicas de ese par y dibuja los patrones que encuentra el núcleo de análisis: niveles, confirmación e invalidación. La puntuación se llama fuerza. No es una probabilidad ni un porcentaje de acierto.
+SWAL Trade — Análisis de gráficos es un panel lateral para Chrome y una barra lateral para Firefox. Lee el símbolo que tienes abierto en Binance Futures o en un gráfico de TradingView, descarga las velas públicas de ese par y dibuja los patrones que encuentra el núcleo de análisis: niveles, confirmación e invalidación. Incluye panel de flujo de volumen (CVD y delta taker), pulso de mercado (muros del libro, liquidaciones recientes, miedo/codicia y régimen), titulares y explicaciones educativas opcionales. La puntuación se llama fuerza. No es una probabilidad ni un porcentaje de acierto.
 
 No es un servicio de señales. No abre ni cierra operaciones, no lee tu cuenta, no pide claves de API y no promete resultados.
 
@@ -45,8 +45,11 @@ Con el interruptor del panel encendido, la extensión puede pintar los niveles d
 
 Qué sale del navegador:
 - Velas públicas: GET https://fapi.binance.com/fapi/v1/klines (símbolo, temporalidad y límite).
-- La vela en curso: websocket público wss://fstream.binance.com (símbolo y temporalidad).
+- Muros del libro: GET https://fapi.binance.com/fapi/v1/depth (símbolo y límite).
+- La vela en curso y liquidaciones públicas: websocket público wss://fstream.binance.com (símbolo y temporalidad).
 - Titulares, solo BTC y ETH: GET https://trade.swal.network/api/news?symbol=BTC|ETH&limit=5.
+- Miedo y codicia: GET https://api.alternative.me/fng/?limit=1 (cacheado 1 h).
+- Explicaciones con IA (solo si se enciende «Explicaciones con IA»): POST https://trade.swal.network/api/explain.
 
 No hay analítica, ni cookies de seguimiento, ni código remoto. Los ajustes se quedan en el almacenamiento de la extensión.
 
@@ -72,7 +75,7 @@ Explain, on the chart of the symbol open on Binance Futures or TradingView, the 
 Full description:
 
 ```
-SWAL Trade — Chart analysis is a Chrome side panel and a Firefox sidebar. It reads the symbol you have open on Binance Futures or on a TradingView chart, downloads that pair's public candles, and draws the patterns the analysis core finds: levels, confirmation, and invalidation. The score is called strength (fuerza). It is not a probability and it is not a success rate.
+SWAL Trade — Chart analysis is a Chrome side panel and a Firefox sidebar. It reads the symbol you have open on Binance Futures or on a TradingView chart, downloads that pair's public candles, and draws the patterns the analysis core finds: levels, confirmation, and invalidation. Includes a volume flow pane (CVD and taker delta), market pulse (order book walls, recent liquidations, fear/greed, and trend regime), headlines, and optional educational explanations. The score is called strength (fuerza). It is not a probability and it is not a success rate.
 
 This is not a signal service. It does not open or close trades, it does not read your account, it does not ask for API keys, and it does not promise results.
 
@@ -80,8 +83,11 @@ We measured it. On BTC and ETH, from 1 minute to 4 hours, with a close rule, fee
 
 What leaves the browser:
 - Public candles: GET https://fapi.binance.com/fapi/v1/klines (symbol, timeframe, and limit).
-- The live candle: public websocket wss://fstream.binance.com (symbol and timeframe).
+- Order book walls: GET https://fapi.binance.com/fapi/v1/depth (symbol and limit).
+- Live candle and public liquidations: public websocket wss://fstream.binance.com (symbol and timeframe).
 - Headlines, BTC and ETH only: GET https://trade.swal.network/api/news?symbol=BTC|ETH&limit=5.
+- Fear and greed: GET https://api.alternative.me/fng/?limit=1 (cached 1 h).
+- AI explanations (only when "AI explanations" is turned on): POST https://trade.swal.network/api/explain.
 
 There is no analytics, no tracking cookies, and no remote code. Settings stay in extension storage.
 
@@ -139,28 +145,30 @@ Regenerar: `cd apps/extension && npm run icons` (`rsvg-convert` o ImageMagick).
 
 ## Capturas
 
-Las dos son PNG 1280×800, RGB sin canal alfa, del panel real con velas de Binance mockeadas (la misma serie que `e2e/tests/extension.spec.ts`).
+Las cinco son PNG 1280×800, RGB sin canal alfa, del panel real con datos mockeados (la misma serie determinista que `e2e/tests/extension.spec.ts`).
 
 | Archivo | Qué enseña |
 |---|---|
-| `apps/extension/store-assets/sidepanel-chart-1280x800.png` | Gráfico, leyenda y hallazgos (fuerza, no probabilidad). BTCUSDT 15m. |
-| `apps/extension/store-assets/sidepanel-news-1280x800.png` | Titulares mockeados y ajustes. |
+| `apps/extension/store-assets/sidepanel-chart-1280x800.png` | Gráfico de velas, panel CVD (flujo de volumen delta taker), leyenda y hallazgos (fuerza, no probabilidad). BTCUSDT 15m. |
+| `apps/extension/store-assets/sidepanel-pulse-1280x800.png` | Pulso de mercado: muros del libro de órdenes, liquidaciones recientes (5 y 15 min), índice de miedo y codicia y régimen por temporalidad. |
+| `apps/extension/store-assets/sidepanel-explain-1280x800.png` | Explicación educativa con IA (opt-in): resumen didáctico y escenarios de confirmación e invalidación del análisis determinista. |
+| `apps/extension/store-assets/sidepanel-news-1280x800.png` | Titulares públicos de mercado y sentimiento léxico. |
+| `apps/extension/store-assets/sidepanel-settings-1280x800.png` | Ajustes de la extensión: temporalidad por defecto, lista de símbolos permitidos y sincronización con la página abierta. |
 
 Checklist antes de subir:
 
-- [ ] Las dos miden 1280×800.
-- [ ] No tienen canal alfa.
+- [ ] Todas miden 1280×800.
+- [ ] No tienen canal alfa (RGB png24).
 - [ ] Se lee «fuerza» y no una promesa de resultado.
 - [ ] No hay una ruta local ni un dato de cuenta en la imagen.
-- [ ] Chrome: subir las dos en la ficha (mínimo una; tamaño aceptado 1280×800).
-- [ ] Firefox: las mismas dos.
+- [ ] Chrome: subir las capturas en la ficha (máximo 5; tamaño aceptado 1280×800).
+- [ ] Firefox: las mismas capturas.
 
 Regenerar, con el build de Chrome ya hecho y las dependencias de `e2e/` instaladas:
 
 ```bash
 cd apps/extension && npm run build
-cd ../e2e && npm install
-cd .. && node e2e/scripts/store-screenshots.mjs
+node apps/extension/scripts/store-screenshots.mjs
 ```
 
 ## Zip
@@ -201,7 +209,7 @@ Chrome Web Store (registro de desarrollador, 5 USD una sola vez):
 1. Entra en https://chrome.google.com/webstore/devconsole con la cuenta de Google que será la editora y paga el registro único de 5 USD.
 2. Despliega la página de privacidad a https://trade.swal.network/extension-privacy/ y comprueba que abre.
 3. «Nuevo elemento» y sube `.output/swal-trade-extension-0.1.0-chrome.zip`.
-4. Ficha: categoría Productivity, idioma español por defecto, añade el inglés. Pega los textos de arriba. Icono: `public/icon/128.png`. Capturas: las dos de `store-assets/`.
+4. Ficha: categoría Productivity, idioma español por defecto, añade el inglés. Pega los textos de arriba. Icono: `public/icon/128.png`. Capturas: las de `store-assets/`.
 5. Privacy: la URL de arriba. Marca Website content y las tres certificaciones. Pega la columna English de la tabla de permisos en cada campo «permission justification».
 6. Revisa la vista previa. No escribas cifras de acierto ni promesas de resultado. Envía a revisión cuando la URL de privacidad ya responda en producción.
 

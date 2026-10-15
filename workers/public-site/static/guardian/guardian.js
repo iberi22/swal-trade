@@ -28,9 +28,9 @@ async function initLicense() {
   const token = tokenFromStored(localStorage.getItem(LICENSE_KEY));
   if (!token) { text(info, 'Plan gratuito. La licencia Pro se obtiene en /checkout/.'); return tierFor(null); }
   const pubkeySpki = await loadPubkey({ fetchFn: fetch.bind(globalThis), storage: localStorage });
-  if (!pubkeySpki) { text(info, 'No se pudo obtener la clave publica de licencias; plan gratuito.'); return tierFor(null); }
+  if (!pubkeySpki) { text(info, 'No se pudo obtener la clave pública de licencias; plan gratuito.'); return tierFor(null); }
   const lic = await checkLicense({ token, pubkeySpki, subtle: crypto.subtle });
-  const msg = { pro: 'Licencia Pro valida.', expired: 'Licencia caducada: plan gratuito.', invalid: 'Licencia invalida: plan gratuito.', unsupported: 'Navegador no compatible.', none: 'Plan gratuito.' };
+  const msg = { pro: 'Licencia Pro válida.', expired: 'Licencia caducada: plan gratuito.', invalid: 'Licencia inválida: plan gratuito.', unsupported: 'Navegador no compatible.', none: 'Plan gratuito.' };
   text(info, msg[lic.status] || 'Plan gratuito.');
   return tierFor(lic);
 }
@@ -39,18 +39,18 @@ function applyTierUi() {
   $('tg-section').classList.toggle('hidden', !tier.telegram);
   $('tg-locked').classList.toggle('hidden', tier.telegram);
   $('selfhost-link').classList.toggle('hidden', !tier.selfHostLink);
-  text($('tier-badge'), tier.tier === 'pro' ? 'Pro' : 'Gratis (1 posicion vigilada)');
+  text($('tier-badge'), tier.tier === 'pro' ? 'Pro' : 'Gratis (1 posición vigilada)');
 }
 
 function notify(msg) {
-  if ('Notification' in window && Notification.permission === 'granted') new Notification('Guardian de riesgo', { body: msg });
+  if ('Notification' in window && Notification.permission === 'granted') new Notification('Guardián de riesgo', { body: msg });
 }
 
 async function tgSend(msg) {
   const tg = readJson(TG_KEY);
   if (!tier.telegram || !tg?.token || !tg?.chat) return;
   const r = await sendTelegram({ token: tg.token, chatId: tg.chat, text: msg });
-  text($('tg-status'), r.ok ? 'Ultimo envio: correcto.' : r.error);
+  text($('tg-status'), r.ok ? 'Último envío: correcto.' : r.error);
   $('tg-status').className = r.ok ? 'ok' : 'err';
 }
 
@@ -95,13 +95,13 @@ async function poll() {
     const msgs = [...newBreaches(br, alerted).map((k) => br[k]), ...stopMsgs];
     for (const m of msgs) { notify(m); tgSend(m); }
 
-    text($('pnl-text'), `PnL del dia: ${pnl.toFixed(2)} USD (realizado ${real.toFixed(2)}, abierto ${open.toFixed(2)}) / limite -${cfg.limit.toFixed(2)}`);
+    text($('pnl-text'), `PnL del día: ${pnl.toFixed(2)} USD (realizado ${real.toFixed(2)}, abierto ${open.toFixed(2)}) / límite -${cfg.limit.toFixed(2)}`);
     const frac = Math.min(1, Math.max(0, -pnl / cfg.limit));
     const bar = $('pnl-bar');
     bar.firstElementChild.style.width = `${(frac * 100).toFixed(0)}%`;
     bar.className = 'bar' + (br.daily_hit ? ' hit' : br.daily_warn ? ' warn' : '');
     renderPositions(pos, lev, algo);
-    if (all.length > pos.length) text($('free-note'), `Plan gratuito: se vigila solo la posicion de mayor nocional (${all.length - pos.length} sin vigilar). Pro: ilimitado.`);
+    if (all.length > pos.length) text($('free-note'), `Plan gratuito: se vigila solo la posición de mayor nocional (${all.length - pos.length} sin vigilar). Pro: ilimitado.`);
     else text($('free-note'), '');
     const list = $('breach-list');
     list.replaceChildren();
@@ -134,10 +134,10 @@ async function probePerms() {
     if (r.enableWithdrawals) warn.push('RETIROS habilitados');
     if (r.enableFutures) warn.push('Futuros (trading) habilitado');
     if (r.enableSpotAndMarginTrading) warn.push('Spot/Margin habilitado');
-    text($('perm-status'), warn.length ? `PELIGRO: tu clave tiene permisos de mas (${warn.join(', ')}). Crea otra con SOLO "Enable Reading".` : 'Permisos: solo lectura.');
+    text($('perm-status'), warn.length ? `PELIGRO: tu clave tiene permisos de más (${warn.join(', ')}). Crea otra con SOLO "Enable Reading".` : 'Permisos: solo lectura.');
     $('perm-status').className = warn.length ? 'err' : 'ok';
   } catch {
-    text($('perm-status'), 'No se pudo verificar los permisos automaticamente. Revisa a mano que la clave tenga SOLO "Enable Reading".');
+    text($('perm-status'), 'No se pudo verificar los permisos automáticamente. Revisa a mano que la clave tenga SOLO "Enable Reading".');
   }
 }
 
