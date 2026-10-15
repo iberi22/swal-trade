@@ -19,6 +19,7 @@ const NAVIGATION_TIMEOUT_MS = 4000;
 const SHELL = [
   OFFLINE_URL,
   '/offline/index.html',
+  '/pwa-register.js',
   '/tokens.css',
   '/site.css',
   '/favicon.svg',

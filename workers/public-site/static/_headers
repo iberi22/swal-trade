@@ -30,6 +30,7 @@
 # origen; el manifiesto lleva su tipo correcto y una cache corta. Van despues de /*.js
 # porque el ultimo bloque que coincide es el que manda.
 /sw.js
+  ! Cache-Control
   Cache-Control: no-cache
   Service-Worker-Allowed: /
 
