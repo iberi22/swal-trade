@@ -46,6 +46,9 @@ export default defineConfig({
       'https://www.binance.com/static/chart/tradingview/*',
       'https://www.tradingview.com/chart/*',
       'https://fapi.binance.com/fapi/v1/klines*',
+      // Pulso de mercado: muros del libro e índice de miedo/codicia.
+      'https://fapi.binance.com/fapi/v1/depth*',
+      'https://api.alternative.me/fng/*',
       'wss://fstream.binance.com/*',
       'https://trade.swal.network/api/news*',
     ],
