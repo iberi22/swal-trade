@@ -430,3 +430,43 @@ select {
   font-family: var(--font-mono);
   font-size: 0.95em;
 }
+
+.claude-bridge-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid hsl(var(--border) / 0.5);
+}
+
+.claude-status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin: 0.15rem 0;
+  color: hsl(var(--foreground));
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: hsl(var(--muted-foreground));
+}
+
+.status-indicator.connected {
+  background-color: #22c55e;
+}
+
+.settings input[type='password'],
+.settings input[type='number'] {
+  background: hsl(var(--background));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.2rem);
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-mono);
+  color: hsl(var(--foreground));
+}

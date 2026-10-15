@@ -1,3 +1,4 @@
+import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
 import { TIMEFRAMES, type Timeframe } from './types';
 
@@ -18,6 +19,10 @@ export interface ExtensionSettings {
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
   explainWithAi: boolean;
+  /** Permite que un agente local (Claude Code) lea y pinte en el gráfico vía WebSocket. */
+  claudeBridgeEnabled: boolean;
+  claudeBridgePort: number;
+  claudeBridgeToken: string;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -26,6 +31,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSync: true,
   paintOnChart: false,
   explainWithAi: false,
+  claudeBridgeEnabled: false,
+  claudeBridgePort: 47321,
+  claudeBridgeToken: "",
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -93,6 +101,18 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     paintOnChart: record.paintOnChart === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
+    claudeBridgeEnabled: record.claudeBridgeEnabled === true,
+    claudeBridgePort:
+      typeof record.claudeBridgePort === "number" &&
+      Number.isInteger(record.claudeBridgePort) &&
+      record.claudeBridgePort >= 1024 &&
+      record.claudeBridgePort <= 65535
+        ? record.claudeBridgePort
+        : DEFAULT_SETTINGS.claudeBridgePort,
+    claudeBridgeToken:
+      typeof record.claudeBridgeToken === "string"
+        ? record.claudeBridgeToken.trim().slice(0, 128)
+        : DEFAULT_SETTINGS.claudeBridgeToken,
   };
 }
 
@@ -125,4 +145,14 @@ export function symbolAllowed(symbol: string, whitelist: readonly string[]): boo
 
 export function settingsToInputs(settings: ExtensionSettings): string {
   return settings.symbols.join(', ');
+}
+
+
+export async function loadSettings(): Promise<ExtensionSettings> {
+  try {
+    const data = await browser.storage.local?.get(SETTINGS_KEY);
+    return settingsFromStorage(data);
+  } catch {
+    return { ...DEFAULT_SETTINGS, symbols: [] };
+  }
 }
