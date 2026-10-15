@@ -882,6 +882,63 @@ test("a partially filled post-only entry whose remainder cancel fails reports it
   assert.equal(cancels.length, 1, "the remainder is cancelled once, by its own id");
 });
 
+test("a partially filled post-only entry whose remainder filled before a not-found cancel reports the larger fill (F4b)", async () => {
+  // The answer was PARTIALLY_FILLED (0.001). The remainder cancel answers -2013
+  // ("order does not exist"): the 0.001 still on the book filled in the instant
+  // between the answer and the cancel. The payload used to warn "were cancelled"
+  // and keep filledQuantity at 0.001, so the cap was checked against half the
+  // real position. The post-cancel position read (0.002) is the proof.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { code: -2013, msg: "Order does not exist." },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.002, "the remainder filled, so the fill is 0.002");
+    assert.equal(body.resting, false);
+    assert.match(body.warnings.join(" "), /filled before it could be cancelled/);
+    assert.doesNotMatch(body.warnings.join(" "), /were cancelled/);
+  });
+});
+
+test("a partially filled post-only entry whose cancel answer shows a larger executedQty reports the larger fill (F4b)", async () => {
+  // A 200 cancel whose own answer shows executedQty grew from the 0.001 the
+  // PARTIALLY_FILLED entry answered to 0.002: the remainder filled before the
+  // cancel reached the matching engine. Same post-cancel re-read, same warning.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { status: "CANCELED", executedQty: "0.002", avgPrice: "99999.9", side: "BUY", type: "LIMIT" },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.002);
+    assert.match(body.warnings.join(" "), /filled before it could be cancelled/);
+    assert.doesNotMatch(body.warnings.join(" "), /were cancelled/);
+  });
+});
+
+test("a not-found remainder cancel with an unreadable post-cancel position reports the remainder's fate as unknown (F4b)", async () => {
+  // The cancel says the order is gone (-2013), but the position read that would
+  // prove whether it filled or was cancelled fails. Claiming resting:false would
+  // assert the remainder was accounted for; the payload has to leave it open.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { code: -2013, msg: "Order does not exist." },
+    positionRiskHttpErrorAfterCancel: 500,
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001, "the fill is not guessed from a failed read");
+    assert.equal(body.resting, true, "resting:false is not proven when the position cannot be read");
+    assert.match(body.warnings.join(" "), /UNKNOWN/);
+  });
+});
+
 test("place_order post_only leaves the intent pending when both reads fail and the cancel is confirmed 0", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],

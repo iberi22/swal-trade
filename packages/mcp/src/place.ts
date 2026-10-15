@@ -984,14 +984,22 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     const remainder = entry.partialRemainder;
     if (remainder) {
       let gone = false;
+      // The cancel answer's executedQty, when the exchange sends one, is the fill
+      // it saw at cancel time. A 200 cancel that echoes a LARGER executedQty than
+      // the PARTIALLY_FILLED entry answered means the remainder filled before the
+      // cancel landed: same race as a not-found cancel, same re-read (F4b).
+      let cancelAnswer: unknown = null;
+      let notFound = false;
       try {
         const result = await client.cancelOrder(symbol, remainder.clientOrderId);
         logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: true, result });
+        cancelAnswer = result;
         gone = true;
       } catch (err) {
         const message = redactSecrets(errorMessage(err), []);
         logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: false, error: message });
         gone = isCancelNotFound(err);
+        notFound = gone;
         if (!gone) {
           resting = true;
           restingPrice = remainder.price;
@@ -1003,9 +1011,65 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       if (gone) {
         resting = false;
         restingPrice = null;
-        remainderWarnings.push(
-          `the post-only entry partially filled ${entry.filledQty ?? 0} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
-        );
+        const filledAtPartial = entry.filledQty ?? 0;
+        // A not-found cancel (-2013/-2011) proves the order is gone, but not WHY:
+        // the remainder may have filled in the instant between the partial answer
+        // and the cancel. A 200 cancel whose executedQty grew is the same race. In
+        // both cases the fill the cap was checked against is half the real one, so
+        // the post-cancel position is re-read and a larger fill is reported (F4b).
+        const grewOnCancel = filledQuantityOf(cancelAnswer) > filledAtPartial;
+        if (notFound || grewOnCancel) {
+          let net: number | null = null;
+          let readError: string | null = null;
+          try {
+            const risk = await client.positionRisk();
+            const position = netPosition(risk, symbol);
+            logStep(journal, "position_after_remainder_cancel", { net: position.amount, rows: position.rows, error: position.error });
+            net = position.error == null ? position.amount : null;
+            if (position.error != null) readError = position.error;
+          } catch (err) {
+            readError = redactSecrets(errorMessage(err), []);
+            logStep(journal, "position_after_remainder_cancel", { error: readError });
+          }
+          if (net == null) {
+            // No definitive read: the remainder is off the book (the cancel proved
+            // it), but whether it filled or was cancelled is unknown. resting:false
+            // is not proven, so it is not claimed.
+            resting = true;
+            restingPrice = remainder.price;
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity} and the remaining ${remainder.quantity} resting at ${remainder.price} are gone from the book, but the position after the cancel could not be read (${readError ?? "no definitive position row"}): whether that remainder filled or was cancelled is UNKNOWN, so resting:false is not proven.`,
+            );
+          } else if (Math.abs(net) > filledAtPartial) {
+            const largerFill = Math.abs(net);
+            const reduction = await reduceExcessNotional({
+              client,
+              symbol,
+              side,
+              fillQty: largerFill,
+              avg: averagePriceOf(entry.order) ?? entryPrice,
+              maxNotionalUsd: Number(cfg.value.maxNotionalUsd),
+              stepSize: filters.value.stepSize,
+              journal,
+            });
+            if (reduction.reducedUsd != null) excessNotionalReduced = (excessNotionalReduced ?? 0) + reduction.reducedUsd;
+            if (reduction.warning != null) {
+              excessNotionalReduceWarning = [excessNotionalReduceWarning, reduction.warning].filter((item): item is string => item != null).join(" ");
+            }
+            entry.filledQty = largerFill;
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity} and the remaining ${remainder.quantity} resting at ${remainder.price} filled before it could be cancelled: the fill is ${largerFill} of ${quantity}.`,
+            );
+          } else {
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
+            );
+          }
+        } else {
+          remainderWarnings.push(
+            `the post-only entry partially filled ${filledAtPartial} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
+          );
+        }
       }
     }
 
