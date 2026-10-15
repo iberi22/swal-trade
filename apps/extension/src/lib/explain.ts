@@ -1,24 +1,15 @@
 /**
- * Explicador del panel lateral: POST /api/explain.
- *
- * Envía SOLO el análisis determinista (símbolo, temporalidad, patrones
- * detectados, tendencia y niveles). Nunca datos de cuenta: la extensión no los
- * lee. La respuesta se valida y se sanea campo a campo; si el servicio falla,
- * contesta 429, devuelve JSON inválido o rompe el contrato, se pinta una
- * explicación local construida con los hallazgos (reglas fijas), con un motivo
- * corto. Esta función nunca lanza hacia el panel.
- *
- * Nunca se muestra una probabilidad de acierto: la "fuerza" es la calidad
- * geométrica del patrón, no una tasa medida, y el aviso educativo viaja siempre.
+ * Explicador del panel: POST /api/explain. Envía SOLO el análisis determinista
+ * (símbolo, temporalidad, patrones, tendencia y niveles), nunca datos de cuenta.
+ * Valida y sanea la respuesta; ante red caída, 429, JSON inválido o contrato roto
+ * devuelve una explicación local con reglas fijas y un motivo corto. Nunca lanza.
+ * La "fuerza" es la calidad del patrón, no una tasa de acierto medida.
  */
-
 import { normalizeStrength, rankFindings, resolveLevels } from './findings-view';
 import type { AnalysisResult, Finding } from './types';
 
 export const EXPLAIN_ENDPOINT = 'https://trade.swal.network/api/explain';
-/** Tope de espera de una petición: por encima, respaldo local. */
 export const EXPLAIN_TIMEOUT_MS = 15_000;
-/** La caché en memoria dura 5 minutos, igual que la del endpoint. */
 export const EXPLAIN_CACHE_MS = 5 * 60 * 1000;
 /** El worker acepta 20; la tarjeta manda como máximo 5. */
 export const EXPLAIN_MAX_FINDINGS = 5;
@@ -26,10 +17,8 @@ export const EXPLAIN_MAX_SCENARIOS = 5;
 export const EXPLAIN_MAX_LEVELS = 200;
 /** Línea que se enseña siempre, también antes de pedir nada. */
 export const EXPLAIN_DISCLAIMER = 'Explicación educativa. No es una recomendación de compra o venta.';
-/** Aviso de privacidad del interruptor. */
 export const EXPLAIN_OPT_IN_NOTE =
   'Envía el símbolo, la temporalidad y los patrones detectados a trade.swal.network; nunca datos de tu cuenta.';
-
 const DEFAULT_RISK_NOTE =
   'Define el stop antes de entrar y usa un tamaño que aguante el fallo; apalancamiento 1x como punto de partida.';
 
@@ -53,11 +42,7 @@ export interface ExplainTrend {
 export interface ExplainRequest {
   symbol: string;
   timeframe: string;
-  analysis: {
-    top: ExplainFinding[];
-    trend: ExplainTrend | null;
-    levels: Array<{ price: number }>;
-  };
+  analysis: { top: ExplainFinding[]; trend: ExplainTrend | null; levels: Array<{ price: number }> };
 }
 
 export interface ExplainScenario {
@@ -72,7 +57,7 @@ export interface ExplainView {
   summary: string;
   scenarios: ExplainScenario[];
   caution: string;
-  /** Motivo corto cuando la explicación la construyeron reglas fijas; '' si vino del modelo. */
+  /** Motivo corto si la construyeron reglas fijas; '' si vino del modelo. */
   reason: string;
   /** true si la construyó el cliente (opt-in apagado, red, límite o contrato roto). */
   local: boolean;
@@ -97,16 +82,7 @@ export interface ExplainDeps {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const num = (value: unknown): number | null => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-/**
- * Texto de la respuesta del servicio. Se quitan los ángulos para que nada
- * pueda interpretarse como marcado y los caracteres de control para que no
- * rompan la línea. Se corta al tope del contrato.
- */
+/** Texto del servicio: sin ángulos (nada de marcado), sin control y cortado al tope. */
 export function safeText(value: unknown, max: number): string {
   if (typeof value !== 'string') return '';
   return value
@@ -118,11 +94,10 @@ export function safeText(value: unknown, max: number): string {
     .slice(0, max);
 }
 
-function direction(value: unknown): 'up' | 'down' | 'neutral' {
-  return value === 'up' || value === 'down' ? value : 'neutral';
-}
+const direction = (value: unknown): 'up' | 'down' | 'neutral' =>
+  value === 'up' || value === 'down' ? value : 'neutral';
 
-/** La tendencia llega al panel como texto; se deduce la dirección de la palabra. */
+/** La tendencia llega al panel como texto; la dirección sale de la palabra. */
 function trendDirection(label: string): 'up' | 'down' | 'neutral' {
   const folded = label.toLowerCase();
   if (/bajist|bear|baja\b/.test(folded)) return 'down';
@@ -150,10 +125,7 @@ function requestFinding(finding: Finding): ExplainFinding {
   };
 }
 
-/**
- * Cuerpo que sale del navegador: solo el análisis determinista, ya saneado y
- * topado. Nada de velas, cuenta, claves ni identificadores.
- */
+/** Cuerpo que sale del navegador: solo el análisis, ya saneado y topado. */
 export function explainRequestFrom(input: {
   symbol: string;
   timeframe: string;
@@ -166,9 +138,8 @@ export function explainRequestFrom(input: {
   const trendLabel = safeText(input.result.trend, 80);
   const levels: Array<{ price: number }> = [];
   for (const level of Array.isArray(input.result.levels) ? input.result.levels : []) {
-    const price = typeof level === 'number' && Number.isFinite(level) ? level : null;
-    if (price === null) continue;
-    levels.push({ price });
+    if (typeof level !== 'number' || !Number.isFinite(level)) continue;
+    levels.push({ price: level });
     if (levels.length >= EXPLAIN_MAX_LEVELS) break;
   }
   return {
@@ -176,9 +147,7 @@ export function explainRequestFrom(input: {
     timeframe: safeText(input.timeframe, 8),
     analysis: {
       top: ranked.map(requestFinding),
-      trend: trendLabel
-        ? { direction: trendDirection(trendLabel), strength: 0, label: trendLabel }
-        : null,
+      trend: trendLabel ? { direction: trendDirection(trendLabel), strength: 0, label: trendLabel } : null,
       levels,
     },
   };
@@ -232,29 +201,21 @@ export function directionsConflict(top: readonly ExplainFinding[]): boolean {
   return ups > 0 && downs > 0;
 }
 
-/**
- * Explicación con reglas fijas, sin red. Espejo del respaldo del endpoint: describe
- * los hallazgos y sus niveles, sin interpretación añadida.
- */
+/** Espejo del respaldo del endpoint: describe hallazgos y niveles, sin modelo. */
 export function localFallbackExplain(request: ExplainRequest, reasonCode: string): ExplainView {
   const symbol = request.symbol || 'el activo';
   const timeframe = request.timeframe || '—';
   const top = request.analysis.top.slice(0, EXPLAIN_MAX_SCENARIOS);
-  let summary: string;
-  if (top.length === 0) {
-    summary =
-      `En ${symbol} (${timeframe}) el análisis no ve patrones claros en esta ventana. ` +
-      'Sin patrón no hay escenario que explicar: lo coherente es esperar a que el gráfico muestre niveles definidos.';
-  } else {
-    const first = top[0]!;
-    summary =
-      `En ${symbol} (${timeframe}) el análisis determinista ve ${top.length} patrón(es). ` +
+  const first = top[0];
+  const summary = first
+    ? `En ${symbol} (${timeframe}) el análisis determinista ve ${top.length} patrón(es). ` +
       `El de mayor fuerza del patrón es ${first.label || first.kind || 'un patrón'} ` +
       `(fuerza ${pct(first.strength)}/100, dirección ${dirWord(first.direction)}). ` +
       (directionsConflict(top)
         ? 'Los patrones no señalan todos en la misma dirección: cuando se contradicen, lo prudente es esperar y no forzar una lectura. '
-        : '');
-  }
+        : '')
+    : `En ${symbol} (${timeframe}) el análisis no ve patrones claros en esta ventana. ` +
+      'Sin patrón no hay escenario que explicar: lo coherente es esperar a que el gráfico muestre niveles definidos.';
   const scenarios: ExplainScenario[] = top.map((finding) => {
     const levels = decisionLevels(finding);
     const above = finding.direction === 'down' ? 'por debajo de' : 'por encima de';
@@ -286,10 +247,7 @@ export function localFallbackExplain(request: ExplainRequest, reasonCode: string
   };
 }
 
-/**
- * Valida y sanea la respuesta del endpoint. Cualquier campo que no encaje se
- * descarta; si no queda contenido, la respuesta no vale y se tira del respaldo local.
- */
+/** Valida y sanea la respuesta. Campo que no encaja se descarta; sin contenido, inválida. */
 export function parseExplainResponse(
   body: unknown,
 ): { ok: true; view: ExplainView } | { ok: false; error: string } {
@@ -300,11 +258,9 @@ export function parseExplainResponse(
   }
   const source: ExplainView['source'] =
     rawSource === 'fallback' || rawSource === 'cache' ? rawSource : 'ai';
-
   const summary = safeText(body.summary, 600);
   const scenarios: ExplainScenario[] = [];
-  const rows = Array.isArray(body.scenarios) ? body.scenarios : [];
-  for (const row of rows.slice(0, EXPLAIN_MAX_SCENARIOS)) {
+  for (const row of (Array.isArray(body.scenarios) ? body.scenarios : []).slice(0, EXPLAIN_MAX_SCENARIOS)) {
     if (!isRecord(row)) continue;
     const name = safeText(row.name, 120);
     if (!name) continue;
@@ -319,7 +275,6 @@ export function parseExplainResponse(
     });
   }
   if (!summary && scenarios.length === 0) return { ok: false, error: 'invalid_payload' };
-  const caution = safeText(body.caution, 300);
   const reasonCode = safeText(body.reason, 40);
   return {
     ok: true,
@@ -327,7 +282,7 @@ export function parseExplainResponse(
       source,
       summary,
       scenarios,
-      caution,
+      caution: safeText(body.caution, 300),
       reason: source === 'fallback' ? explainReasonText(reasonCode) : '',
       local: false,
       fromCache: false,
@@ -354,9 +309,8 @@ async function runExplain(
   deps: ExplainDeps,
 ): Promise<{ view: ExplainView; cacheable: boolean }> {
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const timeoutMs = Math.max(1, deps.timeoutMs ?? EXPLAIN_TIMEOUT_MS);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), Math.max(1, deps.timeoutMs ?? EXPLAIN_TIMEOUT_MS));
   try {
     const response = await fetchImpl(EXPLAIN_ENDPOINT, {
       method: 'POST',
@@ -379,19 +333,16 @@ async function runExplain(
     if (!parsed.ok) return { view: localFallbackExplain(request, parsed.error), cacheable: false };
     return { view: parsed.view, cacheable: true };
   } catch {
-    return {
-      view: localFallbackExplain(request, controller.signal.aborted ? 'timeout' : 'offline'),
-      cacheable: false,
-    };
+    const code = controller.signal.aborted ? 'timeout' : 'offline';
+    return { view: localFallbackExplain(request, code), cacheable: false };
   } finally {
     clearTimeout(timer);
   }
 }
 
 /**
- * Explicación de los patrones actuales. Nunca lanza: ante cualquier fallo
- * devuelve la explicación local. Con `enabled: false` (interruptor apagado) no
- * se toca la red.
+ * Explicación de los patrones actuales. Nunca lanza. Con `enabled: false`
+ * (interruptor apagado) no se toca la red.
  */
 export async function explainPatterns(input: ExplainInput, deps: ExplainDeps = {}): Promise<ExplainView> {
   const nowMs = deps.nowMs ?? Date.now();
@@ -408,7 +359,7 @@ export async function explainPatterns(input: ExplainInput, deps: ExplainDeps = {
     try {
       await inFlight.promise;
     } catch {
-      /* la petición anterior nunca rechaza; si lo hiciera, se sigue igual */
+      /* nunca rechaza; si lo hiciera, se sigue igual */
     }
   }
 

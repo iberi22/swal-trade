@@ -1,10 +1,5 @@
 <script lang="ts">
-  import {
-    EXPLAIN_DISCLAIMER,
-    EXPLAIN_OPT_IN_NOTE,
-    explainPatterns,
-    type ExplainView,
-  } from '../../lib/explain';
+  import { EXPLAIN_DISCLAIMER, EXPLAIN_OPT_IN_NOTE, explainPatterns, type ExplainView } from '../../lib/explain';
   import type { AnalysisResult } from '../../lib/types';
 
   let {
@@ -29,8 +24,7 @@
 
   // Al cambiar de par o de temporalidad, la explicación anterior ya no vale.
   $effect(() => {
-    const key = `${symbol}@${timeframe}`;
-    if (shownKey !== null && shownKey !== key) {
+    if (shownKey !== null && shownKey !== `${symbol}@${timeframe}`) {
       view = null;
       shownKey = null;
     }
@@ -54,9 +48,7 @@
   function sourceLabel(current: ExplainView): string {
     if (current.source === 'cache') return 'Respuesta guardada de hace menos de 5 minutos.';
     if (current.source === 'fallback') {
-      return current.local
-        ? 'Explicación local con reglas fijas.'
-        : 'El servicio respondió con reglas fijas.';
+      return current.local ? 'Explicación local con reglas fijas.' : 'El servicio respondió con reglas fijas.';
     }
     return 'Explicación escrita por un modelo a partir del análisis determinista.';
   }
@@ -64,7 +56,6 @@
 
 <section class="explain" data-testid="explain-card" aria-label="Explicación">
   <h2>Explicación</h2>
-
   <label class="optin">
     <input
       type="checkbox"
@@ -74,25 +65,23 @@
     />
     <span>Explicaciones con IA</span>
   </label>
-  <p class="privacy">{EXPLAIN_OPT_IN_NOTE}</p>
+  <p class="note">{EXPLAIN_OPT_IN_NOTE}</p>
 
   <button type="button" data-testid="explain-button" disabled={!enabled || busy} onclick={explain}>
     {busy ? 'Explicando…' : 'Explicar estos patrones'}
   </button>
   {#if !enabled}
-    <p class="hint-note" data-testid="explain-optin-hint">
+    <p class="note" data-testid="explain-optin-hint">
       Activa «Explicaciones con IA» para pedir la explicación.
     </p>
   {/if}
 
   {#if view}
     <div class="answer" data-testid="explain-answer" data-source={view.source}>
-      <p class="source">
+      <p class="note source">
         {sourceLabel(view)}{#if view.reason}<span class="reason"> · {view.reason}</span>{/if}
       </p>
-      {#if view.summary}
-        <p class="summary">{view.summary}</p>
-      {/if}
+      {#if view.summary}<p class="summary">{view.summary}</p>{/if}
       {#if view.scenarios.length > 0}
         <ul class="scenarios">
           {#each view.scenarios as scenario (scenario.name + scenario.condition)}
@@ -105,13 +94,11 @@
           {/each}
         </ul>
       {/if}
-      {#if view.caution}
-        <p class="caution">{view.caution}</p>
-      {/if}
+      {#if view.caution}<p class="note">{view.caution}</p>{/if}
     </div>
   {/if}
 
-  <p class="disclaimer" data-testid="explain-disclaimer">{EXPLAIN_DISCLAIMER}</p>
+  <p class="note disclaimer" data-testid="explain-disclaimer">{EXPLAIN_DISCLAIMER}</p>
 </section>
 
 <style>
@@ -125,7 +112,6 @@
     border-radius: var(--radius);
     padding: 0.65rem 0.7rem;
   }
-
   .explain h2 {
     margin: 0;
     font-size: 0.78rem;
@@ -134,7 +120,6 @@
     text-transform: uppercase;
     color: hsl(var(--muted-foreground));
   }
-
   .optin {
     display: flex;
     align-items: center;
@@ -142,22 +127,14 @@
     font-size: 0.8rem;
     color: hsl(var(--foreground));
   }
-
-  .optin input {
-    accent-color: hsl(var(--primary));
-  }
-
-  .privacy,
-  .hint-note,
-  .source,
-  .caution,
-  .disclaimer {
+  .optin input { accent-color: hsl(var(--primary)); }
+  .note {
     margin: 0;
     font-size: 0.72rem;
     line-height: 1.35;
     color: hsl(var(--muted-foreground));
   }
-
+  .disclaimer { color: hsl(var(--subtle-foreground)); }
   .explain button {
     align-self: flex-start;
     background: hsl(var(--primary));
@@ -168,26 +145,18 @@
     font-size: 0.8rem;
     cursor: pointer;
   }
-
   .explain button:disabled {
     background: hsl(var(--surface-strong));
     color: hsl(var(--subtle-foreground));
     cursor: default;
   }
-
-  .answer {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
+  .answer { display: flex; flex-direction: column; gap: 0.4rem; }
   .summary {
     margin: 0;
     font-size: 0.82rem;
     line-height: 1.4;
     color: hsl(var(--foreground));
   }
-
   .scenarios {
     list-style: none;
     margin: 0;
@@ -196,42 +165,24 @@
     flex-direction: column;
     gap: 0.4rem;
   }
-
   .scenarios li {
     background: hsl(var(--background));
     border-radius: calc(var(--radius) - 0.3rem);
     padding: 0.45rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
   }
-
-  .scenario-name {
-    margin: 0;
-    font-size: 0.8rem;
-    font-weight: 600;
-  }
-
+  .scenario-name { margin: 0; font-size: 0.8rem; font-weight: 600; }
   .scenario-line {
     margin: 0;
     font-size: 0.74rem;
     line-height: 1.35;
     color: hsl(var(--muted-foreground));
   }
-
-  .scenario-line.risk {
-    color: hsl(var(--subtle-foreground));
-  }
-
+  .scenario-line.risk { color: hsl(var(--subtle-foreground)); }
   .tag {
     font-size: 0.66rem;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: hsl(var(--subtle-foreground));
-  }
-
-  .disclaimer {
     color: hsl(var(--subtle-foreground));
   }
 </style>
