@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const browserMock = vi.hoisted(() => ({
+  tabs: { sendMessage: vi.fn(), query: vi.fn().mockResolvedValue([]) },
+  runtime: { sendMessage: vi.fn(), onMessage: { addListener: vi.fn(), removeListener: vi.fn() } },
+}));
+vi.mock('wxt/browser', () => ({ browser: browserMock }));
 import { probeTvChart } from './tv-chart-state';
 import { PAINTABLE_URL, tvStateHint } from './tv-paint';
+import { TIMEFRAME_TO_RESOLUTION, TV_SET_RESOLUTION, requestResolution } from './tv-paint-send';
+import { browser } from 'wxt/browser';
+
 
 /** Documento de mentira: solo hace falta querySelectorAll('iframe'). */
 function docWith(windows: Array<Record<string, unknown> | null>) {
@@ -88,5 +97,22 @@ describe('PAINTABLE_URL', () => {
     expect(PAINTABLE_URL.test('https://www.binance.com/en/my/orders')).toBe(false);
     expect(PAINTABLE_URL.test('http://www.binance.com/en/futures/BTCUSDT')).toBe(false);
     expect(PAINTABLE_URL.test('https://evil.example/binance.com/en/futures/BTCUSDT')).toBe(false);
+  });
+});
+
+describe('requestResolution', () => {
+  it('mapea temporalidades y manda mensaje al tabId', async () => {
+    expect(TIMEFRAME_TO_RESOLUTION['1m']).toBe('1');
+    expect(TIMEFRAME_TO_RESOLUTION['15m']).toBe('15');
+    expect(TIMEFRAME_TO_RESOLUTION['1d']).toBe('1D');
+    expect((await requestResolution(1, 'bad' as any)).ok).toBe(false);
+
+    vi.spyOn(browser.tabs, 'sendMessage').mockResolvedValueOnce({ ok: true, resolution: '15' });
+    const res = await requestResolution(42, '15m');
+    expect(res.ok).toBe(true);
+    expect(res.resolution).toBe('15');
+
+    vi.spyOn(browser.tabs, 'sendMessage').mockRejectedValueOnce(new Error('closed'));
+    expect((await requestResolution(42, '1h')).ok).toBe(false);
   });
 });

@@ -6,7 +6,8 @@ import {
   probeStorageInterval,
   type PageSource,
 } from '../lib/page-probe';
-import { buildClearMessage, buildDrawMessage, coerceShapes, parseBridgeMessage } from '../lib/tv-bridge/schema';
+import { buildClearMessage, buildDrawMessage, buildSetResolutionMessage, coerceShapes, isBridgeResolution, parseBridgeMessage } from '../lib/tv-bridge/schema';
+import { TV_SET_RESOLUTION } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
 import { TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
@@ -240,6 +241,7 @@ export default defineContentScript({
     };
 
     let channel: BridgeChannel | null = null;
+    const ackListeners = new Set<(data: unknown) => void>();
     if (PAINTABLE_URL.test(location.href)) {
       const session = createSession();
 
@@ -247,6 +249,9 @@ export default defineContentScript({
         .then((ch) => {
           channel = ch;
           channel.onMessage((data: unknown) => {
+            for (const listener of ackListeners) {
+              listener(data);
+            }
             const message = parseBridgeMessage(data);
             if (!message || message.type !== 'swal:ready') return;
             applyReady(message.ready, message.reason, message.chart);
@@ -277,14 +282,39 @@ export default defineContentScript({
       }
     };
 
-    const onRuntimeMessage = (message: unknown) => {
+    const onRuntimeMessage = (
+      message: unknown,
+      _sender: unknown,
+      sendResponse: (res: unknown) => void,
+    ) => {
       if (!message || typeof message !== 'object') return;
-      const record = message as { type?: unknown; shapes?: unknown; key?: unknown; enabled?: unknown };
-      if (record.type !== TV_PAINT) return;
-      paint(
-        { key: typeof record.key === 'string' ? record.key : '', shapes: coerceShapes(record.shapes) },
-        record.enabled === true,
-      );
+      const record = message as {
+        type?: unknown;
+        shapes?: unknown;
+        key?: unknown;
+        enabled?: unknown;
+        resolution?: unknown;
+      };
+      if (record.type === TV_PAINT) {
+        paint(
+          { key: typeof record.key === 'string' ? record.key : '', shapes: coerceShapes(record.shapes) },
+          record.enabled === true,
+        );
+        return;
+      }
+      if (record.type === TV_SET_RESOLUTION) {
+        const res = record.resolution;
+        if (!isBridgeResolution(res)) { sendResponse({ ok: false, error: 'invalid-resolution' }); return; }
+        if (!channel) { sendResponse({ ok: false, resolution: res, error: 'no-bridge-channel' }); return; }
+        const onAck = (m: unknown) => {
+          const parsed = parseBridgeMessage(m);
+          if (parsed?.type === 'swal:resolution-ack') { ackListeners.delete(onAck); sendResponse(parsed); }
+        };
+        ackListeners.add(onAck);
+        setTimeout(() => { if (ackListeners.delete(onAck)) sendResponse({ ok: false, resolution: res, error: 'bridge-timeout' }); }, 3000);
+        try { channel.send(buildSetResolutionMessage(res)); } catch (err) { ackListeners.delete(onAck); sendResponse({ ok: false, resolution: res, error: String(err) }); }
+        return true;
+      }
     };
     browser.runtime.onMessage.addListener(onRuntimeMessage);
 

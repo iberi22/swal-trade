@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ChartSession, type BridgeReport } from './tv-session';
-import { buildDrawMessage, type BridgeShape } from './schema';
+import { SWAL_MESSAGE_VERSION, buildDrawMessage, type BridgeShape } from './schema';
 
 // Stub of TradingView chart API
 function makeChart(sym: string, res: string) {
@@ -279,5 +279,23 @@ describe('ChartSession (F4, F2, F3, F14)', () => {
     expect(point.time).toBeGreaterThanOrEqual(1_500_000_000 - span);
     expect(point.time).toBeLessThanOrEqual(1_500_100_000 + span);
     session.stop();
+  });
+
+  it('setResolution llama a API del chart, cae a DOM o da unsupported', async () => {
+    const chart = makeChart('BTCUSDT', '1D');
+    const clock = makeClock();
+    const session = new ChartSession({ document: makeDoc(chart) as unknown as Document, sleep: clock.sleep, onStatus: () => {} });
+    session.start();
+    await clock.tick();
+    expect(session.setResolution('15')).toEqual({ type: 'swal:resolution-ack', version: SWAL_MESSAGE_VERSION, ok: true, resolution: '15' });
+    expect(chart.resolution()).toBe('15');
+    chart.setResolution = () => { throw new Error('locked'); };
+    expect(session.setResolution('60').ok).toBe(false);
+    let clicked = false;
+    const domSession = new ChartSession({ document: { querySelectorAll: () => [{ textContent: '15m', click: () => { clicked = true; } }] } as any, onStatus: () => {} });
+    expect(domSession.setResolution('15').ok).toBe(true);
+    expect(clicked).toBe(true);
+    const unsupp = new ChartSession({ document: { querySelectorAll: () => [] } as any, onStatus: () => {} });
+    expect(unsupp.setResolution('1D').error).toBe('unsupported');
   });
 });
