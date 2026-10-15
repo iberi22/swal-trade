@@ -15,6 +15,7 @@
     type LegendRow,
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
+  import MarketPulse from './MarketPulse.svelte';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { NEWS_REFRESH_MS, fetchNews, relativeTime, type NewsItem } from '../../lib/news';
@@ -522,6 +523,8 @@
       </ul>
     {/if}
   </section>
+
+  <MarketPulse symbol={symbol} />
 
   <details class="settings" bind:open={settingsOpen}>
     <summary>Ajustes</summary>
