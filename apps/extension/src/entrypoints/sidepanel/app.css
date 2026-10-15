@@ -430,3 +430,8 @@ select {
   font-family: var(--font-mono);
   font-size: 0.95em;
 }
+
+.hotkeys-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.25rem 0.5rem; margin-top: 0.2rem; }
+.hotkey-row { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; }
+.hotkey-label { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; color: hsl(var(--foreground)); min-width: 1.8rem; }
+.hotkey-row select { flex: 1; padding: 0.2rem 0.35rem; font-size: 0.75rem; }

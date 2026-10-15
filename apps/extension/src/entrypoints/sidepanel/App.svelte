@@ -21,11 +21,13 @@
   import { NEWS_REFRESH_MS, fetchNews, relativeTime, type NewsItem } from '../../lib/news';
   import {
     DEFAULT_SETTINGS,
+    HOTKEY_KEYS,
     SETTINGS_KEY,
     normalizeSymbolList,
     settingsFromStorage,
     symbolAllowed,
     type ExtensionSettings,
+    type HotkeyKey,
   } from '../../lib/settings';
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
@@ -591,6 +593,37 @@
         />
         <span>Seguir la página abierta</span>
       </label>
+      <label class="field check">
+        <input
+          type="checkbox"
+          disabled={!settingsLoaded}
+          checked={settings.hotkeysEnabled}
+          onchange={(e) => applySettings({ ...settings, hotkeysEnabled: (e.currentTarget as HTMLInputElement).checked })}
+        />
+        <span>Atajos de teclado para temporalidad (F1..F12)</span>
+      </label>
+      <p class="hint">F1 a F5 cambian la temporalidad en Binance Futures y previenen acciones del navegador (F1 abre ayuda, F5 recarga la página).</p>
+      <div class="field">
+        <span>Asignación de teclas</span>
+        <div class="hotkeys-grid">
+          {#each HOTKEY_KEYS as key (key)}
+            <div class="hotkey-row">
+              <span class="hotkey-label">{key}</span>
+              <select
+                disabled={!settingsLoaded || !settings.hotkeysEnabled}
+                value={settings.hotkeyMap?.[key] ?? ''}
+                onchange={(e) => {
+                  const val = (e.currentTarget as HTMLSelectElement).value;
+                  applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [key]: val ? (val as Timeframe) : null } });
+                }}
+              >
+                <option value="">—</option>
+                {#each TIMEFRAMES as tf (tf)}<option value={tf}>{tf}</option>{/each}
+              </select>
+            </div>
+          {/each}
+        </div>
+      </div>
       <p class="hint">
         Se guarda en <code>storage.local</code> de la extensión. Los titulares se renuevan cada
         {NEWS_REFRESH_MS / 60000} min.
