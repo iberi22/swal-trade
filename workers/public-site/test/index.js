@@ -21,3 +21,4 @@ import './analisis-a11y.test.mjs';
 import './sitemap.test.mjs';
 import './news-sentiment.test.mjs';
 import './pwa.test.mjs';
+import './analisis-pulse.test.mjs';

@@ -10,6 +10,16 @@ import {
   explainSourceLabel,
   explainView,
 } from './explain-ui.js';
+import {
+  NO_DATA,
+  PULSE_TIMEFRAMES,
+  assertSymbol,
+  formatPct,
+  formatPrice,
+  formatUsd,
+  quoteAsset,
+  startMarketPulse,
+} from './market-pulse.js';
 
 const FAPI = 'https://fapi.binance.com/fapi/v1/klines';
 // Ruta actual de streams de mercado de USD-M (2025): /market/ws para kline. Si falla, se cae a /ws.
@@ -17,7 +27,6 @@ const WS_ROUTES = ['wss://fstream.binance.com/market/ws/', 'wss://fstream.binanc
 const FNG_URL = 'https://api.alternative.me/fng/?limit=1';
 const FNG_KEY = 'swal.analisis.fng';
 const FNG_TTL_MS = 3600 * 1000;
-const TREND_TFS = ['1m', '5m', '1h', '4h'];
 
 const $ = (id) => document.getElementById(id);
 const FG = '34, 31, 27'; // --foreground en rgb (un solo tono)
@@ -25,6 +34,32 @@ const BG = '247, 244, 238';
 const fg = (a) => `rgba(${FG}, ${a})`;
 
 const state = { symbol: 'BTCUSDT', timeframe: '15m', candles: [], result: null, selected: null, ws: null, wsRoute: 0, gen: 0, priceLines: [], lastAnalysis: 0 };
+
+// Soporte de símbolo por parámetro en URL (?symbol=BTCUSDC, ?symbol=1000PEPEUSDC)
+const urlParams = new URLSearchParams(window.location.search);
+const initialSymbol = urlParams.get('symbol');
+if (initialSymbol) {
+  try {
+    const s = assertSymbol(initialSymbol);
+    state.symbol = s;
+    const select = $('symbol');
+    if (select) {
+      let found = false;
+      for (const opt of select.options) {
+        if (opt.value === s) { opt.selected = true; found = true; break; }
+      }
+      if (!found) {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        opt.selected = true;
+        select.append(opt);
+      }
+    }
+  } catch {
+    /* si el símbolo no es válido se mantiene el valor por defecto */
+  }
+}
 
 const chart = LightweightCharts.createChart($('chart'), {
   autoSize: true,
@@ -169,7 +204,9 @@ function runAnalysis(refit) {
   state.result = res;
   drawPriceLinesAndMarkers(res);
   renderFindings(res);
-  renderTrend(TREND_TFS.includes(state.timeframe) ? state.timeframe : null, res.trend);
+  if (res && res.trend && PULSE_TIMEFRAMES.includes(state.timeframe)) {
+    updateRegimenTrend(state.timeframe, res.trend);
+  }
   drawOverlay();
   if (refit) chart.timeScale().fitContent();
 }
@@ -314,24 +351,134 @@ function focusFinding(f) {
 }
 const tfSeconds = (tf) => ({ '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 })[tf];
 
-function trendRow(tf, t) {
-  const li = document.createElement('li');
-  const a = document.createElement('span'); a.textContent = tf;
-  const b = document.createElement('span'); b.className = 'v'; b.textContent = `${t.label} (${PCT(t.strength)})`;
-  li.append(a, b); return li;
+// ---------- pulso de mercado ----------
+const regimenCache = new Map();
+
+function updateRegimenTrend(tf, trend) {
+  if (!tf || !PULSE_TIMEFRAMES.includes(tf) || !trend) return;
+  const direction = trend.direction === 'up' || trend.direction === 'down' ? trend.direction : 'neutral';
+  const label = typeof trend.label === 'string' && trend.label ? trend.label : direction;
+  regimenCache.set(tf, { timeframe: tf, direction, label });
+  const rows = PULSE_TIMEFRAMES.map((t) => regimenCache.get(t)).filter(Boolean);
+  renderPulseRegimen(rows.length ? rows : null);
 }
-const trendCache = new Map();
-function renderTrend(tf, t) { if (tf) trendCache.set(tf, t); paintTrends(); }
-function paintTrends() {
-  const ul = $('trends'); ul.replaceChildren();
-  for (const tf of TREND_TFS) { const t = trendCache.get(tf); ul.append(trendRow(tf, t || { label: '…', strength: 0 })); }
+
+function renderPulseLive(live) {
+  const el = $('pulse-state');
+  if (el) {
+    el.textContent = live ? 'en vivo' : 'sin conexión en vivo';
+  }
 }
-async function refreshTrends() {
-  const symbol = state.symbol;
-  await Promise.all(TREND_TFS.map(async (tf) => {
-    try { const c = await fetchKlines(symbol, tf, 200); if (symbol === state.symbol) trendCache.set(tf, trendOf(c)); } catch { /* se mantiene el ultimo valor */ }
-  }));
-  paintTrends();
+
+function renderPulseWalls(walls, symbol) {
+  const container = $('pulse-walls');
+  if (!container) return;
+  const quote = quoteAsset(symbol);
+  const wallCount = (walls?.bids?.length ?? 0) + (walls?.asks?.length ?? 0);
+  if (!walls || wallCount === 0) {
+    container.innerHTML = `<p class="empty">${NO_DATA}</p>`;
+    return;
+  }
+  let html = '<ul class="walls">';
+  for (const wall of walls.asks) {
+    html += `<li data-side="ask">
+      <span class="wall-price">${formatPrice(wall.price)}</span>
+      <span class="wall-usd">${formatUsd(wall.usd, quote)}</span>
+      <span class="wall-dist">+${formatPct(wall.distancePct)}</span>
+    </li>`;
+  }
+  for (const wall of walls.bids) {
+    html += `<li data-side="bid">
+      <span class="wall-price">${formatPrice(wall.price)}</span>
+      <span class="wall-usd">${formatUsd(wall.usd, quote)}</span>
+      <span class="wall-dist">−${formatPct(wall.distancePct)}</span>
+    </li>`;
+  }
+  html += '</ul>';
+  const midStr = walls.mid === null ? '—' : formatPrice(walls.mid);
+  const spreadStr = formatPct(walls.spreadPct);
+  const typStr = formatUsd(walls.medianSize, quote);
+  html += `<p class="note">Precio medio ${midStr} · margen ${spreadStr} · nivel típico ${typStr}</p>`;
+  container.innerHTML = html;
+}
+
+function renderPulseLiquidations(liquidations, symbol) {
+  const container = $('pulse-liquidations');
+  if (!container) return;
+  const quote = quoteAsset(symbol);
+  if (!liquidations || liquidations.count === 0) {
+    container.innerHTML = '<p class="empty">Sin liquidaciones desde que abriste el panel.</p>';
+    return;
+  }
+  const fiveMin = liquidations.windows?.[0] ?? null;
+  const fifteenMin = liquidations.windows?.[1] ?? null;
+  let html = `<p class="big">${formatUsd(fiveMin?.totalUsd ?? 0, quote)}</p>`;
+  html += `<p class="note">Últimos 5 min · largos ${formatUsd(fiveMin?.longUsd ?? 0, quote)} · cortos ${formatUsd(fiveMin?.shortUsd ?? 0, quote)}</p>`;
+  html += `<p class="note">15 min · largos ${formatUsd(fifteenMin?.longUsd ?? 0, quote)} · cortos ${formatUsd(fifteenMin?.shortUsd ?? 0, quote)}</p>`;
+  if (liquidations.largest) {
+    const sideText = liquidations.largest.side === 'long' ? 'larga' : 'corta';
+    html += `<p class="note">Mayor: ${formatUsd(liquidations.largest.usd, quote)} de una posición ${sideText}</p>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderPulseRegimen(regimen) {
+  const ul = $('trends');
+  if (!ul) return;
+  ul.replaceChildren();
+  if (!regimen || !regimen.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = NO_DATA;
+    ul.append(li);
+    return;
+  }
+  for (const row of regimen) {
+    const li = document.createElement('li');
+    const tfSpan = document.createElement('span');
+    tfSpan.className = 'regime-tf';
+    tfSpan.textContent = row.timeframe;
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'regime-label';
+    labelSpan.textContent = row.label;
+    li.append(tfSpan, labelSpan);
+    ul.append(li);
+  }
+}
+
+let pulseHandle = null;
+let pulseCurrentSymbol = null;
+
+function ensurePulseStarted(symbol) {
+  if (pulseCurrentSymbol === symbol && pulseHandle) return;
+  if (pulseHandle) {
+    pulseHandle.stop();
+    pulseHandle = null;
+  }
+  pulseCurrentSymbol = symbol;
+  regimenCache.clear();
+  renderPulseLive(false);
+  renderPulseWalls(null, symbol);
+  renderPulseLiquidations(null, symbol);
+  renderPulseRegimen(null);
+
+  pulseHandle = startMarketPulse(symbol, {
+    onChange: (snapshot) => {
+      if (snapshot.symbol !== state.symbol) return;
+      renderPulseLive(snapshot.live);
+      if (snapshot.walls !== undefined) renderPulseWalls(snapshot.walls, snapshot.symbol);
+      if (snapshot.liquidations !== undefined) renderPulseLiquidations(snapshot.liquidations, snapshot.symbol);
+      if (snapshot.regimen !== undefined) {
+        if (Array.isArray(snapshot.regimen)) {
+          for (const r of snapshot.regimen) regimenCache.set(r.timeframe, r);
+          const rows = PULSE_TIMEFRAMES.map((t) => regimenCache.get(t)).filter(Boolean);
+          renderPulseRegimen(rows.length ? rows : null);
+        } else {
+          renderPulseRegimen(null);
+        }
+      }
+    },
+  });
 }
 
 function newsAsset(symbol) {
@@ -554,6 +701,7 @@ async function load() {
   resetExplain();
   setConn('Cargando…');
   try {
+    ensurePulseStarted(state.symbol);
     const c = await fetchKlines(state.symbol, state.timeframe);
     if (gen !== state.gen) return;
     state.candles = c;
@@ -564,16 +712,24 @@ async function load() {
     setFlowData(c);
     runAnalysis(true);
     connectWs();
-    refreshTrends();
   } catch (e) {
     setConn(`Error al cargar datos (${e.message})`);
   }
 }
+
 $('controls').addEventListener('submit', (e) => e.preventDefault());
 const explainButton = $('explain');
 if (explainButton) explainButton.addEventListener('click', explain);
-$('symbol').addEventListener('change', (e) => { state.symbol = e.target.value; trendCache.clear(); load(); loadNews(); });
+$('symbol').addEventListener('change', (e) => {
+  try {
+    state.symbol = assertSymbol(e.target.value);
+  } catch {
+    state.symbol = e.target.value;
+  }
+  ensurePulseStarted(state.symbol);
+  load();
+  loadNews();
+});
 $('timeframe').addEventListener('change', (e) => { state.timeframe = e.target.value; load(); });
-setInterval(refreshTrends, 60000);
 setInterval(loadNews, 300000);
-paintTrends(); loadFng(); loadNews(); load();
+loadFng(); loadNews(); load();
