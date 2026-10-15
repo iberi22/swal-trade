@@ -5,6 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 
+
+/** Largest client frame accepted (bytes). */
+export const MAX_FRAME_BYTES = 64 * 1024;
 export const WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 export const DEFAULT_CHART_BRIDGE_PORT = 47321;
 export const DEFAULT_AUTH_TIMEOUT_MS = 5000;
@@ -399,6 +402,14 @@ export class ChartBridgeServer implements ChartBridge {
         if (client.buffer.length < 10) return;
         payloadLen = Number(client.buffer.readBigUInt64BE(2));
         offset = 10;
+      }
+
+      // Cap before buffering: the Origin check does not stop a local non-browser
+      // process, so an unauthenticated peer must not be able to make us hold an
+      // arbitrarily large frame in memory. 30 shapes fit in a few KB.
+      if (payloadLen > MAX_FRAME_BYTES) {
+        this.dropClient(client, "frame too large");
+        return;
       }
 
       if (client.buffer.length < offset + 4 + payloadLen) {

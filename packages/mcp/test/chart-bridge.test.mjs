@@ -8,6 +8,7 @@ import {
   ensureBridgeToken,
   validateShapes,
   ChartBridgeServer,
+  MAX_FRAME_BYTES,
 } from "../dist/chart-bridge.js";
 import { createServer } from "../dist/server.js";
 import { callOrCatch, errorText, textOf, withClient } from "./helpers.mjs";
@@ -353,4 +354,25 @@ test("server tools registration when SWAL_MCP_CHART_BRIDGE=enabled", async () =>
       assert.ok(errorText(unsuppRes).includes("unsupported"));
     }
   );
+});
+
+test("bridge server drops a client that announces a frame larger than the cap", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-bridge-cap-"));
+  const server = new ChartBridgeServer({ port: 0, tokenPath: path.join(tmpDir, "chart-bridge-token"), authTimeoutMs: 2000 });
+  await server.start();
+  try {
+    const client = await connectTestClient(server.port);
+    assert.equal(client.status, 101);
+    const closed = new Promise((resolve) => client.socket.once("close", () => resolve(true)));
+    // Masked text frame header that announces MAX_FRAME_BYTES + 1 bytes (64-bit length), no payload.
+    const header = Buffer.alloc(14);
+    header[0] = 0x81;
+    header[1] = 0x80 | 127;
+    header.writeBigUInt64BE(BigInt(MAX_FRAME_BYTES + 1), 2);
+    client.socket.write(header);
+    const outcome = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(false), 1500))]);
+    assert.equal(outcome, true, "the server must drop the client before buffering an oversized frame");
+  } finally {
+    await server.close();
+  }
 });
