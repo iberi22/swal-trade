@@ -28,7 +28,7 @@ for (const path of PAGES) {
       await expect(page.locator('#chip-engine-status')).not.toHaveText('—');
     }
     if (path === '/guardian/') {
-      await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posicion vigilada)');
+      await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posición vigilada)');
     }
 
     const text = textForClaimCheck(path, await page.locator('body').innerText());
