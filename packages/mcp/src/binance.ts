@@ -9,7 +9,7 @@ import { errorMessage, isRecord, redactSecrets } from "./types.js";
 
 export { BinanceError };
 
-export const RECV_WINDOW = "5000";
+export const RECV_WINDOW = "15000";
 
 /** Maximum income pages (1000 rows each) before the day cannot be summed. */
 export const MAX_INCOME_PAGES = 50;
@@ -47,8 +47,13 @@ function tranIdOf(row: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function failHttp(response: Response, path: string, secrets: readonly string[]): Promise<never> {
-  const body = (await response.text()).slice(0, 200);
+async function failHttp(
+  response: Response,
+  path: string,
+  secrets: readonly string[],
+  text?: string,
+): Promise<never> {
+  const body = (text ?? (await response.text())).slice(0, 200);
   const parsed = httpError(response.status, path, body);
   throw new BinanceError(redactSecrets(parsed.message, secrets), parsed.code, redactSecrets(parsed.msg, secrets), response.status);
 }
@@ -80,7 +85,7 @@ export function createReadOnlyClient(options: ReadOnlyClientOptions): ReadOnlyCl
     return offset;
   }
 
-  async function get(path: string, params: Record<string, string | number> = {}): Promise<unknown> {
+  async function get(path: string, params: Record<string, string | number> = {}, retry = true): Promise<unknown> {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) query.set(key, String(value));
     query.set("timestamp", String(now() + offset));
@@ -92,7 +97,14 @@ export function createReadOnlyClient(options: ReadOnlyClientOptions): ReadOnlyCl
       redirect: "error",
       headers: { "X-MBX-APIKEY": options.apiKey },
     });
-    if (!response.ok) await failHttp(response, path, secrets);
+    if (!response.ok) {
+      const body = (await response.text()).slice(0, 200);
+      if (retry && body.replace(/\s+/g, "").includes('"code":-1021')) {
+        await syncTime();
+        return get(path, params, false);
+      }
+      await failHttp(response, path, secrets, body);
+    }
     return response.json() as Promise<unknown>;
   }
 

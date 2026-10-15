@@ -25,6 +25,7 @@ ese fichero lo lee tambien el bot, y con claves reales sus endpoints `/account/r
 | `GUARDIAN_REQUIRE_STOP` | true | avisa de posiciones sin stop (ver abajo); solo aviso, ignora ENFORCE |
 | `GUARDIAN_STOP_ALERT_MINUTES` | 15 | reaviso maximo por posicion |
 | `GUARDIAN_HEARTBEAT_URL` | off | URL a la que hacer GET en cada vuelta (dead-man, estilo healthchecks.io) |
+| `GUARDIAN_RECV_WINDOW_MS` | 15000 | ventana de validez en ms (minimo 5000, maximo Binance 60000) |
 | `BINANCE_FUTURES_URL` | https://fapi.binance.com | |
 
 PnL del dia = realizado (PnL + comisiones + funding, en USDT/USDC/FDUSD/BUSD) + no realizado abierto.

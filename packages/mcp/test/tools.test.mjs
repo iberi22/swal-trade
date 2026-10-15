@@ -337,7 +337,7 @@ test("account_risk signs read-only GETs and reports guardian breaches", async ()
   const idx = qs.lastIndexOf("&signature=");
   const payload = qs.slice(0, idx);
   assert.ok(payload.includes(`startTime=${start}`));
-  assert.ok(payload.includes("recvWindow=5000"));
+  assert.ok(payload.includes("recvWindow=15000"));
   assert.equal(qs.slice(idx + "&signature=".length), crypto.createHmac("sha256", SECRET).update(payload).digest("hex"));
   assert.equal(calls.find((call) => call.url.includes("/time")).init.headers, undefined);
 });
