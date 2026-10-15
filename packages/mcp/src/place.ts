@@ -1044,7 +1044,9 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
       const flatten = await flattenPosition(client, filters.value, symbol, journal);
       const notes: string[] = [];
       if (flatten.netBefore == null) {
-        notes.push(`positionRisk had no row for ${symbol}: treated as no open position.`);
+        notes.push(
+          `positionRisk had no row for ${symbol}: the net position could not be read, so it was NOT treated as flat and the symbol's orders were left in place.`,
+        );
       } else if (flatten.netBefore === 0) {
         notes.push(`the net position of ${symbol} was already zero.`);
       } else if (flatten.flat) {

@@ -1538,18 +1538,41 @@ test("close_position works with the daily loss lock tripped: closing is protecti
   assert.equal(exchange.post("/fapi/v1/order").length, 1);
 });
 
-test("close_position with no position only cancels the symbol's orders", async () => {
-  // A positionRisk answer with no row at all for the symbol.
+test("close_position fails closed when positionRisk has no row for the symbol (F9)", async () => {
+  // A partial/truncated positionRisk answer with no row for the symbol is an
+  // UNREAD, not a flat position: a live position whose row is missing must not
+  // have its protective stops cancelled. The definition is the same one round-6
+  // F2 uses: only a read that has a row is decisive about the position.
   const exchange = makeExchange({ positionRiskOmitsFlat: true });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
     assert.equal(body.positionQuantity, null);
     assert.equal(body.closeOrder, null);
-    assert.match(body.notes.join(" "), /no row for BTCUSDT: treated as no open position/);
+    assert.equal(body.flat, false, "a missing row is not a flat position");
+    assert.equal(body.remaining, null);
+    assert.match(body.notes.join(" "), /no row for BTCUSDT/);
+    assert.match(body.notes.join(" "), /could not be read|NOT cancelled/);
     assert.equal(body.sent, false);
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
-  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 2);
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0, "no algo/order cancel on an unread position");
+});
+
+test("an unread position never cancels the symbol's protective orders on the emergency-close path (F9)", async () => {
+  // The entry filled but its stop failed; the positionRisk read afterwards omits
+  // the symbol's row (truncated answer). Treating that as flat would cancel the
+  // live position's protective orders. It must be reported as an unread instead.
+  const exchange = makeExchange({
+    positionRiskOmitsFlat: true,
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /protective stop failed after 2 attempts/);
+    assert.match(text, /could NOT be closed/);
+    assert.match(text, /MANUAL ACTION REQUIRED/);
+  });
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0, "no cancels while the position is unread");
 });
 
 test("close_position with a zero row only cancels the symbol's orders", async () => {
