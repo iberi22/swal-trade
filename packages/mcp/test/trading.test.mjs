@@ -823,6 +823,28 @@ test("place_order post_only with a 200 cancel, 0 executed, and 0 position resolv
   });
 });
 
+test("place_order post_only cancels the resolved no-fill order exactly once (F7)", async () => {
+  // The confirmed cancel inside postOnlyEntry already removed the order; the
+  // cleanup cancelEntry then sent the SAME DELETE again, so the exchange saw two
+  // cancels for one order and the journal carried both steps. It must be one.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2013, msg: "Order does not exist." },
+    cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /the resting order was cancelled by clientOrderId/);
+  });
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "one order, one DELETE");
+  const line = journalLines(JOURNAL, "place_order")[0];
+  const ambiguous = line.exchange.filter((item) => item.step === "cancel_after_ambiguous_entry");
+  const failed = line.exchange.filter((item) => item.step === "cancel_after_failed_entry");
+  assert.equal(ambiguous.length, 1);
+  assert.equal(failed.length, 0, "the cleanup cancel is skipped after a confirmed cancel");
+});
+
 test("place_order post_only leaves the intent pending when both reads fail and the cancel is confirmed 0", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],

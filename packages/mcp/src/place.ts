@@ -94,6 +94,8 @@ interface EntryOutcome {
   filledQty?: number;
   /** True when an order actually reached the exchange (so it is not "not sent"). */
   sent?: boolean;
+  /** True when the order is CONFIRMED gone (a cancel inside this function already proved it): the caller then skips its cleanup cancel. */
+  cancelled?: boolean;
   /** True when the outcome must NOT be journaled as resolved: an order may still be resting, so the intent stays pending for the sweep. */
   unresolved?: boolean;
 }
@@ -248,6 +250,7 @@ async function postOnlyEntry(
               ok: false,
               clientOrderId,
               sent: true,
+              cancelled: true,
               unresolved: true,
               error:
                 `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be parsed (${net.error}). ` +
@@ -261,6 +264,7 @@ async function postOnlyEntry(
             ok: false,
             clientOrderId,
             sent: true,
+            cancelled: true,
             unresolved: true,
             error:
               `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be read (${msg}). ` +
@@ -273,6 +277,7 @@ async function postOnlyEntry(
             ok: false,
             clientOrderId,
             sent: true,
+            cancelled: true,
             unresolved: true,
             error:
               `the post-only ${input.side} at ${aligned} timed out and could not be resolved; ` +
@@ -284,6 +289,7 @@ async function postOnlyEntry(
           ok: false,
           clientOrderId,
           sent: true,
+          cancelled: true,
           error: `the post-only ${input.side} at ${aligned} timed out; the lookup found no fill and the resting order was cancelled by clientOrderId.`,
         };
       }
@@ -818,7 +824,9 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         // first dead id is never the target). When the first cancel inside
         // postOnlyEntry was not confirmed, an order may still be resting, so no
         // resolving outcome is written and the intent stays pending for the sweep.
-        if (entry.clientOrderId != null) await cancelEntry(client, entry.clientOrderId, symbol, journal);
+        // A cancel that WAS confirmed already proved the order is gone: cancelling
+        // again would send the same DELETE twice and journal both steps.
+        if (entry.cancelled !== true && entry.clientOrderId != null) await cancelEntry(client, entry.clientOrderId, symbol, journal);
         if (entry.unresolved) {
           return refused(`the post-only entry could not be resolved and was NOT resolved: ${entry.error}`);
         }
