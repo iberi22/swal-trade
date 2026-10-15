@@ -94,6 +94,14 @@ interface EntryOutcome {
   filledQty?: number;
   /** True when an order actually reached the exchange (so it is not "not sent"). */
   sent?: boolean;
+  /** True when the order is CONFIRMED gone (a cancel inside this function already proved it): the caller then skips its cleanup cancel. */
+  cancelled?: boolean;
+  /**
+   * A post-only entry that PARTIALLY filled and left a remainder resting: its
+   * own clientOrderId, the resting quantity and its price. The caller cancels it
+   * by that id once the protective stop is armed.
+   */
+  partialRemainder?: { clientOrderId: string; quantity: string; price: string };
   /** True when the outcome must NOT be journaled as resolved: an order may still be resting, so the intent stays pending for the sweep. */
   unresolved?: boolean;
 }
@@ -181,7 +189,26 @@ async function postOnlyEntry(
         // can fill in the same instant it is rejected, and the answer carries the
         // executedQty. A filled quantity means a position exists, so it must be
         // protected instead of repriced.
-        if (filled > 0) return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled, resting: false };
+        if (filled > 0) {
+          // A PARTIALLY_FILLED answer leaves the rest of the order RESTING on the
+          // book. Returning with no trace of it reported resting:false while a
+          // second slice of the capped exposure was still live. It is named here
+          // so the caller cancels it once the stop is armed.
+          const remainder = decimalNumber(input.quantity) - filled;
+          if (status === "PARTIALLY_FILLED" && remainder > 0) {
+            return {
+              ok: true,
+              order,
+              price: aligned,
+              clientOrderId,
+              filled: true,
+              filledQty: filled,
+              resting: false,
+              partialRemainder: { clientOrderId, quantity: toDecimalText(remainder), price: aligned },
+            };
+          }
+          return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled, resting: false };
+        }
         return { ok: true, order, price: aligned, clientOrderId, filled: false, resting: true };
       }
       if (status === "FILLED") return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled > 0 ? filled : decimalNumber(input.quantity) };
@@ -248,6 +275,7 @@ async function postOnlyEntry(
               ok: false,
               clientOrderId,
               sent: true,
+              cancelled: true,
               unresolved: true,
               error:
                 `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be parsed (${net.error}). ` +
@@ -261,6 +289,7 @@ async function postOnlyEntry(
             ok: false,
             clientOrderId,
             sent: true,
+            cancelled: true,
             unresolved: true,
             error:
               `the post-only ${input.side} at ${aligned} timed out and its cancel was confirmed with no fill, but the net position could not be read (${msg}). ` +
@@ -273,6 +302,7 @@ async function postOnlyEntry(
             ok: false,
             clientOrderId,
             sent: true,
+            cancelled: true,
             unresolved: true,
             error:
               `the post-only ${input.side} at ${aligned} timed out and could not be resolved; ` +
@@ -284,6 +314,7 @@ async function postOnlyEntry(
           ok: false,
           clientOrderId,
           sent: true,
+          cancelled: true,
           error: `the post-only ${input.side} at ${aligned} timed out; the lookup found no fill and the resting order was cancelled by clientOrderId.`,
         };
       }
@@ -335,6 +366,8 @@ function entryPayload(input: {
   startupSweep?: unknown;
   /** USD of a fill above the cap that this call reduced, or null when it did not. */
   excessNotionalReduced: number | null;
+  /** Set when the fill was above the cap and the reduction of the excess FAILED. */
+  excessNotionalReduceWarning?: string | null;
 }): Record<string, unknown> {
   const warnings = [...input.warnings];
   if (input.excessNotionalReduced != null) {
@@ -342,6 +375,7 @@ function entryPayload(input: {
       `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${input.excessNotionalReduced.toFixed(4)} USD and the excess was reduced with a MARKET reduceOnly order.`,
     );
   }
+  if (input.excessNotionalReduceWarning != null) warnings.push(input.excessNotionalReduceWarning);
   const filledNotional = input.filledQty > 0 && averagePriceOf(input.entry) != null
     ? Number(((averagePriceOf(input.entry) as number) * input.filledQty).toFixed(4))
     : input.effectiveNotionalUsd;
@@ -387,13 +421,23 @@ function entryPayload(input: {
  * really carries is avgPrice * executedQty, and rounding the quantity down to
  * stepSize can only move it up against the cap. When it does, the excess is
  * reduced with a MARKET reduceOnly order and the USD of the reduction is
- * returned; null when there was nothing to reduce (or the reduction failed and
- * was logged).
+ * returned; null when there was nothing to reduce.
+ *
+ * A reduction that FAILS is reported, never swallowed: `warning` says the
+ * exposure is above the cap, and the operator has to see it. Logging it and
+ * returning null left `warnings: []` on a fill that was still over the cap.
  *
  * Shared by the immediate-market path and the ambiguous-resolution path, so a
  * fill resolved after a timeout is capped exactly like a fill answered at once:
  * the ambiguous path used to return before this block and over-order silently.
  */
+interface ExcessReduction {
+  /** USD of the excess that was actually reduced, or null when none was. */
+  reducedUsd: number | null;
+  /** Set when the fill exceeded the cap and the reduction of the excess failed. */
+  warning: string | null;
+}
+
 async function reduceExcessNotional(input: {
   client: TradingClient;
   symbol: string;
@@ -404,13 +448,14 @@ async function reduceExcessNotional(input: {
   maxNotionalUsd: number;
   stepSize: string;
   journal: JournalRecord;
-}): Promise<number | null> {
+}): Promise<ExcessReduction> {
   const effectiveAfterFill = input.avg * input.fillQty;
-  if (!(input.fillQty > 0) || !(effectiveAfterFill > input.maxNotionalUsd * 1.01)) return null;
+  if (!(input.fillQty > 0) || !(effectiveAfterFill > input.maxNotionalUsd * 1.01)) return { reducedUsd: null, warning: null };
   // The excess is in USD, so it is converted to a quantity at the fill price
   // before it is rounded: rounding a USD amount to stepSize sends the wrong size.
   const excessQty = ceilToStep(toDecimalText((effectiveAfterFill - input.maxNotionalUsd) / input.avg), input.stepSize);
-  if (excessQty == null || !(decimalNumber(excessQty) > 0)) return null;
+  if (excessQty == null || !(decimalNumber(excessQty) > 0)) return { reducedUsd: null, warning: null };
+  const excessUsd = effectiveAfterFill - input.maxNotionalUsd;
   try {
     const reduction = await input.client.placeOrder({
       symbol: input.symbol,
@@ -420,10 +465,14 @@ async function reduceExcessNotional(input: {
       reduceOnly: "true",
     });
     logStep(input.journal, "reduce_excess_notional", reduction);
-    return effectiveAfterFill - input.maxNotionalUsd;
+    return { reducedUsd: excessUsd, warning: null };
   } catch (err) {
-    logStep(input.journal, "reduce_excess_notional", { error: redactSecrets(errorMessage(err), []) });
-    return null;
+    const message = redactSecrets(errorMessage(err), []);
+    logStep(input.journal, "reduce_excess_notional", { error: message });
+    return {
+      reducedUsd: null,
+      warning: `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${excessUsd.toFixed(4)} USD and the excess could NOT be reduced (${message}): exposure is above SWAL_MAX_NOTIONAL_USD.`,
+    };
   }
 }
 
@@ -788,6 +837,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     // Per call, never module scope: the reduction of one fill must not be
     // reported in the next call's warnings.
     let excessNotionalReduced: number | null = null;
+    let excessNotionalReduceWarning: string | null = null;
     if (orderType === "post_only") {
       entry = await postOnlyEntry(
         client,
@@ -799,7 +849,9 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         // first dead id is never the target). When the first cancel inside
         // postOnlyEntry was not confirmed, an order may still be resting, so no
         // resolving outcome is written and the intent stays pending for the sweep.
-        if (entry.clientOrderId != null) await cancelEntry(client, entry.clientOrderId, symbol, journal);
+        // A cancel that WAS confirmed already proved the order is gone: cancelling
+        // again would send the same DELETE twice and journal both steps.
+        if (entry.cancelled !== true && entry.clientOrderId != null) await cancelEntry(client, entry.clientOrderId, symbol, journal);
         if (entry.unresolved) {
           return refused(`the post-only entry could not be resolved and was NOT resolved: ${entry.error}`);
         }
@@ -827,7 +879,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
             // A fill resolved after a timeout is capped exactly like a fill
             // answered at once: the reduction runs here too, not only on the
             // direct path.
-            excessNotionalReduced = await reduceExcessNotional({
+            const reduction = await reduceExcessNotional({
               client,
               symbol,
               side,
@@ -837,6 +889,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               stepSize: filters.value.stepSize,
               journal,
             });
+            excessNotionalReduced = reduction.reducedUsd;
+            excessNotionalReduceWarning = reduction.warning;
             const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
             if (!stop.ok) {
               const aborted = await emergencyClose(client, filters.value, symbol, journal);
@@ -872,6 +926,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
               ambiguous: true,
               excessNotionalReduced,
+              excessNotionalReduceWarning,
             }));
           }
           if (!resolution.resolved) {
@@ -895,7 +950,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     // avgPrice * executedQty: rounding can only move it against the cap, never
     // for us.
     if (entry.ok) {
-      excessNotionalReduced = await reduceExcessNotional({
+      const reduction = await reduceExcessNotional({
         client,
         symbol,
         side,
@@ -905,6 +960,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         stepSize: filters.value.stepSize,
         journal,
       });
+      excessNotionalReduced = reduction.reducedUsd;
+      excessNotionalReduceWarning = reduction.warning;
     }
 
     const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
@@ -912,6 +969,108 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       const aborted = await emergencyClose(client, filters.value, symbol, journal);
       if (aborted.flatten.flat) await writeOutcome({ filled: entry.filled ?? false, stopPlaced: false, error: stop.error });
       return refused(`the protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}); ${describeFlatten(aborted)}.`);
+    }
+
+    // A post-only entry that PARTIALLY filled left the rest of the order resting
+    // on the book. The stop is armed now, so that remainder is cancelled by its
+    // own clientOrderId: the capped notional was computed from the fill, and a
+    // remainder that fills later is exposure nobody accounted for. Only a
+    // confirmed cancel (or a definitive "order does not exist") lets the tool
+    // report resting:false; otherwise the resting quantity and price are
+    // reported and warned about.
+    let resting = entry.resting ?? false;
+    let restingPrice = entry.price ?? null;
+    const remainderWarnings: string[] = [];
+    const remainder = entry.partialRemainder;
+    if (remainder) {
+      let gone = false;
+      // The cancel answer's executedQty, when the exchange sends one, is the fill
+      // it saw at cancel time. A 200 cancel that echoes a LARGER executedQty than
+      // the PARTIALLY_FILLED entry answered means the remainder filled before the
+      // cancel landed: same race as a not-found cancel, same re-read (F4b).
+      let cancelAnswer: unknown = null;
+      let notFound = false;
+      try {
+        const result = await client.cancelOrder(symbol, remainder.clientOrderId);
+        logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: true, result });
+        cancelAnswer = result;
+        gone = true;
+      } catch (err) {
+        const message = redactSecrets(errorMessage(err), []);
+        logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: false, error: message });
+        gone = isCancelNotFound(err);
+        notFound = gone;
+        if (!gone) {
+          resting = true;
+          restingPrice = remainder.price;
+          remainderWarnings.push(
+            `the post-only entry partially filled ${entry.filledQty ?? 0} of ${quantity} and ${remainder.quantity} are STILL RESTING at ${remainder.price}, because the cancel of the remainder was not confirmed (${message}): that resting notional is not part of the filled notional the cap was checked against.`,
+          );
+        }
+      }
+      if (gone) {
+        resting = false;
+        restingPrice = null;
+        const filledAtPartial = entry.filledQty ?? 0;
+        // A not-found cancel (-2013/-2011) proves the order is gone, but not WHY:
+        // the remainder may have filled in the instant between the partial answer
+        // and the cancel. A 200 cancel whose executedQty grew is the same race. In
+        // both cases the fill the cap was checked against is half the real one, so
+        // the post-cancel position is re-read and a larger fill is reported (F4b).
+        const grewOnCancel = filledQuantityOf(cancelAnswer) > filledAtPartial;
+        if (notFound || grewOnCancel) {
+          let net: number | null = null;
+          let readError: string | null = null;
+          try {
+            const risk = await client.positionRisk();
+            const position = netPosition(risk, symbol);
+            logStep(journal, "position_after_remainder_cancel", { net: position.amount, rows: position.rows, error: position.error });
+            net = position.error == null ? position.amount : null;
+            if (position.error != null) readError = position.error;
+          } catch (err) {
+            readError = redactSecrets(errorMessage(err), []);
+            logStep(journal, "position_after_remainder_cancel", { error: readError });
+          }
+          if (net == null) {
+            // No definitive read: the remainder is off the book (the cancel proved
+            // it), but whether it filled or was cancelled is unknown. resting:false
+            // is not proven, so it is not claimed.
+            resting = true;
+            restingPrice = remainder.price;
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity} and the remaining ${remainder.quantity} resting at ${remainder.price} are gone from the book, but the position after the cancel could not be read (${readError ?? "no definitive position row"}): whether that remainder filled or was cancelled is UNKNOWN, so resting:false is not proven.`,
+            );
+          } else if (Math.abs(net) > filledAtPartial) {
+            const largerFill = Math.abs(net);
+            const reduction = await reduceExcessNotional({
+              client,
+              symbol,
+              side,
+              fillQty: largerFill,
+              avg: averagePriceOf(entry.order) ?? entryPrice,
+              maxNotionalUsd: Number(cfg.value.maxNotionalUsd),
+              stepSize: filters.value.stepSize,
+              journal,
+            });
+            if (reduction.reducedUsd != null) excessNotionalReduced = (excessNotionalReduced ?? 0) + reduction.reducedUsd;
+            if (reduction.warning != null) {
+              excessNotionalReduceWarning = [excessNotionalReduceWarning, reduction.warning].filter((item): item is string => item != null).join(" ");
+            }
+            entry.filledQty = largerFill;
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity} and the remaining ${remainder.quantity} resting at ${remainder.price} filled before it could be cancelled: the fill is ${largerFill} of ${quantity}.`,
+            );
+          } else {
+            remainderWarnings.push(
+              `the post-only entry partially filled ${filledAtPartial} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
+            );
+          }
+        } else {
+          remainderWarnings.push(
+            `the post-only entry partially filled ${filledAtPartial} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
+          );
+        }
+      }
     }
 
     let takeProfitResponse: unknown = null;
@@ -953,18 +1112,20 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         stopPrice,
         stopLossPct,
         stopResponse: stop.response,
-        resting: entry.resting ?? false,
-        restingPrice: entry.price ?? null,
+        resting,
+        restingPrice,
         journal,
         warnings: [
           ...(stop.warning ? [stop.warning] : []),
           ...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []),
           ...(takeProfitNote ? [takeProfitNote] : []),
+          ...remainderWarnings,
           ...sweepAlerts,
         ],
         startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
         takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning ?? takeProfitNote } : null,
         excessNotionalReduced,
+        excessNotionalReduceWarning,
       }),
     );
   }));
@@ -1044,7 +1205,9 @@ export async function closePosition(deps: WriteDeps, args: ClosePositionArgs): P
       const flatten = await flattenPosition(client, filters.value, symbol, journal);
       const notes: string[] = [];
       if (flatten.netBefore == null) {
-        notes.push(`positionRisk had no row for ${symbol}: treated as no open position.`);
+        notes.push(
+          `positionRisk had no row for ${symbol}: the net position could not be read, so it was NOT treated as flat and the symbol's orders were left in place.`,
+        );
       } else if (flatten.netBefore === 0) {
         notes.push(`the net position of ${symbol} was already zero.`);
       } else if (flatten.flat) {
