@@ -1,3 +1,4 @@
+import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
 import { TIMEFRAMES, type Timeframe } from './types';
 
@@ -30,6 +31,10 @@ export interface ExtensionSettings {
   hotkeysEnabled: boolean;
   /** Mapa de tecla de función a temporalidad (o null para ninguna). */
   hotkeyMap: HotkeyMap;
+  /** Permite que un agente local (Claude Code) lea y pinte en el gráfico vía WebSocket. */
+  claudeBridgeEnabled: boolean;
+  claudeBridgePort: number;
+  claudeBridgeToken: string;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -40,6 +45,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   explainWithAi: false,
   hotkeysEnabled: true,
   hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
+  claudeBridgeEnabled: false,
+  claudeBridgePort: 47321,
+  claudeBridgeToken: "",
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -122,6 +130,18 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
     hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),
+    claudeBridgeEnabled: record.claudeBridgeEnabled === true,
+    claudeBridgePort:
+      typeof record.claudeBridgePort === "number" &&
+      Number.isInteger(record.claudeBridgePort) &&
+      record.claudeBridgePort >= 1024 &&
+      record.claudeBridgePort <= 65535
+        ? record.claudeBridgePort
+        : DEFAULT_SETTINGS.claudeBridgePort,
+    claudeBridgeToken:
+      typeof record.claudeBridgeToken === "string"
+        ? record.claudeBridgeToken.trim().slice(0, 128)
+        : DEFAULT_SETTINGS.claudeBridgeToken,
   };
 }
 
@@ -154,4 +174,14 @@ export function symbolAllowed(symbol: string, whitelist: readonly string[]): boo
 
 export function settingsToInputs(settings: ExtensionSettings): string {
   return settings.symbols.join(', ');
+}
+
+
+export async function loadSettings(): Promise<ExtensionSettings> {
+  try {
+    const data = await browser.storage.local?.get(SETTINGS_KEY);
+    return settingsFromStorage(data);
+  } catch {
+    return { ...DEFAULT_SETTINGS, symbols: [] };
+  }
 }

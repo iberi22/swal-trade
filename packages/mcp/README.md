@@ -157,6 +157,49 @@ El stop se comprueba además contra la estimación de liquidación del exchange 
 
 `grid_plan` rechaza (no fusiona) dos niveles que caen en el mismo tick, porque serían una sola orden del doble del tamaño. La distancia del stop y la comprobación de liquidación se miden desde el **peor nivel** (el más cercano al stop), no desde la entrada media. Como en `place_order`, la estimación de liquidación del grid se lee **después** de fijar el apalancamiento: `positionRisk` solo informa `liquidationPrice` para el apalancamiento vigente.
 
+
+## Claude en tu gráfico
+
+Permite que un agente local de IA (como Claude Code conectado a este servidor MCP) lea el estado del gráfico abierto en el navegador y dibuje niveles, zonas, líneas de tendencia y flechas sobre el gráfico de TradingView de Binance Futures mediante la extensión de navegador SWAL Trade.
+
+### Cómo activarlo
+
+1. **En el servidor MCP**: define la variable de entorno:
+   ```bash
+   export SWAL_MCP_CHART_BRIDGE=enabled
+   # Opcional (puerto por defecto 47321):
+   export SWAL_MCP_CHART_PORT=47321
+   ```
+2. **Token de emparejamiento**: en el primer arranque con el puente habilitado, el servidor genera un token criptográfico seguro (32 bytes aleatorios en base64url) en:
+   ```bash
+   ~/.config/swal-trade/chart-bridge-token
+   ```
+   El archivo se crea con permisos restrictivos `0600` (solo legible por tu usuario local).
+3. **En la extensión**:
+   - Abre el panel lateral de la extensión SWAL Trade en tu navegador.
+   - Despliega la sección **Ajustes**.
+   - Activa el interruptor **"Permitir que Claude use el gráfico"**.
+   - Copia el token de `~/.config/swal-trade/chart-bridge-token` y pégalo en el campo "Token de emparejamiento" (el campo lo mantiene enmascarado).
+   - En un instante, el indicador cambiará a **"Claude conectado"** (punto verde).
+
+### Las cuatro herramientas MCP
+
+Cuando `SWAL_MCP_CHART_BRIDGE=enabled`, se registran automáticamente 4 herramientas:
+
+- `chart_state`: devuelve el estado actual del gráfico (`{ connected, symbol, timeframe, paintEnabled, tabUrlHost }`).
+- `chart_paint({ shapes })`: valida y dibuja formas en el gráfico de Binance abierto. Se validan con los mismos límites que la extensión (máximo 30 formas, texto ≤ 60 caracteres, marcas de tiempo y precios finitos y positivos). Todas las formas dibujadas por Claude llevan automáticamente el prefijo visual distintivo `"IA:"`.
+- `chart_clear`: borra inmediatamente las formas que el puente dibujó en el gráfico.
+- `chart_set_timeframe({ timeframe })`: solicita cambiar la temporalidad del gráfico (`1m`, `5m`, `15m`, `1h`, `4h`, `1d`).
+
+### Modelo de seguridad
+
+- **Solo local**: el servidor WebSocket se vincula estrictamente a `127.0.0.1` (localhost). No escucha en interfaces de red externas ni expone puertos a internet.
+- **Autenticación con token**: la extensión debe enviar el token de emparejamiento como su primer mensaje (`hello`) dentro de los primeros 5 segundos de conexión. La validación se realiza en tiempo constante (`crypto.timingSafeEqual`) contra ataques de temporización.
+- **Validación de Origin**: se rechazan de inmediato conexiones cuyo encabezado `Origin` no provenga de una extensión de navegador (`chrome-extension://` o `moz-extension://`).
+- **Un solo cliente activo**: solo se admite una extensión conectada a la vez.
+- **Solo lectura y dibujo — nunca trading**: el puente no tiene acceso a cookies, credenciales, órdenes, balances ni DOM de cuentas. Solo reenvía formas geométricas de análisis y lee el símbolo/temporalidad activa.
+- **Tiempo de espera**: las peticiones tienen un timeout estricto de 5 segundos; si la extensión o la pestaña no responden, devuelven un error limpio y explicativo.
+
 ## Reglas de seguridad
 
 - Nunca hay retiros. Este proceso no tiene tool de retiro ni de transferencia, en ningún modo.

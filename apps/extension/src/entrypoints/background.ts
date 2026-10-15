@@ -1,8 +1,13 @@
 import { browser } from 'wxt/browser';
 import { parseRuntimeMessage } from '../lib/messages';
-import { requestResolution } from '../lib/tv-paint-send';
+import { requestResolution, TIMEFRAME_TO_RESOLUTION } from '../lib/tv-paint-send';
+import type { Timeframe } from '../lib/types';
 import type { TvChartState } from '../lib/tv-paint';
+import { PAINTABLE_URL } from '../lib/tv-paint';
 import type { MarketContext } from '../lib/types';
+import { loadSettings, SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
+import { ClaudeBridgeClient, type BridgeChartState } from '../lib/claude-bridge';
+import { sendPaintCommand } from '../lib/tv-paint-send';
 
 const STORAGE_KEY = 'marketContext';
 
@@ -27,6 +32,8 @@ let latest: MarketContext | null = null;
  */
 let tvState: TvChartState | null = null;
 let tvChart: { symbol: string; tf: string } | null = null;
+
+let claudeBridge: ClaudeBridgeClient | null = null;
 
 async function remember(context: MarketContext): Promise<void> {
   latest = context;
@@ -66,7 +73,62 @@ export default defineBackground(() => {
     });
   }
 
+  // Inicializar cliente puente Claude local
+  claudeBridge = new ClaudeBridgeClient({
+    getSettings: () => loadSettings(),
+    getChartState: async (): Promise<BridgeChartState> => {
+      const tabs = await browser.tabs.query({}).catch(() => []);
+      const paintableTab = tabs.find((t) => t.url && PAINTABLE_URL.test(t.url));
+      let tabUrlHost: string | null = null;
+      if (paintableTab?.url) {
+        try {
+          tabUrlHost = new URL(paintableTab.url).host;
+        } catch {
+          tabUrlHost = null;
+        }
+      }
+      const symbol = tvChart?.symbol ?? latest?.symbol ?? null;
+      const timeframe = tvChart?.tf ?? latest?.timeframe ?? null;
+      const connected = tvState === 'ready' || Boolean(paintableTab);
+      const settings = await loadSettings();
+      return {
+        connected,
+        symbol,
+        timeframe,
+        paintEnabled: settings.paintOnChart,
+        tabUrlHost,
+      };
+    },
+    sendPaint: (command) => sendPaintCommand(command),
+    setResolution: async (resolution) => {
+      const timeframe = (Object.keys(TIMEFRAME_TO_RESOLUTION) as Timeframe[]).find(
+        (tf) => TIMEFRAME_TO_RESOLUTION[tf] === resolution,
+      );
+      if (!timeframe) return { ok: false, error: 'invalid resolution' };
+      const tabs = await browser.tabs.query({ url: 'https://www.binance.com/*/futures/*' }).catch(() => []);
+      const tab = tabs.find((t) => t.active) ?? tabs[0];
+      if (tab?.id == null) return { ok: false, error: 'no Binance futures tab open' };
+      return requestResolution(tab.id, timeframe);
+    },
+  });
+  void claudeBridge.start();
+
+  try {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[SETTINGS_KEY]) {
+        const next = settingsFromStorage({ settings: changes[SETTINGS_KEY].newValue });
+        claudeBridge?.updateSettings(next);
+      }
+    });
+  } catch {
+    // storage.onChanged no disponible en este entorno
+  }
+
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message && typeof message === 'object' && (message as { type?: unknown }).type === 'get-claude-bridge-status') {
+      sendResponse({ status: claudeBridge?.getStatus() ?? 'disconnected' });
+      return;
+    }
     const parsed = parseRuntimeMessage(message);
     if (!parsed) return;
     if (parsed.type === 'market-context') {

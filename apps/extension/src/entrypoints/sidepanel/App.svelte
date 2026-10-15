@@ -58,6 +58,20 @@
   let symbolDraft = $state('');
   let settingsOpen = $state(false);
   let blocked = $state(false);
+  let claudeStatus = $state<"connected" | "connecting" | "disconnected">("disconnected");
+
+  function checkClaudeStatus() {
+    void browser.runtime
+      ?.sendMessage({ type: "get-claude-bridge-status" })
+      .then((res) => {
+        if (res && typeof res.status === "string") {
+          claudeStatus = res.status;
+        }
+      })
+      .catch(() => {
+        claudeStatus = "disconnected";
+      });
+  }
 
   let newsItems = $state<NewsItem[]>([]);
   let newsNote = $state<string | null>(null);
@@ -193,6 +207,8 @@
     }, 30_000);
     const tvClock = setInterval(refreshTv, 5_000);
     refreshTv();
+    checkClaudeStatus();
+    const claudeClock = setInterval(checkClaudeStatus, 3_000);
     const onPageHide = () => {
       void sendPaintCommand(null);
     };
@@ -202,6 +218,7 @@
       unsubscribeTv();
       clearInterval(clock);
       clearInterval(tvClock);
+      clearInterval(claudeClock);
       void sendPaintCommand(null);
       window.removeEventListener('pagehide', onPageHide);
     };
@@ -623,6 +640,61 @@
             </div>
           {/each}
         </div>
+      <div class="claude-bridge-section">
+        <label class="field check">
+          <input
+            type="checkbox"
+            disabled={!settingsLoaded}
+            checked={settings.claudeBridgeEnabled}
+            onchange={(event) => {
+              applySettings({
+                ...settings,
+                claudeBridgeEnabled: (event.currentTarget as HTMLInputElement).checked,
+              });
+              setTimeout(checkClaudeStatus, 150);
+            }}
+          />
+          <span>Permitir que Claude use el gráfico</span>
+        </label>
+        <p class="hint">
+          Permite que un agente local (Claude Code vía swal-trade MCP) lea y dibuje en el gráfico abierto.
+        </p>
+        <div class="claude-status-line">
+          <span class="status-indicator" class:connected={claudeStatus === "connected"}></span>
+          <span>{claudeStatus === "connected" ? "Claude conectado" : "Claude desconectado"}</span>
+        </div>
+        {#if settings.claudeBridgeEnabled}
+          <label class="field">
+            <span>Puerto del puente MCP</span>
+            <input
+              type="number"
+              disabled={!settingsLoaded}
+              value={settings.claudeBridgePort}
+              onchange={(event) => {
+                const port = parseInt((event.currentTarget as HTMLInputElement).value, 10);
+                if (Number.isFinite(port) && port >= 1024 && port <= 65535) {
+                  applySettings({ ...settings, claudeBridgePort: port });
+                }
+              }}
+            />
+          </label>
+          <label class="field">
+            <span>Token de emparejamiento</span>
+            <input
+              type="password"
+              disabled={!settingsLoaded}
+              value={settings.claudeBridgeToken}
+              placeholder="Pegar token de ~/.config/swal-trade/chart-bridge-token"
+              oninput={(event) => {
+                applySettings({
+                  ...settings,
+                  claudeBridgeToken: (event.currentTarget as HTMLInputElement).value.trim(),
+                });
+                setTimeout(checkClaudeStatus, 150);
+              }}
+            />
+          </label>
+        {/if}
       </div>
       <p class="hint">
         Se guarda en <code>storage.local</code> de la extensión. Los titulares se renuevan cada

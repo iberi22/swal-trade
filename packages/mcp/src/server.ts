@@ -35,6 +35,7 @@ import { parseTradingConfig, readBase, tradingEnabled } from "./trading-config.j
 import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
 import type { WriteDeps } from "./write.js";
+import { type ChartBridge, getOrCreateBridge, validateShapes } from "./chart-bridge.js";
 
 const STRENGTH_NOTE = "Strength is pattern quality, not probability.";
 
@@ -87,6 +88,7 @@ export interface ServerDeps {
   append?: WriteDeps["append"];
   writeLock?: WriteDeps["writeLock"];
   sweep?: WriteDeps["sweep"];
+  chartBridge?: ChartBridge;
 }
 
 interface ToolText {
@@ -505,5 +507,99 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     );
   }
 
+  const bridgeEnabled = env.SWAL_MCP_CHART_BRIDGE === "enabled";
+  if (bridgeEnabled) {
+    const bridge = deps.chartBridge ?? getOrCreateBridge(env);
+
+    server.registerTool(
+      "chart_state",
+      {
+        title: "Chart state",
+        description: "Reads current chart state from the browser extension: whether a Binance futures tab is open and ready, the active symbol, timeframe, whether painting is enabled, and the tab host.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      async () => {
+        try {
+          const state = await bridge.getChartState();
+          return ok(state);
+        } catch (err) {
+          return fail(errorMessage(err));
+        }
+      },
+    );
+
+    server.registerTool(
+      "chart_paint",
+      {
+        title: "Chart paint",
+        description: "Paints analysis shapes (levels, trends, labels, arrows, zones) on the Binance TradingView chart currently open in the browser extension. Validates shapes against extension limits (max 30 shapes, text <= 60 chars, finite positive prices and unix timestamps) and prefixes text with IA: for visual distinction. Painting and reading only — never trading through this channel.",
+        inputSchema: {
+          shapes: z.array(z.object({
+            id: z.string().min(1).max(64).optional().describe("Optional unique id for the shape."),
+            kind: z.enum(["level", "trend", "label", "arrow", "zone"]).describe("Kind of shape: level, trend, label, arrow, or zone."),
+            style: z.enum(["solid", "dashed"]).optional().describe("Line style: solid (default) or dashed."),
+            text: z.string().max(60).optional().describe("Annotation text (up to 60 chars). Will be prefixed with IA: on the chart."),
+            direction: z.enum(["up", "down"]).optional().describe("Direction for arrow shapes (up or down)."),
+            points: z.array(z.object({
+              time: z.number().int().finite().nonnegative().describe("Unix timestamp in seconds (UTC)."),
+              price: z.number().finite().positive().describe("Price level."),
+            })).min(1).max(2).describe("Points: 1 point for level, label, arrow; 2 points for trend, zone."),
+          })).min(1).max(30).describe("Array of 1 to 30 shapes to paint on the chart."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      async (args) => {
+        try {
+          const validated = validateShapes(args.shapes);
+          if (!validated.ok) return fail(validated.error);
+          const result = await bridge.paint(validated.shapes);
+          return ok(result);
+        } catch (err) {
+          return fail(errorMessage(err));
+        }
+      },
+    );
+
+    server.registerTool(
+      "chart_clear",
+      {
+        title: "Chart clear",
+        description: "Clears shapes previously painted on the Binance chart by Claude/bridge.",
+        inputSchema: {},
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      async () => {
+        try {
+          const result = await bridge.clear();
+          return ok(result);
+        } catch (err) {
+          return fail(errorMessage(err));
+        }
+      },
+    );
+
+    server.registerTool(
+      "chart_set_timeframe",
+      {
+        title: "Chart set timeframe",
+        description: "Switches the chart timeframe in the Binance tab open in the extension (1m, 5m, 15m, 1h, 4h, 1d).",
+        inputSchema: {
+          timeframe: z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]).describe("Target timeframe."),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      async (args) => {
+        try {
+          const result = await bridge.setTimeframe(args.timeframe);
+          return ok(result);
+        } catch (err) {
+          return fail(errorMessage(err));
+        }
+      },
+    );
+  }
+
   return server;
 }
+

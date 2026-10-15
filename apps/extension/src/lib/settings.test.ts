@@ -77,47 +77,56 @@ describe('symbolAllowed', () => {
 describe('normalizeSettings', () => {
   it('rellena los defaults cuando no hay nada', () => {
     expect(normalizeSettings(undefined)).toEqual({
-      defaultTimeframe: '5m',
+      defaultTimeframe: "5m",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('acepta los valores válidos y descarta el resto', () => {
     expect(
       normalizeSettings({
-        defaultTimeframe: '4h',
-        symbols: 'BTC, ETH',
+        defaultTimeframe: "4h",
+        symbols: "BTC, ETH",
         autoSync: false,
         hotkeysEnabled: false,
         hotkeyMap: { F1: '15m' },
       }),
     ).toEqual({
-      defaultTimeframe: '4h',
-      symbols: ['BTC', 'ETH'],
+      defaultTimeframe: "4h",
+      symbols: ["BTC", "ETH"],
       autoSync: false,
       paintOnChart: false,
       explainWithAi: false,
       hotkeysEnabled: false,
       hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('una temporalidad que el panel no dibuja vuelve al default', () => {
     expect(normalizeSettings({ defaultTimeframe: '45m' }).defaultTimeframe).toBe('5m');
     expect(normalizeSettings({ defaultTimeframe: 3 }).defaultTimeframe).toBe('5m');
-    expect(normalizeSettings({ defaultTimeframe: '60', autoSync: 'no' })).toEqual({
-      defaultTimeframe: '1h',
+    expect(normalizeSettings({ defaultTimeframe: "60", autoSync: "no" })).toEqual({
+      defaultTimeframe: "1h",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
@@ -161,6 +170,9 @@ describe('normalizeSettings', () => {
     });
     expect(Object.keys(settings).sort()).toEqual([
       'autoSync',
+      'claudeBridgeEnabled',
+      'claudeBridgePort',
+      'claudeBridgeToken',
       'defaultTimeframe',
       'explainWithAi',
       'hotkeyMap',
@@ -184,27 +196,33 @@ describe('normalizeSettingsTimeframe', () => {
 describe('settingsFromStorage', () => {
   it('lee la clave settings', () => {
     expect(
-      settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: '15m', symbols: 'ETH' } }),
+      settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: "15m", symbols: "ETH" } }),
     ).toEqual({
-      defaultTimeframe: '15m',
-      symbols: ['ETH'],
+      defaultTimeframe: "15m",
+      symbols: ["ETH"],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('acepta el objeto pelado por si el formato cambia', () => {
-    expect(settingsFromStorage({ defaultTimeframe: '1d' })).toEqual({
-      defaultTimeframe: '1d',
+    expect(settingsFromStorage({ defaultTimeframe: "1d" })).toEqual({
+      defaultTimeframe: "1d",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
