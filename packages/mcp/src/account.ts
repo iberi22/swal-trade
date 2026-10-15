@@ -222,35 +222,45 @@ const num = (value: unknown): number => {
  * A non-zero net whose mark price is nowhere to be found is returned in
  * `unreadable` instead of being counted as 0: an exposure that cannot be
  * derived has to fail closed, not read light.
+ *
+ * The notional is the GROSS exposure: every row's |positionAmt| × markPrice is
+ * summed, never the net (F10b). In hedge mode an equal long and short net to
+ * zero while both legs are real, uncapped exposure: netting them made the cap
+ * read 0 with no error. `openSymbols` keeps the net test for whether a symbol
+ * counts as an open position, which stays a net-zero rule.
  */
 function positionNotionalFromRisk(
   risk: unknown,
   fallbackSymbol: string,
   fallbackMark: number,
-): { bySymbol: Map<string, number>; unreadable: Map<string, number> } {
+): { bySymbol: Map<string, number>; unreadable: Map<string, number>; openSymbols: Set<string> } {
   const bySymbol = new Map<string, number>();
   const unreadable = new Map<string, number>();
-  if (!Array.isArray(risk)) return { bySymbol, unreadable };
-  const amounts = new Map<string, number>();
+  const openSymbols = new Set<string>();
+  if (!Array.isArray(risk)) return { bySymbol, unreadable, openSymbols };
+  const gross = new Map<string, number>();
+  const net = new Map<string, number>();
   const marks = new Map<string, number>();
   for (const raw of risk) {
     if (!isRecord(raw) || typeof raw.symbol !== "string") continue;
     const amount = num(raw.positionAmt);
     if (!Number.isFinite(amount)) continue;
-    amounts.set(raw.symbol, (amounts.get(raw.symbol) ?? 0) + amount);
+    gross.set(raw.symbol, (gross.get(raw.symbol) ?? 0) + Math.abs(amount));
+    net.set(raw.symbol, (net.get(raw.symbol) ?? 0) + amount);
     const mark = num(raw.markPrice);
     if (Number.isFinite(mark) && mark > 0 && !marks.has(raw.symbol)) marks.set(raw.symbol, mark);
   }
-  for (const [symbol, amount] of amounts) {
+  for (const [symbol, amount] of net) if (amount !== 0) openSymbols.add(symbol);
+  for (const [symbol, amount] of gross) {
     if (amount === 0) continue;
     const mark = marks.get(symbol) ?? (symbol === fallbackSymbol ? fallbackMark : Number.NaN);
     if (!Number.isFinite(mark) || mark <= 0) {
       unreadable.set(symbol, amount);
       continue;
     }
-    bySymbol.set(symbol, Math.abs(amount) * mark);
+    bySymbol.set(symbol, amount * mark);
   }
-  return { bySymbol, unreadable };
+  return { bySymbol, unreadable, openSymbols };
 }
 
 /**
@@ -346,7 +356,7 @@ export async function readExposure(input: {
     // notional can be derived from neither source fails closed.
     const derived = positionNotionalFromRisk(risk, input.symbol, input.markPrice);
     for (const [symbol, notional] of derived.bySymbol) {
-      if (!positionSymbols.includes(symbol)) positionSymbols.push(symbol);
+      if (derived.openSymbols.has(symbol) && !positionSymbols.includes(symbol)) positionSymbols.push(symbol);
       if ((accountNotionalBySymbol.get(symbol) ?? 0) > 0) continue;
       openNotionalUsd += notional;
       if (symbol === input.symbol) symbolPositionUsd += notional;

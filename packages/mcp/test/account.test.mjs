@@ -237,3 +237,23 @@ test("readExposure fails closed when a zero-notional position cannot be derived 
   assert.equal(exposure.openNotionalUsd, 0);
   assert.match(exposure.errors.join(" "), /exposure cannot be derived/);
 });
+
+test("readExposure counts the GROSS exposure of hedge legs whose net is zero (F10b)", async () => {
+  // A 0.4 long and a 0.4 short net to 0 but carry 32000 USD of gross exposure at
+  // markPrice 40000. The net derivation skipped the symbol entirely, so the cap
+  // was checked against a zero notional with no error. Both legs are real
+  // exposure, so the gross sum is what the cap is checked against.
+  const exposure = await readExposure({
+    client: clientStub({
+      account: { positions: [] },
+      positionRisk: [row("BTCUSDT", "0.4", "LONG"), row("BTCUSDT", "-0.4", "SHORT")],
+      openOrders: [],
+      algoOrders: [],
+    }),
+    symbol: "BTCUSDT",
+    markPrice: 40000,
+  });
+  assert.deepEqual(exposure.errors, []);
+  assert.equal(exposure.openNotionalUsd, 32000, "(0.4 + 0.4) × 40000, never the netted 0");
+  assert.equal(exposure.symbolNotionalUsd, 32000);
+});
