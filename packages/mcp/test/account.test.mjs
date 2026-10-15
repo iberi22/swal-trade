@@ -183,3 +183,57 @@ test("readExposure does not count a closed (positionAmt 0) account row as an ope
   assert.equal(exposure.openPositions, 1);
   assert.equal(exposure.openNotionalUsd, 500, "a zero row contributes no notional");
 });
+
+// ---------------------------------------------------------------------------
+// F10: a zero/missing account notional on a non-empty position is derived from
+// positionRisk instead of making the cap read 0.
+// ---------------------------------------------------------------------------
+
+test("readExposure derives the traded symbol's notional from positionRisk when the account reports zero (F10)", async () => {
+  const exposure = await readExposure({
+    client: clientStub({
+      account: { positions: [{ symbol: "BTCUSDT", positionAmt: "0.01", notional: "0", unrealizedProfit: "0", positionSide: "BOTH" }] },
+      positionRisk: [row("BTCUSDT", "0.01")],
+      openOrders: [],
+      algoOrders: [],
+    }),
+    symbol: "BTCUSDT",
+    markPrice: 40000,
+  });
+  assert.deepEqual(exposure.errors, []);
+  assert.equal(exposure.symbolNotionalUsd, 400, "0.01 × 40000, not the account's zero");
+  assert.equal(exposure.openNotionalUsd, 400);
+});
+
+test("readExposure derives another symbol's notional from its own positionRisk markPrice (F10)", async () => {
+  const exposure = await readExposure({
+    client: clientStub({
+      account: { positions: [{ symbol: "ETHUSDT", positionAmt: "0.5", notional: "0", unrealizedProfit: "0", positionSide: "BOTH" }] },
+      positionRisk: [{ symbol: "ETHUSDT", positionAmt: "0.5", positionSide: "BOTH", markPrice: "2000" }],
+      openOrders: [],
+      algoOrders: [],
+    }),
+    symbol: "BTCUSDT",
+    markPrice: 40000,
+  });
+  assert.deepEqual(exposure.errors, []);
+  assert.equal(exposure.openNotionalUsd, 1000, "0.5 × the ETH markPrice 2000, not the account's zero");
+  assert.deepEqual(exposure.positionSymbols, ["ETHUSDT"]);
+});
+
+test("readExposure fails closed when a zero-notional position cannot be derived (F10)", async () => {
+  // No markPrice anywhere and the account reported 0: counting this as 0 would
+  // decide the cap against a number nobody read.
+  const exposure = await readExposure({
+    client: clientStub({
+      account: { positions: [{ symbol: "ETHUSDT", positionAmt: "0.5", notional: "0", unrealizedProfit: "0", positionSide: "BOTH" }] },
+      positionRisk: [row("ETHUSDT", "0.5")],
+      openOrders: [],
+      algoOrders: [],
+    }),
+    symbol: "BTCUSDT",
+    markPrice: 40000,
+  });
+  assert.equal(exposure.openNotionalUsd, 0);
+  assert.match(exposure.errors.join(" "), /exposure cannot be derived/);
+});

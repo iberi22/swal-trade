@@ -211,6 +211,49 @@ const num = (value: unknown): number => {
 };
 
 /**
+ * The position notional per symbol, derived from positionRisk (F10).
+ *
+ * /fapi/v3/account reports a `notional` that can be missing or zero on a
+ * non-empty position, and the exposure cap was then decided against 0. Every
+ * positionRisk row carries the live positionAmt, and usually its own markPrice;
+ * a row without one falls back to `fallbackMark` only for `fallbackSymbol`,
+ * because another symbol's mark price is not this one's.
+ *
+ * A non-zero net whose mark price is nowhere to be found is returned in
+ * `unreadable` instead of being counted as 0: an exposure that cannot be
+ * derived has to fail closed, not read light.
+ */
+function positionNotionalFromRisk(
+  risk: unknown,
+  fallbackSymbol: string,
+  fallbackMark: number,
+): { bySymbol: Map<string, number>; unreadable: Map<string, number> } {
+  const bySymbol = new Map<string, number>();
+  const unreadable = new Map<string, number>();
+  if (!Array.isArray(risk)) return { bySymbol, unreadable };
+  const amounts = new Map<string, number>();
+  const marks = new Map<string, number>();
+  for (const raw of risk) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string") continue;
+    const amount = num(raw.positionAmt);
+    if (!Number.isFinite(amount)) continue;
+    amounts.set(raw.symbol, (amounts.get(raw.symbol) ?? 0) + amount);
+    const mark = num(raw.markPrice);
+    if (Number.isFinite(mark) && mark > 0 && !marks.has(raw.symbol)) marks.set(raw.symbol, mark);
+  }
+  for (const [symbol, amount] of amounts) {
+    if (amount === 0) continue;
+    const mark = marks.get(symbol) ?? (symbol === fallbackSymbol ? fallbackMark : Number.NaN);
+    if (!Number.isFinite(mark) || mark <= 0) {
+      unreadable.set(symbol, amount);
+      continue;
+    }
+    bySymbol.set(symbol, Math.abs(amount) * mark);
+  }
+  return { bySymbol, unreadable };
+}
+
+/**
  * Reads the exposure that already exists: the positions, plus every resting
  * order that would open a position (a limit that has not filled yet counts as
  * committed money, and a pending stop-entry counts as a pending position).
@@ -235,6 +278,8 @@ export async function readExposure(input: {
   let openNotionalUsd = 0;
   let symbolPositionUsd = 0;
   let symbolRestingUsd = 0;
+  /** The position notional /fapi/v3/account reported for each symbol. */
+  const accountNotionalBySymbol = new Map<string, number>();
 
   const collect = (rows: unknown, source: RestingOrder["source"]): void => {
     if (!Array.isArray(rows)) {
@@ -281,6 +326,7 @@ export async function readExposure(input: {
       if (!positionSymbols.includes(position.symbol)) positionSymbols.push(position.symbol);
       const notional = Math.abs(Number.parseFloat(position.notional) || 0);
       openNotionalUsd += notional;
+      accountNotionalBySymbol.set(position.symbol, (accountNotionalBySymbol.get(position.symbol) ?? 0) + notional);
       if (position.symbol === input.symbol) symbolPositionUsd += notional;
     }
   } catch (err) {
@@ -294,6 +340,23 @@ export async function readExposure(input: {
     const net = netPosition(risk, input.symbol);
     if (net.error) errors.push(net.error);
     if (net.amount != null && net.amount !== 0 && !positionSymbols.includes(input.symbol)) positionSymbols.push(input.symbol);
+    // F10: the account `notional` can be missing or zero on a non-empty
+    // position, so where the account reported no number the notional is derived
+    // from positionRisk (|positionAmt| × markPrice). A non-zero position whose
+    // notional can be derived from neither source fails closed.
+    const derived = positionNotionalFromRisk(risk, input.symbol, input.markPrice);
+    for (const [symbol, notional] of derived.bySymbol) {
+      if (!positionSymbols.includes(symbol)) positionSymbols.push(symbol);
+      if ((accountNotionalBySymbol.get(symbol) ?? 0) > 0) continue;
+      openNotionalUsd += notional;
+      if (symbol === input.symbol) symbolPositionUsd += notional;
+    }
+    for (const [symbol, amount] of derived.unreadable) {
+      if ((accountNotionalBySymbol.get(symbol) ?? 0) > 0) continue;
+      errors.push(
+        `${symbol} has ${amount} open but positionRisk reports no markPrice for it and the account reported no notional: its exposure cannot be derived, so the cap cannot be checked against it.`,
+      );
+    }
   } catch (err) {
     errors.push(`positionRisk: ${errorMessage(err)}`);
   }
