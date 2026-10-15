@@ -335,6 +335,8 @@ function entryPayload(input: {
   startupSweep?: unknown;
   /** USD of a fill above the cap that this call reduced, or null when it did not. */
   excessNotionalReduced: number | null;
+  /** Set when the fill was above the cap and the reduction of the excess FAILED. */
+  excessNotionalReduceWarning?: string | null;
 }): Record<string, unknown> {
   const warnings = [...input.warnings];
   if (input.excessNotionalReduced != null) {
@@ -342,6 +344,7 @@ function entryPayload(input: {
       `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${input.excessNotionalReduced.toFixed(4)} USD and the excess was reduced with a MARKET reduceOnly order.`,
     );
   }
+  if (input.excessNotionalReduceWarning != null) warnings.push(input.excessNotionalReduceWarning);
   const filledNotional = input.filledQty > 0 && averagePriceOf(input.entry) != null
     ? Number(((averagePriceOf(input.entry) as number) * input.filledQty).toFixed(4))
     : input.effectiveNotionalUsd;
@@ -387,13 +390,23 @@ function entryPayload(input: {
  * really carries is avgPrice * executedQty, and rounding the quantity down to
  * stepSize can only move it up against the cap. When it does, the excess is
  * reduced with a MARKET reduceOnly order and the USD of the reduction is
- * returned; null when there was nothing to reduce (or the reduction failed and
- * was logged).
+ * returned; null when there was nothing to reduce.
+ *
+ * A reduction that FAILS is reported, never swallowed: `warning` says the
+ * exposure is above the cap, and the operator has to see it. Logging it and
+ * returning null left `warnings: []` on a fill that was still over the cap.
  *
  * Shared by the immediate-market path and the ambiguous-resolution path, so a
  * fill resolved after a timeout is capped exactly like a fill answered at once:
  * the ambiguous path used to return before this block and over-order silently.
  */
+interface ExcessReduction {
+  /** USD of the excess that was actually reduced, or null when none was. */
+  reducedUsd: number | null;
+  /** Set when the fill exceeded the cap and the reduction of the excess failed. */
+  warning: string | null;
+}
+
 async function reduceExcessNotional(input: {
   client: TradingClient;
   symbol: string;
@@ -404,13 +417,14 @@ async function reduceExcessNotional(input: {
   maxNotionalUsd: number;
   stepSize: string;
   journal: JournalRecord;
-}): Promise<number | null> {
+}): Promise<ExcessReduction> {
   const effectiveAfterFill = input.avg * input.fillQty;
-  if (!(input.fillQty > 0) || !(effectiveAfterFill > input.maxNotionalUsd * 1.01)) return null;
+  if (!(input.fillQty > 0) || !(effectiveAfterFill > input.maxNotionalUsd * 1.01)) return { reducedUsd: null, warning: null };
   // The excess is in USD, so it is converted to a quantity at the fill price
   // before it is rounded: rounding a USD amount to stepSize sends the wrong size.
   const excessQty = ceilToStep(toDecimalText((effectiveAfterFill - input.maxNotionalUsd) / input.avg), input.stepSize);
-  if (excessQty == null || !(decimalNumber(excessQty) > 0)) return null;
+  if (excessQty == null || !(decimalNumber(excessQty) > 0)) return { reducedUsd: null, warning: null };
+  const excessUsd = effectiveAfterFill - input.maxNotionalUsd;
   try {
     const reduction = await input.client.placeOrder({
       symbol: input.symbol,
@@ -420,10 +434,14 @@ async function reduceExcessNotional(input: {
       reduceOnly: "true",
     });
     logStep(input.journal, "reduce_excess_notional", reduction);
-    return effectiveAfterFill - input.maxNotionalUsd;
+    return { reducedUsd: excessUsd, warning: null };
   } catch (err) {
-    logStep(input.journal, "reduce_excess_notional", { error: redactSecrets(errorMessage(err), []) });
-    return null;
+    const message = redactSecrets(errorMessage(err), []);
+    logStep(input.journal, "reduce_excess_notional", { error: message });
+    return {
+      reducedUsd: null,
+      warning: `the fill exceeded SWAL_MAX_NOTIONAL_USD by ${excessUsd.toFixed(4)} USD and the excess could NOT be reduced (${message}): exposure is above SWAL_MAX_NOTIONAL_USD.`,
+    };
   }
 }
 
@@ -788,6 +806,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     // Per call, never module scope: the reduction of one fill must not be
     // reported in the next call's warnings.
     let excessNotionalReduced: number | null = null;
+    let excessNotionalReduceWarning: string | null = null;
     if (orderType === "post_only") {
       entry = await postOnlyEntry(
         client,
@@ -827,7 +846,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
             // A fill resolved after a timeout is capped exactly like a fill
             // answered at once: the reduction runs here too, not only on the
             // direct path.
-            excessNotionalReduced = await reduceExcessNotional({
+            const reduction = await reduceExcessNotional({
               client,
               symbol,
               side,
@@ -837,6 +856,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               stepSize: filters.value.stepSize,
               journal,
             });
+            excessNotionalReduced = reduction.reducedUsd;
+            excessNotionalReduceWarning = reduction.warning;
             const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
             if (!stop.ok) {
               const aborted = await emergencyClose(client, filters.value, symbol, journal);
@@ -872,6 +893,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
               startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
               ambiguous: true,
               excessNotionalReduced,
+              excessNotionalReduceWarning,
             }));
           }
           if (!resolution.resolved) {
@@ -895,7 +917,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
     // avgPrice * executedQty: rounding can only move it against the cap, never
     // for us.
     if (entry.ok) {
-      excessNotionalReduced = await reduceExcessNotional({
+      const reduction = await reduceExcessNotional({
         client,
         symbol,
         side,
@@ -905,6 +927,8 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         stepSize: filters.value.stepSize,
         journal,
       });
+      excessNotionalReduced = reduction.reducedUsd;
+      excessNotionalReduceWarning = reduction.warning;
     }
 
     const stop = await placeProtectiveStop(client, { symbol, side: side === "BUY" ? "SELL" : "BUY", stopPrice, entryPrice, journal });
@@ -965,6 +989,7 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
         takeProfit: takeProfitPrice ? { takeProfitPct, price: takeProfitPrice, response: takeProfitResponse, warning: takeProfitWarning ?? takeProfitNote } : null,
         excessNotionalReduced,
+        excessNotionalReduceWarning,
       }),
     );
   }));

@@ -1068,6 +1068,28 @@ test("the reduced excess is reported for its own call, never for the next one", 
   assert.equal(inside.post("/fapi/v1/order").length, 1, "inside the cap: no reduction order");
 });
 
+test("a failed over-cap reduction is reported, never swallowed (F5)", async () => {
+  // The fill lands 20 USD over the 1000 USD cap (0.01 at 102000 = 1020), so the
+  // excess must be reduced. The reduceOnly order is refused: the exposure stays
+  // above the cap, and the operator has to be told. It used to return with
+  // warnings: [] and only the note "Nothing else was sent".
+  const exchange = makeExchange({
+    marketFill: { avgPrice: "102000", executedQty: "0.01" },
+    reduceFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.filledNotionalUsd, 1020);
+    assert.match(body.warnings.join(" "), /exceeded SWAL_MAX_NOTIONAL_USD by 20/);
+    assert.match(body.warnings.join(" "), /could NOT be reduced/);
+    assert.match(body.warnings.join(" "), /exposure is above SWAL_MAX_NOTIONAL_USD/);
+    assert.match(body.warnings.join(" "), /insufficient balance/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
+});
+
 // ---------------------------------------------------------------------------
 // Item 13: the journal is a writable regular file, or there is no order.
 // ---------------------------------------------------------------------------
