@@ -1,0 +1,68 @@
+{
+  "name": "SWAL Trade",
+  "short_name": "SWAL Trade",
+  "description": "Asistente gratis para revisar tus gráficos y vigilar el riesgo de tu cuenta de Binance USD-M Futures. No opera por ti y no promete resultados.",
+  "lang": "es",
+  "dir": "ltr",
+  "id": "/",
+  "start_url": "/analisis/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8f6f1",
+  "theme_color": "#f8f6f1",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Análisis de patrones",
+      "short_name": "Análisis",
+      "description": "Patrones detectados de forma determinista en el gráfico.",
+      "url": "/analisis/",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Guardián de riesgo",
+      "short_name": "Guardián",
+      "description": "Vigila tu cuenta de Binance sin mover fondos.",
+      "url": "/guardian/",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

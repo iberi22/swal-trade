@@ -27,7 +27,7 @@ export default defineConfig({
   projects: [
     {
       name: 'site',
-      testMatch: /tests\/(site|analisis|checkout|guardian)\.spec\.ts/,
+      testMatch: /tests\/(site|analisis|checkout|guardian|pwa)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
