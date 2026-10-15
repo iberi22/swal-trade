@@ -40,13 +40,19 @@ export interface TvStateResultMessage {
   chart?: TvChartDetail;
 }
 
+export interface HotkeySetTimeframeMessage {
+  type: 'swal:hotkey-set-timeframe';
+  timeframe: string;
+}
+
 export type RuntimeMessage =
   | MarketContextMessage
   | GetContextMessage
   | ContextResultMessage
   | TvStateMessage
   | GetTvStateMessage
-  | TvStateResultMessage;
+  | TvStateResultMessage
+  | HotkeySetTimeframeMessage;
 
 const TV_STATES: readonly TvChartState[] = [
   'ready',
@@ -92,6 +98,13 @@ export function parseRuntimeMessage(message: unknown): RuntimeMessage | null {
   if (type === 'market-context') {
     const context = (message as { context?: unknown }).context;
     return isMarketContext(context) ? { type: 'market-context', context } : null;
+  }
+  if (type === 'swal:hotkey-set-timeframe') {
+    const timeframe = (message as { timeframe?: unknown }).timeframe;
+    if (typeof timeframe === 'string') {
+      return { type: 'swal:hotkey-set-timeframe', timeframe };
+    }
+    return null;
   }
   if (type === 'context-result') {
     const context = (message as { context?: unknown }).context;

@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { parseRuntimeMessage } from '../lib/messages';
+import { requestResolution } from '../lib/tv-paint-send';
 import type { TvChartState } from '../lib/tv-paint';
 import type { MarketContext } from '../lib/types';
 
@@ -79,6 +80,13 @@ export default defineBackground(() => {
     }
     if (parsed.type === 'get-tv-state') {
       sendResponse({ type: 'tv-state-result', state: tvState, chart: tvChart ?? undefined });
+      return;
+    }
+    if (parsed.type === 'swal:hotkey-set-timeframe') {
+      const tabId = _sender.tab?.id;
+      if (tabId != null) {
+        void requestResolution(tabId, parsed.timeframe);
+      }
       return;
     }
     if (parsed.type === 'get-context') {
