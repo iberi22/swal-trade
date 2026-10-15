@@ -1,18 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALLOWED_RESOLUTIONS,
   SWAL_CLEAR,
   SWAL_DRAW,
   SWAL_MAX_SHAPES,
   SWAL_MESSAGE_VERSION,
   SWAL_READY,
+  SWAL_RESOLUTION_ACK,
+  SWAL_SET_RESOLUTION,
   buildClearMessage,
   buildDrawMessage,
   buildReadyMessage,
+  buildResolutionAckMessage,
+  buildSetResolutionMessage,
   coerceShape,
   coerceShapes,
+  isBridgeResolution,
   parseBridgeMessage,
   type BridgeDrawMessage,
   type BridgeReadyMessage,
+  type BridgeResolutionAckMessage,
+  type BridgeSetResolutionMessage,
   type BridgeShape,
 } from './schema';
 
@@ -163,6 +171,20 @@ describe('Bridge Schema', () => {
       expect(parsed.type).toBe(SWAL_DRAW);
       expect(parsed.shapes.length).toBe(SWAL_MAX_SHAPES);
       expect(parsed.key).toBe('BTCUSDT@1d');
+    });
+
+    it('construye y valida set-resolution y resolution-ack', () => {
+      for (const res of ALLOWED_RESOLUTIONS) {
+        expect(isBridgeResolution(res)).toBe(true);
+        expect(parseBridgeMessage(buildSetResolutionMessage(res))).toEqual(buildSetResolutionMessage(res));
+      }
+      expect(isBridgeResolution('2')).toBe(false);
+      expect(parseBridgeMessage({ type: SWAL_SET_RESOLUTION, version: SWAL_MESSAGE_VERSION, resolution: '2' })).toBeNull();
+      const ackOk = buildResolutionAckMessage(true, '15');
+      expect(parseBridgeMessage(ackOk)).toEqual(ackOk);
+      const ackErr = buildResolutionAckMessage(false, '1D', 'unsupported');
+      expect(parseBridgeMessage(ackErr)).toEqual(ackErr);
+      expect(parseBridgeMessage({ type: SWAL_RESOLUTION_ACK, version: SWAL_MESSAGE_VERSION, ok: 'bad', resolution: '15' })).toBeNull();
     });
 
     it('ignora mensajes mal formados o de otra versión', () => {

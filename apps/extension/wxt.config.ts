@@ -56,6 +56,8 @@ export default defineConfig({
       // Explicador con IA. Solo se llama si el usuario enciende el interruptor;
       // el cuerpo lleva símbolo, temporalidad y patrones, nunca datos de cuenta.
       'https://trade.swal.network/api/explain*',
+      // Puente local Claude: comunicación con el servidor MCP en localhost.
+      'ws://127.0.0.1/*',
     ],
     action: {
       default_title: '__MSG_actionTitle__',

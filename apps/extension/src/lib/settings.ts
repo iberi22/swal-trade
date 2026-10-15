@@ -1,5 +1,14 @@
+import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
 import { TIMEFRAMES, type Timeframe } from './types';
+
+export const HOTKEY_KEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'] as const;
+export type HotkeyKey = (typeof HOTKEY_KEYS)[number];
+export type HotkeyMap = Record<HotkeyKey, Timeframe | null>;
+export const DEFAULT_HOTKEY_MAP: HotkeyMap = {
+  F1: '1m', F2: '5m', F3: '15m', F4: '1h', F5: '4h',
+  F6: null, F7: null, F8: null, F9: null, F10: null, F11: null, F12: null,
+};
 
 export interface ExtensionSettings {
   /** Temporalidad con la que arranca el panel cuando la página no dice nada. */
@@ -18,6 +27,14 @@ export interface ExtensionSettings {
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
   explainWithAi: boolean;
+  /** Atajos de teclado habilitados para cambiar la temporalidad (F1..F12). */
+  hotkeysEnabled: boolean;
+  /** Mapa de tecla de función a temporalidad (o null para ninguna). */
+  hotkeyMap: HotkeyMap;
+  /** Permite que un agente local (Claude Code) lea y pinte en el gráfico vía WebSocket. */
+  claudeBridgeEnabled: boolean;
+  claudeBridgePort: number;
+  claudeBridgeToken: string;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -26,6 +43,11 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSync: true,
   paintOnChart: false,
   explainWithAi: false,
+  hotkeysEnabled: true,
+  hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
+  claudeBridgeEnabled: false,
+  claudeBridgePort: 47321,
+  claudeBridgeToken: "",
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -80,6 +102,18 @@ export function normalizeSymbolList(value: unknown): string[] {
 }
 
 /** Nunca confía en lo que haya en disco: valida campo a campo. */
+
+export function normalizeHotkeyMap(raw: unknown): HotkeyMap {
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const out: HotkeyMap = { ...DEFAULT_HOTKEY_MAP };
+  for (const key of HOTKEY_KEYS) {
+    if (key in record) {
+      const val = record[key];
+      out[key] = val === null || val === '' || val === 'none' ? null : normalizeSettingsTimeframe(val);
+    }
+  }
+  return out;
+}
 export function normalizeSettings(raw: unknown): ExtensionSettings {
   const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const timeframe = normalizeSettingsTimeframe(record.defaultTimeframe);
@@ -93,6 +127,21 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     paintOnChart: record.paintOnChart === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
+    // Atajos de teclado activos por defecto; solo false explícito los desactiva.
+    hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
+    hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),
+    claudeBridgeEnabled: record.claudeBridgeEnabled === true,
+    claudeBridgePort:
+      typeof record.claudeBridgePort === "number" &&
+      Number.isInteger(record.claudeBridgePort) &&
+      record.claudeBridgePort >= 1024 &&
+      record.claudeBridgePort <= 65535
+        ? record.claudeBridgePort
+        : DEFAULT_SETTINGS.claudeBridgePort,
+    claudeBridgeToken:
+      typeof record.claudeBridgeToken === "string"
+        ? record.claudeBridgeToken.trim().slice(0, 128)
+        : DEFAULT_SETTINGS.claudeBridgeToken,
   };
 }
 
@@ -125,4 +174,14 @@ export function symbolAllowed(symbol: string, whitelist: readonly string[]): boo
 
 export function settingsToInputs(settings: ExtensionSettings): string {
   return settings.symbols.join(', ');
+}
+
+
+export async function loadSettings(): Promise<ExtensionSettings> {
+  try {
+    const data = await browser.storage.local?.get(SETTINGS_KEY);
+    return settingsFromStorage(data);
+  } catch {
+    return { ...DEFAULT_SETTINGS, symbols: [] };
+  }
 }

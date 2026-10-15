@@ -406,7 +406,7 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
     await expect(page.locator('.header p.hint')).toContainText('Fuera de tu lista de símbolos');
 
     // Apagar el seguimiento deja de aplicar el contexto de la página.
-    await settings.locator('input[type="checkbox"]').uncheck();
+    await settings.locator('input[type="checkbox"]').first().uncheck();
     await expect.poll(async () => (await readSettings()).settings?.autoSync).toBe(false);
 
     await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');

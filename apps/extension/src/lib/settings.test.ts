@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_HOTKEY_MAP,
   DEFAULT_SETTINGS,
+  HOTKEY_KEYS,
   SETTINGS_KEY,
+  normalizeHotkeyMap,
   normalizeSettings,
   normalizeSettingsTimeframe,
   normalizeSymbolList,
@@ -74,39 +77,56 @@ describe('symbolAllowed', () => {
 describe('normalizeSettings', () => {
   it('rellena los defaults cuando no hay nada', () => {
     expect(normalizeSettings(undefined)).toEqual({
-      defaultTimeframe: '5m',
+      defaultTimeframe: "5m",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('acepta los valores válidos y descarta el resto', () => {
     expect(
       normalizeSettings({
-        defaultTimeframe: '4h',
-        symbols: 'BTC, ETH',
+        defaultTimeframe: "4h",
+        symbols: "BTC, ETH",
         autoSync: false,
+        hotkeysEnabled: false,
+        hotkeyMap: { F1: '15m' },
       }),
     ).toEqual({
-      defaultTimeframe: '4h',
-      symbols: ['BTC', 'ETH'],
+      defaultTimeframe: "4h",
+      symbols: ["BTC", "ETH"],
       autoSync: false,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: false,
+      hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('una temporalidad que el panel no dibuja vuelve al default', () => {
     expect(normalizeSettings({ defaultTimeframe: '45m' }).defaultTimeframe).toBe('5m');
     expect(normalizeSettings({ defaultTimeframe: 3 }).defaultTimeframe).toBe('5m');
-    expect(normalizeSettings({ defaultTimeframe: '60', autoSync: 'no' })).toEqual({
-      defaultTimeframe: '1h',
+    expect(normalizeSettings({ defaultTimeframe: "60", autoSync: "no" })).toEqual({
+      defaultTimeframe: "1h",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
@@ -132,6 +152,14 @@ describe('normalizeSettings', () => {
     expect(DEFAULT_SETTINGS.explainWithAi).toBe(false);
   });
 
+
+  it('hotkeysEnabled solo se apaga con false explícito', () => {
+    expect(normalizeSettings({ hotkeysEnabled: false }).hotkeysEnabled).toBe(false);
+    expect(normalizeSettings({ hotkeysEnabled: 'false' }).hotkeysEnabled).toBe(true);
+    expect(normalizeSettings({ hotkeysEnabled: 0 }).hotkeysEnabled).toBe(true);
+    expect(normalizeSettings({}).hotkeysEnabled).toBe(true);
+  });
+
   it('no se deja intoxicar con campos inventados', () => {
     const settings = normalizeSettings({
       defaultTimeframe: '1d',
@@ -142,8 +170,13 @@ describe('normalizeSettings', () => {
     });
     expect(Object.keys(settings).sort()).toEqual([
       'autoSync',
+      'claudeBridgeEnabled',
+      'claudeBridgePort',
+      'claudeBridgeToken',
       'defaultTimeframe',
       'explainWithAi',
+      'hotkeyMap',
+      'hotkeysEnabled',
       'paintOnChart',
       'symbols',
     ]);
@@ -163,23 +196,33 @@ describe('normalizeSettingsTimeframe', () => {
 describe('settingsFromStorage', () => {
   it('lee la clave settings', () => {
     expect(
-      settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: '15m', symbols: 'ETH' } }),
+      settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: "15m", symbols: "ETH" } }),
     ).toEqual({
-      defaultTimeframe: '15m',
-      symbols: ['ETH'],
+      defaultTimeframe: "15m",
+      symbols: ["ETH"],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
   it('acepta el objeto pelado por si el formato cambia', () => {
-    expect(settingsFromStorage({ defaultTimeframe: '1d' })).toEqual({
-      defaultTimeframe: '1d',
+    expect(settingsFromStorage({ defaultTimeframe: "1d" })).toEqual({
+      defaultTimeframe: "1d",
       symbols: [],
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
+      claudeBridgeEnabled: false,
+      claudeBridgePort: 47321,
+      claudeBridgeToken: "",
     });
   });
 
@@ -194,5 +237,14 @@ describe('settingsToInputs', () => {
   it('vuelve a poner la lista en el campo de texto', () => {
     expect(settingsToInputs({ ...DEFAULT_SETTINGS, symbols: ['BTC', 'ETH'] })).toBe('BTC, ETH');
     expect(settingsToInputs(DEFAULT_SETTINGS)).toBe('');
+  });
+});
+
+describe('normalizeHotkeyMap', () => {
+  it('rellena con el mapa por defecto y normaliza teclas', () => {
+    expect(normalizeHotkeyMap(null)).toEqual(DEFAULT_HOTKEY_MAP);
+    const custom = normalizeHotkeyMap({ F1: '15m', F2: null, F3: 'ninguno', F4: 'invalido', F12: '1D', UNKNOWN: '1m' });
+    expect([custom.F1, custom.F2, custom.F3, custom.F4, custom.F12]).toEqual(['15m', null, null, null, '1d']);
+    expect((custom as Record<string, unknown>).UNKNOWN).toBeUndefined();
   });
 });
