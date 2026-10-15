@@ -580,7 +580,18 @@ export async function flattenPosition(client: TradingClient, filters: SymbolFilt
       report.error = net.error;
       break;
     }
-    if (net.amount == null || net.amount === 0) {
+    // No row for the symbol is an UNREAD, not a flat position. The read is only
+    // decisive about the position when it carries a row for it (the same rule
+    // round-6 F2 uses to resolve an ambiguous entry): a truncated or partial
+    // positionRisk answer that omits the symbol must not be taken as "no
+    // position", because then the symbol's protective orders are cancelled and a
+    // live position that was simply missing from the answer is left naked.
+    if (net.amount == null) {
+      report.error =
+        `positionRisk returned no row for ${symbol}, so the net position could not be read: a missing row is not a flat position, and the symbol's protective orders were left in place.`;
+      break;
+    }
+    if (net.amount === 0) {
       report.flat = true;
       report.remaining = 0;
       break;

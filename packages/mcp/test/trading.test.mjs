@@ -823,6 +823,122 @@ test("place_order post_only with a 200 cancel, 0 executed, and 0 position resolv
   });
 });
 
+test("place_order post_only cancels the resolved no-fill order exactly once (F7)", async () => {
+  // The confirmed cancel inside postOnlyEntry already removed the order; the
+  // cleanup cancelEntry then sent the SAME DELETE again, so the exchange saw two
+  // cancels for one order and the journal carried both steps. It must be one.
+  const exchange = makeExchange({
+    networkErrorOnOrder: [1],
+    queryOrder: { code: -2013, msg: "Order does not exist." },
+    cancelOrder: { status: "CANCELED", executedQty: "0", origClientOrderId: "whatever", side: "BUY", type: "LIMIT" },
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } }));
+    assert.match(text, /the resting order was cancelled by clientOrderId/);
+  });
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "one order, one DELETE");
+  const line = journalLines(JOURNAL, "place_order")[0];
+  const ambiguous = line.exchange.filter((item) => item.step === "cancel_after_ambiguous_entry");
+  const failed = line.exchange.filter((item) => item.step === "cancel_after_failed_entry");
+  assert.equal(ambiguous.length, 1);
+  assert.equal(failed.length, 0, "the cleanup cancel is skipped after a confirmed cancel");
+});
+
+test("a partially filled post-only entry has its resting remainder cancelled (F4)", async () => {
+  // The answer was PARTIALLY_FILLED: 0.001 filled and the other 0.001 is still
+  // on the book. Reporting resting:false and "Nothing else was sent" left up to
+  // double the capped exposure live with no account of it.
+  const exchange = makeExchange({ orderStatus: "PARTIALLY_FILLED", orderExecutedQty: "0.001" });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001);
+    assert.equal(body.resting, false, "the remainder is gone once the cancel is confirmed");
+    assert.equal(body.stop.stopPrice, "99500");
+    assert.match(body.warnings.join(" "), /partially filled/);
+    assert.match(body.warnings.join(" "), /were cancelled/);
+  });
+  const entry = exchange.post("/fapi/v1/order")[0];
+  assert.equal(entry.params.type, "LIMIT");
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "the resting remainder is cancelled by its own clientOrderId");
+  assert.equal(cancels[0].params.origClientOrderId, entry.params.clientOrderId);
+});
+
+test("a partially filled post-only entry whose remainder cancel fails reports it resting (F4)", async () => {
+  // The cancel of the remainder is refused, so the 0.001 that did not fill is
+  // still resting and the payload has to say so, with the quantity and price.
+  const exchange = makeExchange({ orderStatus: "PARTIALLY_FILLED", orderExecutedQty: "0.001", cancelOrderHttpError: 500 });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001);
+    assert.equal(body.resting, true, "an unconfirmed cancel leaves the remainder resting");
+    assert.equal(body.restingPrice, "99999.9");
+    assert.match(body.warnings.join(" "), /partially filled/);
+    assert.match(body.warnings.join(" "), /STILL RESTING/);
+    assert.match(body.warnings.join(" "), /0\.001/);
+  });
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "the remainder is cancelled once, by its own id");
+});
+
+test("a partially filled post-only entry whose remainder filled before a not-found cancel reports the larger fill (F4b)", async () => {
+  // The answer was PARTIALLY_FILLED (0.001). The remainder cancel answers -2013
+  // ("order does not exist"): the 0.001 still on the book filled in the instant
+  // between the answer and the cancel. The payload used to warn "were cancelled"
+  // and keep filledQuantity at 0.001, so the cap was checked against half the
+  // real position. The post-cancel position read (0.002) is the proof.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { code: -2013, msg: "Order does not exist." },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.002, "the remainder filled, so the fill is 0.002");
+    assert.equal(body.resting, false);
+    assert.match(body.warnings.join(" "), /filled before it could be cancelled/);
+    assert.doesNotMatch(body.warnings.join(" "), /were cancelled/);
+  });
+});
+
+test("a partially filled post-only entry whose cancel answer shows a larger executedQty reports the larger fill (F4b)", async () => {
+  // A 200 cancel whose own answer shows executedQty grew from the 0.001 the
+  // PARTIALLY_FILLED entry answered to 0.002: the remainder filled before the
+  // cancel reached the matching engine. Same post-cancel re-read, same warning.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { status: "CANCELED", executedQty: "0.002", avgPrice: "99999.9", side: "BUY", type: "LIMIT" },
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.002", notional: "200", unrealizedProfit: "0", positionSide: "BOTH", leverage: "2" }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.002);
+    assert.match(body.warnings.join(" "), /filled before it could be cancelled/);
+    assert.doesNotMatch(body.warnings.join(" "), /were cancelled/);
+  });
+});
+
+test("a not-found remainder cancel with an unreadable post-cancel position reports the remainder's fate as unknown (F4b)", async () => {
+  // The cancel says the order is gone (-2013), but the position read that would
+  // prove whether it filled or was cancelled fails. Claiming resting:false would
+  // assert the remainder was accounted for; the payload has to leave it open.
+  const exchange = makeExchange({
+    orderStatus: "PARTIALLY_FILLED",
+    orderExecutedQty: "0.001",
+    cancelOrderAnswer: { code: -2013, msg: "Order does not exist." },
+    positionRiskHttpErrorAfterCancel: 500,
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001, "the fill is not guessed from a failed read");
+    assert.equal(body.resting, true, "resting:false is not proven when the position cannot be read");
+    assert.match(body.warnings.join(" "), /UNKNOWN/);
+  });
+});
+
 test("place_order post_only leaves the intent pending when both reads fail and the cancel is confirmed 0", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],
@@ -1066,6 +1182,28 @@ test("the reduced excess is reported for its own call, never for the next one", 
     assert.deepEqual(body.warnings, []);
   });
   assert.equal(inside.post("/fapi/v1/order").length, 1, "inside the cap: no reduction order");
+});
+
+test("a failed over-cap reduction is reported, never swallowed (F5)", async () => {
+  // The fill lands 20 USD over the 1000 USD cap (0.01 at 102000 = 1020), so the
+  // excess must be reduced. The reduceOnly order is refused: the exposure stays
+  // above the cap, and the operator has to be told. It used to return with
+  // warnings: [] and only the note "Nothing else was sent".
+  const exchange = makeExchange({
+    marketFill: { avgPrice: "102000", executedQty: "0.01" },
+    reduceFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: tradeEnvFile({ SWAL_MAX_NOTIONAL_USD: "1000" }), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.filledNotionalUsd, 1020);
+    assert.match(body.warnings.join(" "), /exceeded SWAL_MAX_NOTIONAL_USD by 20/);
+    assert.match(body.warnings.join(" "), /could NOT be reduced/);
+    assert.match(body.warnings.join(" "), /exposure is above SWAL_MAX_NOTIONAL_USD/);
+    assert.match(body.warnings.join(" "), /insufficient balance/);
+  });
+  const orders = exchange.post("/fapi/v1/order");
+  assert.equal(orders.length, 2);
+  assert.equal(orders[1].params.reduceOnly, "true");
 });
 
 // ---------------------------------------------------------------------------
@@ -1538,18 +1676,41 @@ test("close_position works with the daily loss lock tripped: closing is protecti
   assert.equal(exchange.post("/fapi/v1/order").length, 1);
 });
 
-test("close_position with no position only cancels the symbol's orders", async () => {
-  // A positionRisk answer with no row at all for the symbol.
+test("close_position fails closed when positionRisk has no row for the symbol (F9)", async () => {
+  // A partial/truncated positionRisk answer with no row for the symbol is an
+  // UNREAD, not a flat position: a live position whose row is missing must not
+  // have its protective stops cancelled. The definition is the same one round-6
+  // F2 uses: only a read that has a row is decisive about the position.
   const exchange = makeExchange({ positionRiskOmitsFlat: true });
   await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
     const body = JSON.parse(textOf(await client.callTool({ name: "close_position", arguments: { symbol: "BTCUSDT" } })));
     assert.equal(body.positionQuantity, null);
     assert.equal(body.closeOrder, null);
-    assert.match(body.notes.join(" "), /no row for BTCUSDT: treated as no open position/);
+    assert.equal(body.flat, false, "a missing row is not a flat position");
+    assert.equal(body.remaining, null);
+    assert.match(body.notes.join(" "), /no row for BTCUSDT/);
+    assert.match(body.notes.join(" "), /could not be read|NOT cancelled/);
     assert.equal(body.sent, false);
   });
   assert.equal(exchange.post("/fapi/v1/order").length, 0);
-  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 2);
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0, "no algo/order cancel on an unread position");
+});
+
+test("an unread position never cancels the symbol's protective orders on the emergency-close path (F9)", async () => {
+  // The entry filled but its stop failed; the positionRisk read afterwards omits
+  // the symbol's row (truncated answer). Treating that as flat would cancel the
+  // live position's protective orders. It must be reported as an unread instead.
+  const exchange = makeExchange({
+    positionRiskOmitsFlat: true,
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+  });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
+    assert.match(text, /protective stop failed after 2 attempts/);
+    assert.match(text, /could NOT be closed/);
+    assert.match(text, /MANUAL ACTION REQUIRED/);
+  });
+  assert.equal(exchange.calls.filter((call) => call.method === "DELETE").length, 0, "no cancels while the position is unread");
 });
 
 test("close_position with a zero row only cancels the symbol's orders", async () => {

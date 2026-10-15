@@ -545,6 +545,75 @@ test("grid_place is fail-closed when a level cannot be rested", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// F11: a FAILED flatten leaves the intent pending (no grid_place_outcome), and a
+// successful one writes it. M1 is applied at both emergencyClose sites.
+// ---------------------------------------------------------------------------
+
+test("a failed flatten after a LEVEL failure writes NO grid_place_outcome (F11)", async () => {
+  // The grid died on a level and the emergency close was refused: the position
+  // is still open, so writing a resolving outcome would tell the startup sweep
+  // the grid is done. The intent must stay pending.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    orderFailures: [
+      { code: -5022, msg: "Order would immediately match." },
+      { code: -2013, msg: "Order does not exist." },
+    ],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.1", notional: "9700", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+    closeFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /could not be rested as a post-only order/);
+    assert.match(text, /could NOT be closed/);
+    assert.match(text, /MANUAL ACTION REQUIRED/);
+  });
+  assert.equal(journalLines().filter((line) => line.event === "grid_place_intent").length, 1);
+  assert.equal(journalLines().filter((line) => line.event === "grid_place_outcome").length, 0, "the intent stays pending for the sweep");
+});
+
+test("a failed flatten after a STOP failure writes NO grid_place_outcome (F11)", async () => {
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    algoFailures: [{ code: -2013, msg: "Order does not exist." }, { code: -2013, msg: "Order does not exist." }],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.3", notional: "29400", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+    closeFailures: [{ code: -2010, msg: "insufficient balance" }],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /protective stop below the grid failed after 2 attempts/);
+    assert.match(text, /could NOT be closed/);
+    assert.match(text, /MANUAL ACTION REQUIRED/);
+  });
+  assert.equal(journalLines().filter((line) => line.event === "grid_place_intent").length, 1);
+  assert.equal(journalLines().filter((line) => line.event === "grid_place_outcome").length, 0, "the intent stays pending for the sweep");
+});
+
+test("a level failure whose flatten succeeds DOES write the outcome (F11 control)", async () => {
+  // The control case for the two tests above: when the flatten proves the
+  // position is closed, the grid IS resolved and the outcome is written.
+  fs.rmSync(JOURNAL, { force: true });
+  const exchange = makeExchange({
+    symbols: GRID_SYMBOLS,
+    orderFailures: [
+      { code: -5022, msg: "Order would immediately match." },
+      { code: -2013, msg: "Order does not exist." },
+    ],
+    positionsAfterOrder: [{ symbol: "BTCUSDT", positionAmt: "0.1", notional: "9700", unrealizedProfit: "0", positionSide: "BOTH", leverage: "1" }],
+  });
+  await withClient({ env: gridPlaceEnv(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const text = errorText(await client.callTool({ name: "grid_place", arguments: { symbol: "BTCUSDT", ...gridArgs } }));
+    assert.match(text, /could not be rested as a post-only order/);
+    assert.match(text, /the position was closed/);
+  });
+  const outcomes = journalLines().filter((line) => line.event === "grid_place_outcome");
+  assert.equal(outcomes.length, 1, "a confirmed flat position resolves the grid");
+  assert.equal(outcomes[0].placed, 0);
+});
+
+// ---------------------------------------------------------------------------
 // Item N1: sizing a level never depends on how many decimals the double carries.
 //
 // notional / price is an IEEE754 division: at 5 USD over 150000 it is
