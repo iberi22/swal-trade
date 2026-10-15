@@ -30,6 +30,7 @@
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import ExplainCard from './ExplainCard.svelte';
+  import SizingCard from './SizingCard.svelte';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -72,6 +73,8 @@
   const views = $derived(renderAnalysis(result));
   const topFindings = $derived(result.top.length > 0 ? result.top : result.findings);
   const legend = $derived<LegendRow[]>(findingsLegend(topFindings));
+  const selectedFinding = $derived(topFindings.find((item) => item.id === selectedId) ?? topFindings[0] ?? null);
+  let lastPrice = $state<number | null>(null);
 
   function applySettings(next: ExtensionSettings) {
     settings = next;
@@ -232,6 +235,7 @@
     void (async () => {
       try {
         rows = await fetchKlines(sym, tf);
+        lastPrice = rows[rows.length - 1]?.close ?? null;
         if (!alive) return;
         handle.setCandles(rows);
         const analysis = analyze({ symbol: sym, timeframe: tf, candles: rows });
@@ -244,6 +248,7 @@
         stream = openKlineStream(sym, tf, {
           onCandle(candle, closed) {
             if (!alive) return;
+            lastPrice = candle.close;
             handle.updateCandle(candle);
             if (!closed) return;
             const index = rows.findIndex((row) => row.time === candle.time);
@@ -501,6 +506,8 @@
       <span class="live">{symbol} · {timeframe}</span>
     </div>
   </section>
+
+  <SizingCard {lastPrice} finding={selectedFinding} />
 
   <section class="news" aria-label="Titulares">
     <h2>
