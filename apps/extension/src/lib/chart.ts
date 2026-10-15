@@ -13,6 +13,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
+import { chartPriceFormat } from './price-format';
 import type { Candle, VolumeFlow } from './types';
 import { CVD_TONE, cvdHistogramData, cvdLineData, type FlowBar, type FlowPoint } from './volume-flow-view';
 import type { ChartAnnotation, ChartPriceLine, PriceLineKind } from './findings-view';
@@ -112,6 +113,10 @@ export function mountChart(container: HTMLElement): ChartHandle {
     setCandles(candles) {
       bars = candles.map(toBar);
       series.setData(bars);
+      // La escala sigue la magnitud del precio actual: un PEPE a 0,0041 necesita 8 decimales.
+      // Al cambiar de símbolo llegan velas nuevas y el formato se recalcula aquí.
+      const last = bars[bars.length - 1];
+      if (last) series.applyOptions({ priceFormat: chartPriceFormat(last.close) });
       chart.timeScale().fitContent();
     },
     updateCandle(candle) {
