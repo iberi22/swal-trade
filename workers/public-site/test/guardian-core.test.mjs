@@ -38,7 +38,7 @@ test('breaches: daily warn/hit, notional, leverage', () => {
   const b = g.breaches(0, [pos()], { BTCUSDC: 10 }, cfg);
   assert.ok(b['notional:BTCUSDC'].includes('500'));
   assert.ok(b['lev:BTCUSDC'].includes('10x'));
-  assert.ok(g.breaches(-100, [], {}, cfg).daily_hit.includes('limite -100.00'));
+  assert.ok(g.breaches(-100, [], {}, cfg).daily_hit.includes('límite -100.00'));
 });
 
 test('hasStop cases', () => {

@@ -6,7 +6,7 @@ export async function sendTelegram({ token, chatId, text, fetchFn = fetch.bind(g
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text }),
     });
-    if (!r.ok) return { ok: false, error: `Telegram respondio HTTP ${r.status}` };
+    if (!r.ok) return { ok: false, error: `Telegram respondió HTTP ${r.status}` };
     return { ok: true };
   } catch {
     // Sin detalles: el mensaje de error de fetch puede incluir la URL con el token.
