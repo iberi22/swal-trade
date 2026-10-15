@@ -28,12 +28,16 @@ export function createClient({ apiKey, hmacKey, fetchFn = fetch.bind(globalThis)
 
   const get = (path, params = {}) => getAt(base, path, params);
 
-  async function getAt(host, path, params = {}) {
-    const q = new URLSearchParams({ ...params, timestamp: String(now() + offset), recvWindow: '5000' }).toString();
+  async function getAt(host, path, params = {}, retry = true) {
+    const q = new URLSearchParams({ ...params, timestamp: String(now() + offset), recvWindow: '15000' }).toString();
     const sig = await sign(hmacKey, q, subtle);
     const r = await fetchFn(`${host}${path}?${q}&signature=${sig}`, { method: 'GET', headers: { 'X-MBX-APIKEY': apiKey } });
     if (!r.ok) {
       const body = (await r.text()).slice(0, 200);
+      if (retry && body.replace(/\s+/g, '').includes('"code":-1021')) {
+        await syncTime();
+        return getAt(host, path, params, false);
+      }
       throw new Error(`HTTP ${r.status} ${body}`);
     }
     return r.json();
