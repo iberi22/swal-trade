@@ -845,6 +845,43 @@ test("place_order post_only cancels the resolved no-fill order exactly once (F7)
   assert.equal(failed.length, 0, "the cleanup cancel is skipped after a confirmed cancel");
 });
 
+test("a partially filled post-only entry has its resting remainder cancelled (F4)", async () => {
+  // The answer was PARTIALLY_FILLED: 0.001 filled and the other 0.001 is still
+  // on the book. Reporting resting:false and "Nothing else was sent" left up to
+  // double the capped exposure live with no account of it.
+  const exchange = makeExchange({ orderStatus: "PARTIALLY_FILLED", orderExecutedQty: "0.001" });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001);
+    assert.equal(body.resting, false, "the remainder is gone once the cancel is confirmed");
+    assert.equal(body.stop.stopPrice, "99500");
+    assert.match(body.warnings.join(" "), /partially filled/);
+    assert.match(body.warnings.join(" "), /were cancelled/);
+  });
+  const entry = exchange.post("/fapi/v1/order")[0];
+  assert.equal(entry.params.type, "LIMIT");
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "the resting remainder is cancelled by its own clientOrderId");
+  assert.equal(cancels[0].params.origClientOrderId, entry.params.clientOrderId);
+});
+
+test("a partially filled post-only entry whose remainder cancel fails reports it resting (F4)", async () => {
+  // The cancel of the remainder is refused, so the 0.001 that did not fill is
+  // still resting and the payload has to say so, with the quantity and price.
+  const exchange = makeExchange({ orderStatus: "PARTIALLY_FILLED", orderExecutedQty: "0.001", cancelOrderHttpError: 500 });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: { ...placeArgs, type: "post_only" } })));
+    assert.equal(body.filledQuantity, 0.001);
+    assert.equal(body.resting, true, "an unconfirmed cancel leaves the remainder resting");
+    assert.equal(body.restingPrice, "99999.9");
+    assert.match(body.warnings.join(" "), /partially filled/);
+    assert.match(body.warnings.join(" "), /STILL RESTING/);
+    assert.match(body.warnings.join(" "), /0\.001/);
+  });
+  const cancels = exchange.calls.filter((call) => call.method === "DELETE" && call.path === "/fapi/v1/order");
+  assert.equal(cancels.length, 1, "the remainder is cancelled once, by its own id");
+});
+
 test("place_order post_only leaves the intent pending when both reads fail and the cancel is confirmed 0", async () => {
   const exchange = makeExchange({
     networkErrorOnOrder: [1],

@@ -96,6 +96,12 @@ interface EntryOutcome {
   sent?: boolean;
   /** True when the order is CONFIRMED gone (a cancel inside this function already proved it): the caller then skips its cleanup cancel. */
   cancelled?: boolean;
+  /**
+   * A post-only entry that PARTIALLY filled and left a remainder resting: its
+   * own clientOrderId, the resting quantity and its price. The caller cancels it
+   * by that id once the protective stop is armed.
+   */
+  partialRemainder?: { clientOrderId: string; quantity: string; price: string };
   /** True when the outcome must NOT be journaled as resolved: an order may still be resting, so the intent stays pending for the sweep. */
   unresolved?: boolean;
 }
@@ -183,7 +189,26 @@ async function postOnlyEntry(
         // can fill in the same instant it is rejected, and the answer carries the
         // executedQty. A filled quantity means a position exists, so it must be
         // protected instead of repriced.
-        if (filled > 0) return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled, resting: false };
+        if (filled > 0) {
+          // A PARTIALLY_FILLED answer leaves the rest of the order RESTING on the
+          // book. Returning with no trace of it reported resting:false while a
+          // second slice of the capped exposure was still live. It is named here
+          // so the caller cancels it once the stop is armed.
+          const remainder = decimalNumber(input.quantity) - filled;
+          if (status === "PARTIALLY_FILLED" && remainder > 0) {
+            return {
+              ok: true,
+              order,
+              price: aligned,
+              clientOrderId,
+              filled: true,
+              filledQty: filled,
+              resting: false,
+              partialRemainder: { clientOrderId, quantity: toDecimalText(remainder), price: aligned },
+            };
+          }
+          return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled, resting: false };
+        }
         return { ok: true, order, price: aligned, clientOrderId, filled: false, resting: true };
       }
       if (status === "FILLED") return { ok: true, order, price: aligned, clientOrderId, filled: true, filledQty: filled > 0 ? filled : decimalNumber(input.quantity) };
@@ -946,6 +971,44 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
       return refused(`the protective stop failed after ${STOP_ATTEMPTS} attempts (${stop.error}); ${describeFlatten(aborted)}.`);
     }
 
+    // A post-only entry that PARTIALLY filled left the rest of the order resting
+    // on the book. The stop is armed now, so that remainder is cancelled by its
+    // own clientOrderId: the capped notional was computed from the fill, and a
+    // remainder that fills later is exposure nobody accounted for. Only a
+    // confirmed cancel (or a definitive "order does not exist") lets the tool
+    // report resting:false; otherwise the resting quantity and price are
+    // reported and warned about.
+    let resting = entry.resting ?? false;
+    let restingPrice = entry.price ?? null;
+    const remainderWarnings: string[] = [];
+    const remainder = entry.partialRemainder;
+    if (remainder) {
+      let gone = false;
+      try {
+        const result = await client.cancelOrder(symbol, remainder.clientOrderId);
+        logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: true, result });
+        gone = true;
+      } catch (err) {
+        const message = redactSecrets(errorMessage(err), []);
+        logStep(journal, "cancel_partial_remainder", { clientOrderId: remainder.clientOrderId, canceled: false, error: message });
+        gone = isCancelNotFound(err);
+        if (!gone) {
+          resting = true;
+          restingPrice = remainder.price;
+          remainderWarnings.push(
+            `the post-only entry partially filled ${entry.filledQty ?? 0} of ${quantity} and ${remainder.quantity} are STILL RESTING at ${remainder.price}, because the cancel of the remainder was not confirmed (${message}): that resting notional is not part of the filled notional the cap was checked against.`,
+          );
+        }
+      }
+      if (gone) {
+        resting = false;
+        restingPrice = null;
+        remainderWarnings.push(
+          `the post-only entry partially filled ${entry.filledQty ?? 0} of ${quantity}; the remaining ${remainder.quantity} resting at ${remainder.price} were cancelled.`,
+        );
+      }
+    }
+
     let takeProfitResponse: unknown = null;
     let takeProfitWarning: string | null = null;
     let takeProfitNote: string | null = null;
@@ -985,13 +1048,14 @@ export async function placeOrder(deps: WriteDeps, args: PlaceOrderArgs): Promise
         stopPrice,
         stopLossPct,
         stopResponse: stop.response,
-        resting: entry.resting ?? false,
-        restingPrice: entry.price ?? null,
+        resting,
+        restingPrice,
         journal,
         warnings: [
           ...(stop.warning ? [stop.warning] : []),
           ...(takeProfitWarning ? [`the take profit was not placed: ${takeProfitWarning}`] : []),
           ...(takeProfitNote ? [takeProfitNote] : []),
+          ...remainderWarnings,
           ...sweepAlerts,
         ],
         startupSweep: sweep.findings.length > 0 || sweep.errors.length > 0 ? sweep : null,
