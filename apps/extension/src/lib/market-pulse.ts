@@ -20,9 +20,11 @@ import type {
  */
 
 const REST_ORIGIN = 'https://fapi.binance.com';
-const WS_ORIGIN = 'wss://fstream.binance.com/ws';
+// Binance sirve los streams de mercado en /market/ws; la ruta vieja /ws acepta la conexión
+// pero ya no envía datos (comprobado en vivo el 2026-10-15).
+const WS_ORIGIN = 'wss://fstream.binance.com/market/ws';
 
-export const DEPTH_LIMIT = 100;
+export const DEPTH_LIMIT = 500;
 /** Muros: refresco modesto (>= 10 s), nunca al ritmo del mercado. */
 export const DEPTH_REFRESH_MS = 15_000;
 export const FEAR_GREED_URL = 'https://api.alternative.me/fng/?limit=1';

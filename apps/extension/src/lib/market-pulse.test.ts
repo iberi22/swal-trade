@@ -133,8 +133,8 @@ class MemoryCache implements PulseCache {
 
 describe('urls y parseo del pulso', () => {
   it('construye las URLs públicas y valida el símbolo', () => {
-    expect(depthUrl('btcusdt')).toBe('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=100');
-    expect(forceOrderUrl('btcusdt')).toBe('wss://fstream.binance.com/ws/btcusdt@forceOrder');
+    expect(depthUrl('btcusdt')).toBe('https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=500');
+    expect(forceOrderUrl('btcusdt')).toBe('wss://fstream.binance.com/market/ws/btcusdt@forceOrder');
     expect(() => depthUrl('no vale')).toThrow();
     expect(() => forceOrderUrl('')).toThrow();
     expect(FEAR_GREED_URL).toBe('https://api.alternative.me/fng/?limit=1');
@@ -182,7 +182,7 @@ describe('fetchWalls', () => {
       return jsonResponse(DEPTH);
     }) as unknown as typeof fetch;
     const walls = await fetchWalls('BTCUSDT', fetchImpl);
-    expect(calls[0]).toContain('/fapi/v1/depth?symbol=BTCUSDT&limit=100');
+    expect(calls[0]).toContain('/fapi/v1/depth?symbol=BTCUSDT&limit=500');
     expect(walls?.mid).toBe(100);
     expect(walls?.bids.map((w) => w.size)).toEqual([20]);
     expect(walls?.asks.map((w) => w.size)).toEqual([40, 10]);
@@ -210,7 +210,7 @@ describe('openLiquidationStream', () => {
       { onEvent: (event) => events.push(event), onLive: (value) => live.push(value) },
       fakeWs,
     );
-    expect(FakeSocket.last.url).toBe('wss://fstream.binance.com/ws/btcusdt@forceOrder');
+    expect(FakeSocket.last.url).toBe('wss://fstream.binance.com/market/ws/btcusdt@forceOrder');
     FakeSocket.last.open();
     expect(live).toEqual([true]);
     FakeSocket.last.send(FORCE_ORDER);
