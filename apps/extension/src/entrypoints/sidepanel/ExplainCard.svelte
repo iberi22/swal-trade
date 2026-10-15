@@ -79,7 +79,7 @@
   {#if view}
     <div class="answer" data-testid="explain-answer" data-source={view.source}>
       <p class="note source">
-        {sourceLabel(view)}{#if view.reason}<span class="reason"> · {view.reason}</span>{/if}
+        {sourceLabel(view)}{#if view.reason}<span class="reason"> Motivo: {view.reason}.</span>{/if}
       </p>
       {#if view.summary}<p class="summary">{view.summary}</p>{/if}
       {#if view.scenarios.length > 0}
