@@ -56,7 +56,8 @@ export SWAL_MCP_TRADING="enabled"
 export SWAL_MCP_NETWORK="testnet"
 
 # Conservative risk limits
-export SWAL_MAX_NOTIONAL_USD="${SWAL_MAX_NOTIONAL_USD:-25}"
+# BTCUSDT needs >= 50 USDT notional on testnet (fake money).
+export SWAL_MAX_NOTIONAL_USD="${SWAL_MAX_NOTIONAL_USD:-60}"
 export SWAL_MAX_LEVERAGE="${SWAL_MAX_LEVERAGE:-2}"
 export SWAL_DAILY_LOSS_USD="${SWAL_DAILY_LOSS_USD:-10}"
 export SWAL_MCP_SYMBOLS="${SWAL_MCP_SYMBOLS:-BTCUSDT}"

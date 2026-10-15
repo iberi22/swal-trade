@@ -50,7 +50,7 @@ if (!fs.existsSync(serverPath)) {
 // 4. Build child process environment
 const childEnv = buildTestnetChildEnv({
   credentials: credsResult.credentials,
-  maxNotionalUsd: process.env.SWAL_MAX_NOTIONAL_USD || '25',
+  maxNotionalUsd: process.env.SWAL_MAX_NOTIONAL_USD || '60', // BTCUSDT min notional on testnet is 50 USDT (fake money)
   maxLeverage: process.env.SWAL_MAX_LEVERAGE || '2',
   dailyLossUsd: process.env.SWAL_DAILY_LOSS_USD || '10',
   symbols: 'BTCUSDT',
@@ -177,7 +177,7 @@ async function main() {
       arguments: {
         symbol: 'BTCUSDT',
         side: 'BUY',
-        notional_usd: parseFloat(childEnv.SWAL_MAX_NOTIONAL_USD || '25'),
+        notional_usd: parseFloat(childEnv.SWAL_MAX_NOTIONAL_USD || '60'),
         stop_loss_pct: 1.5,
         leverage: 1,
       },

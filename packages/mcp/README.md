@@ -65,7 +65,7 @@ Para verificar las herramientas de escritura en Binance Futures Testnet antes de
    ```bash
    claude mcp add --scope user swal-trade-testnet -- packages/mcp/scripts/swal-trade-mcp-testnet.sh
    ```
-   El wrapper carga únicamente `~/.config/swal-trade/testnet.env`, fuerza `SWAL_MCP_TRADING=enabled` y `SWAL_MCP_NETWORK=testnet`, desactiva cualquier confirmación de mainnet y aplica límites conservadores (notional 25 USD, leverage 2, pérdida diaria 10 USD).
+   El wrapper carga únicamente `~/.config/swal-trade/testnet.env`, fuerza `SWAL_MCP_TRADING=enabled` y `SWAL_MCP_NETWORK=testnet`, desactiva cualquier confirmación de mainnet y aplica límites conservadores (nocional 60 USD, porque BTCUSDT exige al menos 50 en testnet; apalancamiento 2; pérdida diaria 10 USD).
 
 
 ## Tools
