@@ -20,13 +20,13 @@ claude mcp add swal-trade -- node packages/mcp/dist/index.js
 
 `place_order`, `close_position` y `grid_place` están **en desarrollo y no se deben usar con dinero real**. Vienen desactivadas por defecto y apuntan a testnet salvo doble confirmación. Hasta pasar una prueba en testnet, úsalas solo en testnet.
 
-Puntos abiertos de la revisión (round 7): **ninguno**. Los hallazgos de la última revisión independiente están cerrados:
+Puntos abiertos de la revisión (rounds 7 y 7b): **ninguno**. Los hallazgos de la última revisión independiente están cerrados:
 
 - una fila ausente en `positionRisk` **no** se lee como “posición plana”: es una lectura no concluyente, falla cerrado y no cancela ninguna orden;
 - una reducción fallida del exceso sobre `SWAL_MAX_NOTIONAL_USD` se reporta como aviso, nunca se silencia;
 - una entrada post-only sin fill resuelto se cancela **una sola vez** (sin doble `DELETE`);
-- el resto en reposo de una entrada post-only parcialmente ejecutada se cancela justo después de armar el stop, y `resting:false` solo se informa con la cancelación confirmada;
-- el nocional del cap se deriva de `positionRisk` (`|positionAmt| × markPrice`) cuando la cuenta lo reporta en cero o ausente, y falla cerrado si no puede derivarse;
+- el resto en reposo de una entrada post-only parcialmente ejecutada se cancela justo después de armar el stop, y `resting:false` solo se informa con la cancelación confirmada; si ese resto se llenó antes de cancelarse, se relee la posición y se informa el fill real;
+- el nocional del cap se deriva de `positionRisk` (`|positionAmt| × markPrice`, exposición bruta por fila, también en modo hedge) cuando la cuenta lo reporta en cero o ausente, y falla cerrado si no puede derivarse;
 - hay tests que fijan que un aplanamiento **fallido** del grid deja la intención pendiente (sin `grid_place_outcome`), y el contrapunto con aplanamiento correcto.
 
 ## Tools
