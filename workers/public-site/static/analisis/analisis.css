@@ -56,3 +56,26 @@ button[disabled] { opacity: .5; cursor: default; }
 .news a { font-size: .85rem; font-weight: 600; }
 .news .meta { font-size: .7rem; color: hsl(var(--subtle-foreground)); }
 .foot { padding: .5rem 1.25rem 1.5rem; }
+
+/* Pulso de mercado: hechos del libro, liquidaciones, miedo/codicia y tendencia.
+   Diseño de un solo tono, blanco hueso y sin bordes. */
+.pulse { display: flex; flex-direction: column; gap: .5rem; }
+.pulse-header { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+.pulse-header h2 { margin: 0; }
+.pulse-state { font-size: .72rem; color: hsl(var(--subtle-foreground)); }
+.pulse-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .5rem; }
+.pulse-subcard { display: flex; flex-direction: column; gap: .25rem; min-width: 0; background: hsl(var(--background)); border-radius: calc(var(--radius) - .25rem); padding: .6rem .7rem; }
+.pulse-subcard h3 { margin: 0 0 .2rem; font-size: .75rem; font-weight: 600; color: hsl(var(--muted-foreground)); letter-spacing: .02em; }
+.pulse-subcard .big { font-size: 1.35rem; line-height: 1.2; font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+.pulse-subcard .unit { font-size: .75rem; font-weight: 400; color: hsl(var(--subtle-foreground)); }
+.pulse-subcard .note { margin: 0; font-size: .72rem; line-height: 1.4; color: hsl(var(--muted-foreground)); }
+.pulse-subcard .empty { margin: 0; font-size: .75rem; color: hsl(var(--subtle-foreground)); }
+.walls, .regime { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .2rem; }
+.walls li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: .4rem; align-items: baseline; font-family: var(--font-mono); font-size: .72rem; }
+.wall-price { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wall-usd, .wall-dist { color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.walls li[data-side="bid"] .wall-price::before { content: "▼ "; color: hsl(var(--subtle-foreground)); }
+.walls li[data-side="ask"] .wall-price::before { content: "▲ "; color: hsl(var(--subtle-foreground)); }
+.regime li { display: flex; justify-content: space-between; gap: .5rem; font-size: .75rem; }
+.regime-tf { font-family: var(--font-mono); color: hsl(var(--muted-foreground)); }
+.regime-label { font-weight: 600; }

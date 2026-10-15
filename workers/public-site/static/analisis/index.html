@@ -20,7 +20,7 @@
     <form class="controls" id="controls">
       <label>Símbolo
         <select id="symbol">
-          <option>BTCUSDT</option><option>ETHUSDT</option><option>BTCUSDC</option><option>ETHUSDC</option>
+          <option>BTCUSDT</option><option>ETHUSDT</option><option>BTCUSDC</option><option>ETHUSDC</option><option>1000PEPEUSDC</option>
         </select>
       </label>
       <label>Temporalidad
@@ -62,15 +62,34 @@
         <p class="muted small">Análisis informativo, no es asesoría financiera. La fuerza del patrón no es una probabilidad. La respuesta la escribe un modelo de lenguaje y puede equivocarse o inventar: compárala siempre con los niveles del gráfico.</p>
       </section>
 
-      <section class="card">
-        <h2>Tendencia</h2>
-        <ul id="trends" class="kv"></ul>
-      </section>
+      <section class="card pulse" aria-label="Pulso de mercado">
+        <div class="pulse-header">
+          <h2>Pulso de mercado</h2>
+          <span id="pulse-state" class="pulse-state" role="status">sin conexión en vivo</span>
+        </div>
 
-      <section class="card">
-        <h2>Miedo y codicia</h2>
-        <p id="fng" class="big">—</p>
-        <p id="fng-label" class="muted small"></p>
+        <div class="pulse-grid">
+          <article class="pulse-subcard" aria-label="Muros del libro">
+            <h3>Muros del libro</h3>
+            <div id="pulse-walls"><p class="empty">No disponible ahora.</p></div>
+          </article>
+
+          <article class="pulse-subcard" aria-label="Liquidaciones recientes">
+            <h3>Liquidaciones recientes</h3>
+            <div id="pulse-liquidations"><p class="empty">Sin liquidaciones desde que abriste el panel.</p></div>
+          </article>
+
+          <article class="pulse-subcard" aria-label="Miedo y codicia">
+            <h3>Miedo y codicia</h3>
+            <p id="fng" class="big">—</p>
+            <p id="fng-label" class="muted small"></p>
+          </article>
+
+          <article class="pulse-subcard" aria-label="Régimen por temporalidad">
+            <h3>Régimen</h3>
+            <ul id="trends" class="regime"></ul>
+          </article>
+        </div>
       </section>
 
       <section class="card">
