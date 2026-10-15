@@ -15,6 +15,7 @@
     type LegendRow,
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
+  import MarketPulse from './MarketPulse.svelte';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { NEWS_REFRESH_MS, fetchNews, relativeTime, type NewsItem } from '../../lib/news';
@@ -28,6 +29,7 @@
   } from '../../lib/settings';
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
+  import ExplainCard from './ExplainCard.svelte';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -522,6 +524,17 @@
       </ul>
     {/if}
   </section>
+
+  <MarketPulse symbol={symbol} />
+
+  <ExplainCard
+    {symbol}
+    {timeframe}
+    {result}
+    ready={settingsLoaded}
+    enabled={settings.explainWithAi}
+    onToggle={(value) => applySettings({ ...settings, explainWithAi: value })}
+  />
 
   <details class="settings" bind:open={settingsOpen}>
     <summary>Ajustes</summary>

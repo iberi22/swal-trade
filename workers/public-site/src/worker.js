@@ -253,6 +253,17 @@ function withSecurityHeaders(response, pathname = '/') {
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'no-referrer');
 
+  // PWA: el service worker se revisa en cada carga y puede controlar todo el origen; el
+  // manifiesto lleva su Content-Type correcto. No dependen de la heuristica de assets.
+  // (La CSP no necesita tocarse: worker-src y manifest-src caen a default-src 'self'.)
+  if (pathname === '/sw.js') {
+    headers.set('Cache-Control', 'no-cache');
+    headers.set('Service-Worker-Allowed', '/');
+  } else if (pathname === '/manifest.webmanifest') {
+    headers.set('Content-Type', 'application/manifest+json');
+    headers.set('Cache-Control', 'public, max-age=3600');
+  }
+
   const body = (response.status === 204 || response.status === 304) ? null : response.body;
   return new Response(body, {
     status: response.status,

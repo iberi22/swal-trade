@@ -9,8 +9,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
  * Permisos mínimos. `sidePanel` solo existe en Chromium; Firefox usa
  * `sidebar_action`, que WXT añade al ver el entrypoint sidepanel.
  * Hosts: la página donde corre el content script, el REST público de velas,
- * el websocket público y los titulares. La justificación para la tienda está
- * en docs/STORE_LISTING.md. El aviso es https://trade.swal.network/extension-privacy/
+ * el websocket público, los titulares y el explicador con IA (solo si el
+ * usuario enciende «Explicaciones con IA»). La justificación para la tienda
+ * está en docs/STORE_LISTING.md. El aviso es
+ * https://trade.swal.network/extension-privacy/
  */
 export default defineConfig({
   srcDir: 'src',
@@ -46,8 +48,14 @@ export default defineConfig({
       'https://www.binance.com/static/chart/tradingview/*',
       'https://www.tradingview.com/chart/*',
       'https://fapi.binance.com/fapi/v1/klines*',
+      // Pulso de mercado: muros del libro e índice de miedo/codicia.
+      'https://fapi.binance.com/fapi/v1/depth*',
+      'https://api.alternative.me/fng/*',
       'wss://fstream.binance.com/*',
       'https://trade.swal.network/api/news*',
+      // Explicador con IA. Solo se llama si el usuario enciende el interruptor;
+      // el cuerpo lleva símbolo, temporalidad y patrones, nunca datos de cuenta.
+      'https://trade.swal.network/api/explain*',
     ],
     action: {
       default_title: '__MSG_actionTitle__',

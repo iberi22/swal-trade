@@ -90,3 +90,72 @@ export interface AnalysisResult {
   /** Flujo de volumen (delta/CVD) si el núcleo lo pudo calcular. */
   volumeFlow?: VolumeFlow | null;
 }
+
+/** Muro del libro de ordenes: nivel grande y cerca del precio medio. */
+export interface DepthWall {
+  price: number;
+  size: number;
+  /** precio x cantidad, en USDT. */
+  usd: number;
+  /** distancia porcentual al precio medio; siempre >= 0. */
+  distancePct: number;
+}
+
+/** Estado del libro: solo los muros, no el libro completo. */
+export interface DepthWalls {
+  mid: number | null;
+  spreadPct: number | null;
+  medianSize: number;
+  bids: DepthWall[];
+  asks: DepthWall[];
+}
+
+/** Liquidacion normalizada del stream publico `<simbolo>@forceOrder`. */
+export interface LiquidationEvent {
+  symbol: string;
+  /** instante de la operacion, en ms. */
+  at: number;
+  /** 'long' = se liquido una posicion larga (la orden fue de venta). */
+  side: 'long' | 'short';
+  usd: number;
+  price: number;
+  qty: number;
+}
+
+export interface LiquidationLargest {
+  usd: number;
+  at: number;
+  side: 'long' | 'short';
+}
+
+export interface LiquidationWindow {
+  minutes: number;
+  longUsd: number;
+  shortUsd: number;
+  totalUsd: number;
+  count: number;
+  largest: LiquidationLargest | null;
+}
+
+export interface LiquidationSummary {
+  /** eventos validos acumulados (dentro o fuera de las ventanas). */
+  count: number;
+  windows: LiquidationWindow[];
+  /** el mayor de la ventana mas amplia. */
+  largest: LiquidationLargest | null;
+}
+
+/** Miedo/codicia de alternative.me con la etiqueta en español. */
+export interface FearGreed {
+  /** 0 = miedo extremo, 100 = codicia extrema. */
+  value: number;
+  classification: string;
+  label: string;
+}
+
+/** Tendencia determinista de una temporalidad del pulso. */
+export interface TimeframeTrend {
+  timeframe: Timeframe;
+  direction: 'up' | 'down' | 'neutral';
+  label: string;
+}

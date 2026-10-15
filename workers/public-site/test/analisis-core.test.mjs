@@ -676,3 +676,94 @@ test('analyze expone volumeFlow y los nuevos hallazgos; el top sigue siendo dive
   };
   walk(await analyze({ symbol: 'BTCUSDT', timeframe: '15m', candles: c }));
 });
+
+// ---------- pulso de mercado: muros del libro y liquidaciones ----------
+import { depthWalls, liquidationSummary, DEPTH_WALL_DEFAULTS, LIQUIDATION_DEFAULTS } from '../static/analisis/analysis-core.js';
+
+test('depthWalls: muros grandes y cercanos al precio medio, con USD y distancia', () => {
+  const depth = {
+    bids: [['99.9', '1'], ['99.8', '1'], ['99.7', '1'], ['99.6', '1'], ['99.5', '20'], ['95.0', '50']],
+    asks: [['100.1', '1'], ['100.2', '1'], ['100.3', '1'], ['100.4', '10'], ['100.5', '40']],
+  };
+  const out = depthWalls(depth);
+  assert.equal(out.mid, 100);
+  assert.equal(out.spreadPct, 0.2);
+  assert.equal(out.medianSize, 1);
+  // 95.0 está al 5 %: fuera del rango por defecto (2 %). 99.9 pesa 1: no es muro.
+  assert.deepEqual(out.bids, [{ price: 99.5, size: 20, usd: 1990, distancePct: 0.5 }]);
+  // Los asks se ordenan por tamaño: primero el de 40 y después el de 10.
+  assert.deepEqual(out.asks, [
+    { price: 100.5, size: 40, usd: 4020, distancePct: 0.5 },
+    { price: 100.4, size: 10, usd: 1004, distancePct: 0.4 },
+  ]);
+});
+
+test('depthWalls: sin niveles dominantes no hay muros', () => {
+  const out = depthWalls({ bids: [['99.9', '5'], ['99.8', '5']], asks: [['100.1', '5'], ['100.2', '5']] });
+  assert.equal(out.medianSize, 5);
+  assert.deepEqual(out.bids, []);
+  assert.deepEqual(out.asks, []);
+  // Con wallK más bajo el mismo libro sí tiene muros: el umbral es configurable.
+  const loose = depthWalls({ bids: [['99.9', '5'], ['99.8', '5']], asks: [['100.1', '5'], ['100.2', '5']] }, { wallK: 0.5 });
+  assert.equal(loose.asks.length, 2);
+});
+
+test('depthWalls: corta en maxWalls y ordena por tamaño', () => {
+  const asks = [['100.1', '10'], ['100.2', '50'], ['100.3', '30'], ['100.4', '20'], ['100.5', '40']];
+  const bids = [['99.9', '1'], ['99.8', '1'], ['99.7', '1'], ['99.6', '1'], ['99.5', '1']];
+  const out = depthWalls({ bids, asks }, { maxWalls: 3 });
+  assert.deepEqual(out.asks.map((w) => w.size), [50, 40, 30]);
+});
+
+test('depthWalls: libro vacío o basura no lanza y devuelve el hueco', () => {
+  const empty = { mid: null, spreadPct: null, medianSize: 0, bids: [], asks: [] };
+  assert.deepEqual(depthWalls(null), empty);
+  assert.deepEqual(depthWalls({}), empty);
+  assert.deepEqual(depthWalls({ bids: [], asks: [] }), empty);
+  assert.deepEqual(depthWalls({ bids: [['0', '1'], ['x', '2']], asks: [['100.1', '1']] }), empty);
+  assert.equal(DEPTH_WALL_DEFAULTS.wallRangePct, 2);
+});
+
+test('liquidationSummary: totales por lado en 5 y 15 min y el mayor evento', () => {
+  const now = 1_700_000_000_000;
+  const events = [
+    { at: now - 60_000, side: 'long', usd: 1000 },
+    { at: now - 4 * 60_000, side: 'short', usd: 2000 },
+    { at: now - 10 * 60_000, side: 'long', usd: 3000 },
+    { at: now - 20 * 60_000, side: 'short', usd: 9000 }, // fuera de las dos ventanas
+  ];
+  const out = liquidationSummary(events, {}, now);
+  assert.equal(out.count, 4);
+  assert.deepEqual(out.windows.map((w) => w.minutes), [5, 15]);
+  const [five, fifteen] = out.windows;
+  assert.deepEqual(
+    { long: five.longUsd, short: five.shortUsd, total: five.totalUsd, count: five.count },
+    { long: 1000, short: 2000, total: 3000, count: 2 },
+  );
+  assert.deepEqual(
+    { long: fifteen.longUsd, short: fifteen.shortUsd, total: fifteen.totalUsd, count: fifteen.count },
+    { long: 4000, short: 2000, total: 6000, count: 3 },
+  );
+  assert.deepEqual(five.largest, { usd: 2000, at: now - 4 * 60_000, side: 'short' });
+  assert.deepEqual(out.largest, { usd: 3000, at: now - 10 * 60_000, side: 'long' });
+});
+
+test('liquidationSummary: descarta basura y aguanta la lista vacía', () => {
+  const now = 1_700_000_000_000;
+  const events = [
+    { at: now - 1000, side: 'long', usd: 500 },
+    { at: now - 1000, side: 'neutral', usd: 10_000 }, // lado desconocido
+    { at: now - 1000, side: 'long', usd: -5 },        // USD no positivo
+    { at: now - 1000, side: 'short', usd: Number.NaN },
+    { side: 'long', usd: 100 },                        // sin instante
+    null,
+  ];
+  const out = liquidationSummary(events, {}, now);
+  assert.equal(out.count, 1);
+  assert.equal(out.windows[0].totalUsd, 500);
+  const none = liquidationSummary([], {}, now);
+  assert.equal(none.count, 0);
+  assert.equal(none.largest, null);
+  assert.deepEqual(none.windows.map((w) => w.totalUsd), [0, 0]);
+  assert.deepEqual(LIQUIDATION_DEFAULTS.windowsMinutes, [5, 15]);
+});

@@ -78,6 +78,7 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      explainWithAi: false,
     });
   });
 
@@ -88,7 +89,13 @@ describe('normalizeSettings', () => {
         symbols: 'BTC, ETH',
         autoSync: false,
       }),
-    ).toEqual({ defaultTimeframe: '4h', symbols: ['BTC', 'ETH'], autoSync: false, paintOnChart: false });
+    ).toEqual({
+      defaultTimeframe: '4h',
+      symbols: ['BTC', 'ETH'],
+      autoSync: false,
+      paintOnChart: false,
+      explainWithAi: false,
+    });
   });
 
   it('una temporalidad que el panel no dibuja vuelve al default', () => {
@@ -99,6 +106,7 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      explainWithAi: false,
     });
   });
 
@@ -116,6 +124,14 @@ describe('normalizeSettings', () => {
     expect(DEFAULT_SETTINGS.paintOnChart).toBe(false);
   });
 
+  it('las explicaciones con IA solo se encienden con true explícito', () => {
+    expect(normalizeSettings({}).explainWithAi).toBe(false);
+    expect(normalizeSettings({ explainWithAi: true }).explainWithAi).toBe(true);
+    expect(normalizeSettings({ explainWithAi: 'true' }).explainWithAi).toBe(false);
+    expect(normalizeSettings({ explainWithAi: 1 }).explainWithAi).toBe(false);
+    expect(DEFAULT_SETTINGS.explainWithAi).toBe(false);
+  });
+
   it('no se deja intoxicar con campos inventados', () => {
     const settings = normalizeSettings({
       defaultTimeframe: '1d',
@@ -127,6 +143,7 @@ describe('normalizeSettings', () => {
     expect(Object.keys(settings).sort()).toEqual([
       'autoSync',
       'defaultTimeframe',
+      'explainWithAi',
       'paintOnChart',
       'symbols',
     ]);
@@ -147,7 +164,13 @@ describe('settingsFromStorage', () => {
   it('lee la clave settings', () => {
     expect(
       settingsFromStorage({ [SETTINGS_KEY]: { defaultTimeframe: '15m', symbols: 'ETH' } }),
-    ).toEqual({ defaultTimeframe: '15m', symbols: ['ETH'], autoSync: true, paintOnChart: false });
+    ).toEqual({
+      defaultTimeframe: '15m',
+      symbols: ['ETH'],
+      autoSync: true,
+      paintOnChart: false,
+      explainWithAi: false,
+    });
   });
 
   it('acepta el objeto pelado por si el formato cambia', () => {
@@ -156,6 +179,7 @@ describe('settingsFromStorage', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      explainWithAi: false,
     });
   });
 

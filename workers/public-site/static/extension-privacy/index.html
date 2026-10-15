@@ -17,6 +17,10 @@
   <meta name="twitter:card" content="summary">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/site.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f8f6f1">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <script src="/pwa-register.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -62,9 +66,25 @@
           <td><code>symbol=BTC</code> o <code>symbol=ETH</code>, y <code>limit</code></td>
           <td>solo si el par abierto es de BTC o de ETH</td>
         </tr>
+        <tr>
+          <td><code>GET https://fapi.binance.com/fapi/v1/depth</code></td>
+          <td>símbolo y número de niveles del libro</td>
+          <td>cada 15 s, solo mientras el panel está abierto y visible (pulso de mercado)</td>
+        </tr>
+        <tr>
+          <td><code>wss://fstream.binance.com/market/ws/&lt;símbolo&gt;@forceOrder</code></td>
+          <td>símbolo en la ruta del stream</td>
+          <td>mientras el panel está abierto, para sumar las liquidaciones públicas</td>
+        </tr>
+        <tr>
+          <td><code>GET https://api.alternative.me/fng/?limit=1</code></td>
+          <td>nada propio: es el índice público de miedo y codicia</td>
+          <td>como mucho una vez por hora; el valor se guarda en el almacenamiento de la extensión</td>
+        </tr>
       </tbody>
     </table>
-    <p>Como en cualquier conexión HTTPS o websocket, Binance y trade.swal.network ven la dirección IP de esa conexión. La extensión no le pone un identificador de usuario, no la guarda en una cuenta y no la cruza con una identidad. No hay analítica ni píxeles de seguimiento.</p>
+    <p>Como en cualquier conexión HTTPS o websocket, Binance, trade.swal.network y alternative.me ven la dirección IP de esa conexión. La extensión no le pone un identificador de usuario, no la guarda en una cuenta y no la cruza con una identidad. No hay analítica ni píxeles de seguimiento.</p>
+    <p>Si enciendes «Explicaciones con IA» en la tarjeta Explicación del panel, la extensión envía el símbolo, la temporalidad y los patrones detectados (con sus niveles) a <code>POST https://trade.swal.network/api/explain</code>. Nunca envía datos de tu cuenta: no lee balances, órdenes ni claves. El interruptor arranca apagado, la respuesta se pinta como texto y el servicio limita las peticiones por dirección IP.</p>
 
     <h2>Qué no sale</h2>
     <ul>
@@ -89,9 +109,11 @@
       <li>Public candles: <code>GET https://fapi.binance.com/fapi/v1/klines</code> with the symbol, the timeframe, and a candle limit.</li>
       <li>The live candle: a public websocket at <code>wss://fstream.binance.com/market/ws/</code>, falling back to <code>wss://fstream.binance.com/ws/</code>, with the symbol and the timeframe in the path.</li>
       <li>Headlines, and only for BTC or ETH: <code>GET https://trade.swal.network/api/news?symbol=BTC|ETH&amp;limit=5</code>.</li>
+      <li>Market pulse, only while the panel is open: the public order book <code>GET https://fapi.binance.com/fapi/v1/depth</code> every 15 s, public liquidations on <code>wss://fstream.binance.com/market/ws/&lt;symbol&gt;@forceOrder</code>, and the public Fear and Greed index <code>GET https://api.alternative.me/fng/?limit=1</code> at most once an hour.</li>
     </ul>
     <p>The extension adds no API key, no auth header, and no cookie of its own. It does not read account data, balances, orders, forms, cookies, or browsing history. With the toggle on, the extension creates locked drawings directly on the page's chart, but it never reads the account; the paint command is delivered to open Binance futures tabs. The content scripts run on <code>binance.com/*/futures/*</code>, <code>tradingview.com/chart/*</code> and, for painting, the same-origin chart iframe <code>binance.com/static/chart/tradingview/*</code>. They read the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
-    <p>As with any HTTPS or websocket connection, Binance and trade.swal.network see the connection's IP address. The extension does not attach a user id, store that address on an account, or link it to an identity. Questions: <a href="/contact/">soporte@swal.network</a>. The site policy is at <a href="/privacy/">/privacy/</a>.</p>
+    <p>If you turn on &quot;AI explanations&quot; in the panel's Explanation card, the extension sends the symbol, the timeframe, and the detected patterns (with their levels) to <code>POST https://trade.swal.network/api/explain</code>. It never sends account data: it does not read balances, orders, or keys. The switch starts off, the answer is rendered as text, and the service rate-limits each IP address.</p>
+    <p>As with any HTTPS or websocket connection, Binance, trade.swal.network and alternative.me see the connection's IP address. The extension does not attach a user id, store that address on an account, or link it to an identity. Questions: <a href="/contact/">soporte@swal.network</a>. The site policy is at <a href="/privacy/">/privacy/</a>.</p>
   </main>
   <footer class="site-footer">
     <p id="disclaimer" class="disclaimer">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Ninguna estrategia del bot público tiene todavía una ventaja estadística validada. <a href="/risk/">Aviso de riesgo</a></p>

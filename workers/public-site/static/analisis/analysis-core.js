@@ -1827,3 +1827,99 @@ export const TOOL_SPEC = {
   },
   output: 'Objeto {findings[], trend, levels[], pivots[], volumeFlow, generatedAt}. findings[].strength es la fuerza del patrón (0-1). volumeFlow = {delta[], cvd[], buyShare[]} o null si las velas no traen takerBuyVolume.',
 };
+
+// ---------- pulso de mercado (hechos de solo lectura, sin DOM ni red) ----------
+export const DEPTH_WALL_DEFAULTS = { wallK: 2.5, wallRangePct: 2, maxWalls: 3 };
+
+/**
+ * Muros del libro de ordenes. `depth` es la respuesta publica de
+ * `GET /fapi/v1/depth` con filas [precio, cantidad] (bids/asks). Puro: no pide
+ * nada y no lanza; con un libro vacio o roto devuelve el hueco.
+ * Un nivel es muro si su cantidad es >= wallK x la mediana de TODOS los niveles
+ * y esta dentro de wallRangePct % del precio medio. Devuelve
+ * {mid, spreadPct, medianSize, bids, asks} y cada muro {price, size, usd,
+ * distancePct}, con usd = precio x cantidad y como mucho `maxWalls` por lado.
+ * No es una prediccion: son niveles grandes, no una probabilidad.
+ */
+export function depthWalls(depth, opts = {}) {
+  const o = { ...DEPTH_WALL_DEFAULTS, ...opts };
+  const empty = { mid: null, spreadPct: null, medianSize: 0, bids: [], asks: [] };
+  const read = (rows) => {
+    if (!Array.isArray(rows)) return [];
+    const out = [];
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const price = Number(row[0]);
+      const size = Number(row[1]);
+      if (!(price > 0) || !(size > 0)) continue;
+      out.push({ price, size });
+    }
+    return out;
+  };
+  const bids = read(depth && depth.bids);
+  const asks = read(depth && depth.asks);
+  if (!bids.length || !asks.length) return empty;
+  const bestBid = Math.max(...bids.map((l) => l.price));
+  const bestAsk = Math.min(...asks.map((l) => l.price));
+  const mid = (bestBid + bestAsk) / 2;
+  if (!(mid > 0)) return empty;
+  const medianSize = median([...bids, ...asks].map((l) => l.size));
+  const threshold = o.wallK * medianSize;
+  const wallsOf = (levels, side) => levels
+    .map((level) => ({
+      price: level.price,
+      size: level.size,
+      usd: level.price * level.size,
+      distancePct: ((side === 'bid' ? mid - level.price : level.price - mid) / mid) * 100,
+    }))
+    .filter((w) => w.size >= threshold && w.distancePct >= 0 && w.distancePct <= o.wallRangePct)
+    .sort((a, b) => b.size - a.size || a.distancePct - b.distancePct)
+    .slice(0, o.maxWalls)
+    .map((w) => ({ ...w, usd: r4(w.usd), distancePct: r4(w.distancePct) }));
+  return {
+    mid: r4(mid),
+    spreadPct: r4(((bestAsk - bestBid) / mid) * 100),
+    medianSize: r4(medianSize),
+    bids: wallsOf(bids, 'bid'),
+    asks: wallsOf(asks, 'ask'),
+  };
+}
+
+export const LIQUIDATION_DEFAULTS = { windowsMinutes: [5, 15] };
+
+/**
+ * Resumen de liquidaciones. `events` son hechos ya normalizados
+ * {at (ms), side: 'long'|'short', usd}. Puro y determinista: `now` entra como
+ * argumento. Para cada ventana de `windowsMinutes` suma el USD liquidado de
+ * posiciones largas y cortas, cuenta los eventos y guarda el mayor. `largest`
+ * es el mayor de la ventana mas amplia. Descarta lo que no sea finito o
+ * positivo en vez de lanzar. No calcula probabilidades.
+ */
+export function liquidationSummary(events, opts = {}, now = Date.now()) {
+  const o = { ...LIQUIDATION_DEFAULTS, ...opts };
+  const windowsMinutes = Array.isArray(o.windowsMinutes)
+    ? o.windowsMinutes.filter((m) => Number.isFinite(m) && m > 0)
+    : [];
+  const valid = [];
+  for (const e of Array.isArray(events) ? events : []) {
+    if (!e || typeof e !== 'object') continue;
+    const at = Number(e.at);
+    const usd = Number(e.usd);
+    if (!Number.isFinite(at) || !Number.isFinite(usd) || usd <= 0) continue;
+    if (e.side !== 'long' && e.side !== 'short') continue;
+    valid.push({ at, side: e.side, usd });
+  }
+  const windows = windowsMinutes.map((minutes) => {
+    const since = now - minutes * 60_000;
+    let longUsd = 0, shortUsd = 0, count = 0, largest = null;
+    for (const e of valid) {
+      if (e.at < since || e.at > now) continue;
+      count += 1;
+      if (e.side === 'long') longUsd += e.usd; else shortUsd += e.usd;
+      if (!largest || e.usd > largest.usd) largest = { usd: r4(e.usd), at: e.at, side: e.side };
+    }
+    return { minutes, longUsd: r4(longUsd), shortUsd: r4(shortUsd), totalUsd: r4(longUsd + shortUsd), count, largest };
+  });
+  const widest = windows.length ? windows[windows.length - 1] : null;
+  return { count: valid.length, windows, largest: widest ? widest.largest : null };
+}
