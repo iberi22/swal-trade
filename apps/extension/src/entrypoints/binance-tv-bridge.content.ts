@@ -102,11 +102,23 @@ export default defineContentScript({
     // El canal síncrono desvinculado (DOM)
     let channel: BridgeChannel | null = null;
     // F8: el bucle de vigilancia no arranca hasta el primer draw (encendido).
-    const handler = createBridgeMessageHandler({
-      start: () => session.start(),
-      stop: () => session.stop(),
-      apply: (msg) => session.apply(msg),
-    }, new DrawRateLimit(4));
+    const handler = createBridgeMessageHandler(
+      {
+        start: () => session.start(),
+        stop: () => session.stop(),
+        apply: (msg) => session.apply(msg),
+        setResolution: (res) => session.setResolution(res),
+      },
+      new DrawRateLimit(4),
+      (ack) => {
+        if (!channel) return;
+        try {
+          channel.send(ack);
+        } catch {
+          // El puerto pudo cerrarse
+        }
+      },
+    );
 
     // Establecer la comunicación síncrona
     establishLink('bridge', 3000)

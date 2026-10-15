@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_HOTKEY_MAP,
   DEFAULT_SETTINGS,
+  HOTKEY_KEYS,
   SETTINGS_KEY,
+  normalizeHotkeyMap,
   normalizeSettings,
   normalizeSettingsTimeframe,
   normalizeSymbolList,
@@ -79,6 +82,8 @@ describe('normalizeSettings', () => {
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
     });
   });
 
@@ -88,6 +93,8 @@ describe('normalizeSettings', () => {
         defaultTimeframe: '4h',
         symbols: 'BTC, ETH',
         autoSync: false,
+        hotkeysEnabled: false,
+        hotkeyMap: { F1: '15m' },
       }),
     ).toEqual({
       defaultTimeframe: '4h',
@@ -95,6 +102,8 @@ describe('normalizeSettings', () => {
       autoSync: false,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: false,
+      hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
     });
   });
 
@@ -107,6 +116,8 @@ describe('normalizeSettings', () => {
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
     });
   });
 
@@ -132,6 +143,14 @@ describe('normalizeSettings', () => {
     expect(DEFAULT_SETTINGS.explainWithAi).toBe(false);
   });
 
+
+  it('hotkeysEnabled solo se apaga con false explícito', () => {
+    expect(normalizeSettings({ hotkeysEnabled: false }).hotkeysEnabled).toBe(false);
+    expect(normalizeSettings({ hotkeysEnabled: 'false' }).hotkeysEnabled).toBe(true);
+    expect(normalizeSettings({ hotkeysEnabled: 0 }).hotkeysEnabled).toBe(true);
+    expect(normalizeSettings({}).hotkeysEnabled).toBe(true);
+  });
+
   it('no se deja intoxicar con campos inventados', () => {
     const settings = normalizeSettings({
       defaultTimeframe: '1d',
@@ -144,6 +163,8 @@ describe('normalizeSettings', () => {
       'autoSync',
       'defaultTimeframe',
       'explainWithAi',
+      'hotkeyMap',
+      'hotkeysEnabled',
       'paintOnChart',
       'symbols',
     ]);
@@ -170,6 +191,8 @@ describe('settingsFromStorage', () => {
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
     });
   });
 
@@ -180,6 +203,8 @@ describe('settingsFromStorage', () => {
       autoSync: true,
       paintOnChart: false,
       explainWithAi: false,
+      hotkeysEnabled: true,
+      hotkeyMap: DEFAULT_HOTKEY_MAP,
     });
   });
 
@@ -194,5 +219,14 @@ describe('settingsToInputs', () => {
   it('vuelve a poner la lista en el campo de texto', () => {
     expect(settingsToInputs({ ...DEFAULT_SETTINGS, symbols: ['BTC', 'ETH'] })).toBe('BTC, ETH');
     expect(settingsToInputs(DEFAULT_SETTINGS)).toBe('');
+  });
+});
+
+describe('normalizeHotkeyMap', () => {
+  it('rellena con el mapa por defecto y normaliza teclas', () => {
+    expect(normalizeHotkeyMap(null)).toEqual(DEFAULT_HOTKEY_MAP);
+    const custom = normalizeHotkeyMap({ F1: '15m', F2: null, F3: 'ninguno', F4: 'invalido', F12: '1D', UNKNOWN: '1m' });
+    expect([custom.F1, custom.F2, custom.F3, custom.F4, custom.F12]).toEqual(['15m', null, null, null, '1d']);
+    expect((custom as Record<string, unknown>).UNKNOWN).toBeUndefined();
   });
 });

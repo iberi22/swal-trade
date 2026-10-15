@@ -45,6 +45,7 @@ export interface TvChartLike {
   getVisibleRange(): TvVisibleRange | null;
   symbol(): string;
   resolution?(): string | null;
+  setResolution?(resolution: string, callback?: () => void): void;
   createShape(point: { time: number; price: number }, options: unknown): unknown;
   createMultipointShape(points: Array<{ time: number; price: number }>, options: unknown): unknown;
   removeEntity(id: string): void;

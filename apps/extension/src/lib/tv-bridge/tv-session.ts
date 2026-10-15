@@ -13,7 +13,7 @@
  * - una reimpresión solo recrea las entidades cuya forma o texto cambió.
  */
 
-import type { BridgeMessage, BridgeShape } from './schema';
+import { buildResolutionAckMessage, type BridgeMessage, type BridgeResolution, type BridgeResolutionAckMessage, type BridgeShape } from './schema';
 import { chartMatchesAnalysis, describeChart, type ChartDisplay } from './match';
 import { ShapeRegistry } from './registry';
 import {
@@ -57,6 +57,11 @@ const WATCH_MS = 3_000;
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+
+export const RESOLUTION_TO_TIMEFRAME: Record<BridgeResolution, string> = {
+  '1': '1m', '5': '5m', '15': '15m', '60': '1h', '240': '4h', '1D': '1d',
+};
 
 export class ChartSession {
   private readonly registry = new ShapeRegistry();
@@ -299,6 +304,42 @@ export class ChartSession {
   }
 
   /** Para el content script aislado: ¿está el gráfico listo para pintar? */
+  /**
+   * Cambia la temporalidad del gráfico. Intenta primero la API de TradingView
+   * (activeChart().setResolution); si no está, busca el botón en el DOM; si
+   * ninguno funciona, reporta unsupported.
+   */
+  setResolution(resolution: BridgeResolution): BridgeResolutionAckMessage {
+    if (!this.chart) this.acquire();
+    const chart = this.chart;
+    if (chart && typeof chart.setResolution === 'function') {
+      try {
+        chart.setResolution(resolution);
+        return buildResolutionAckMessage(true, resolution);
+      } catch (err) {
+        return buildResolutionAckMessage(false, resolution, String(err));
+      }
+    }
+    if (this.clickDomInterval(RESOLUTION_TO_TIMEFRAME[resolution])) return buildResolutionAckMessage(true, resolution);
+    return buildResolutionAckMessage(false, resolution, 'unsupported');
+  }
+
+  private clickDomInterval(targetTf: string): boolean {
+    const doc = this.deps.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function') return false;
+    try {
+      const candidates = doc.querySelectorAll('button, [role="button"], [role="tab"], [role="radio"], [data-interval], div, span');
+      for (const el of Array.from(candidates)) {
+        const text = (el.textContent ?? '').trim().toLowerCase();
+        if (text === targetTf && text.length <= 6 && typeof (el as HTMLElement).click === 'function') {
+          (el as HTMLElement).click();
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   get isReady(): boolean {
     return this.status === 'ready';
   }

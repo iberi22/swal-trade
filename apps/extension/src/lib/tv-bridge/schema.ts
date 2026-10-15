@@ -28,6 +28,11 @@ export const SWAL_MAX_SHAPES = 60;
 export const SWAL_DRAW = 'swal:draw';
 export const SWAL_CLEAR = 'swal:clear';
 export const SWAL_READY = 'swal:ready';
+export const SWAL_SET_RESOLUTION = 'swal:set-resolution';
+export const SWAL_RESOLUTION_ACK = 'swal:resolution-ack';
+export const ALLOWED_RESOLUTIONS = ['1', '5', '15', '60', '240', '1D'] as const;
+export type BridgeResolution = (typeof ALLOWED_RESOLUTIONS)[number];
+export const isBridgeResolution = (v: unknown): v is BridgeResolution => typeof v === 'string' && (ALLOWED_RESOLUTIONS as readonly string[]).includes(v);
 
 export const SHAPE_KINDS = ['level', 'trend', 'label', 'arrow', 'zone'] as const;
 export type BridgeShapeKind = (typeof SHAPE_KINDS)[number];
@@ -103,7 +108,9 @@ export interface BridgeReadyMessage {
 /** Motivo que reporta el puente sobre el estado del gráfico. */
 export type BridgeReadyReason = 'absent' | 'booting' | 'ready' | 'mismatch';
 
-export type BridgeMessage = BridgeDrawMessage | BridgeClearMessage;
+export interface BridgeSetResolutionMessage { type: typeof SWAL_SET_RESOLUTION; version: number; resolution: BridgeResolution; }
+export interface BridgeResolutionAckMessage { type: typeof SWAL_RESOLUTION_ACK; version: number; ok: boolean; resolution: BridgeResolution; error?: string; }
+export type BridgeMessage = BridgeDrawMessage | BridgeClearMessage | BridgeSetResolutionMessage;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -184,12 +191,21 @@ export function coerceShapes(raw: unknown): BridgeShape[] {
  * Valida un mensaje recibido por el puerto privado. La confianza la da el
  * transporte (MessageChannel), no el contenido: aquí solo se comprueba forma.
  */
-export function parseBridgeMessage(raw: unknown): BridgeMessage | BridgeReadyMessage | null {
+export function parseBridgeMessage(raw: unknown): BridgeMessage | BridgeReadyMessage | BridgeResolutionAckMessage | null {
   if (!isPlainRecord(raw)) return null;
   const type = raw.type;
-  if (type !== SWAL_DRAW && type !== SWAL_CLEAR && type !== SWAL_READY) return null;
+  if (![SWAL_DRAW, SWAL_CLEAR, SWAL_READY, SWAL_SET_RESOLUTION, SWAL_RESOLUTION_ACK].includes(type as string)) return null;
   if (raw.version !== SWAL_MESSAGE_VERSION) return null;
   if (type === SWAL_CLEAR) return { type: SWAL_CLEAR, version: SWAL_MESSAGE_VERSION };
+  if (type === SWAL_SET_RESOLUTION) {
+    const res = pickEnum(raw.resolution, ALLOWED_RESOLUTIONS);
+    return res ? { type: SWAL_SET_RESOLUTION, version: SWAL_MESSAGE_VERSION, resolution: res } : null;
+  }
+  if (type === SWAL_RESOLUTION_ACK) {
+    if (typeof raw.ok !== 'boolean') return null;
+    const res = pickEnum(raw.resolution, ALLOWED_RESOLUTIONS);
+    return res ? { type: SWAL_RESOLUTION_ACK, version: SWAL_MESSAGE_VERSION, ok: raw.ok, resolution: res, ...(typeof raw.error === 'string' ? { error: raw.error.slice(0, 128) } : {}) } : null;
+  }
   if (type === SWAL_READY) {
     const reason = READY_REASONS.includes(raw.reason as BridgeReadyReason)
       ? (raw.reason as BridgeReadyReason)
@@ -239,3 +255,6 @@ export function buildReadyMessage(
   if (reason === 'mismatch' && chart) message.chart = chart;
   return message;
 }
+
+export const buildSetResolutionMessage = (resolution: BridgeResolution): BridgeSetResolutionMessage => ({ type: SWAL_SET_RESOLUTION, version: SWAL_MESSAGE_VERSION, resolution });
+export const buildResolutionAckMessage = (ok: boolean, resolution: BridgeResolution, error?: string): BridgeResolutionAckMessage => ({ type: SWAL_RESOLUTION_ACK, version: SWAL_MESSAGE_VERSION, ok, resolution, ...(error ? { error: error.slice(0, 128) } : {}) });

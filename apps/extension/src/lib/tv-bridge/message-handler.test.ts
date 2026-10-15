@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createBridgeMessageHandler } from './message-handler';
 import { DrawRateLimit, buildHello } from './handshake';
-import { SWAL_DRAW, SWAL_CLEAR, SWAL_READY, buildDrawMessage, buildClearMessage, buildReadyMessage } from './schema';
+import { SWAL_DRAW, SWAL_CLEAR, SWAL_READY, SWAL_SET_RESOLUTION, buildDrawMessage, buildClearMessage, buildReadyMessage, buildSetResolutionMessage, buildResolutionAckMessage } from './schema';
 
 describe('Bridge Message Handler', () => {
   it('does not stop session when receiving a ready message', () => {
@@ -75,5 +75,23 @@ describe('Bridge Message Handler', () => {
     handler(buildClearMessage());
     expect(session.stop).toHaveBeenCalledTimes(1);
     expect(session.apply).toHaveBeenCalledTimes(1); // apply gets called with clear msg
+  });
+
+  it('manages set-resolution message and calls onAck', () => {
+    const session = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      apply: vi.fn(),
+      setResolution: vi.fn().mockReturnValue(buildResolutionAckMessage(true, '15')),
+    };
+    const rate = new DrawRateLimit(4);
+    const onAck = vi.fn();
+    const handler = createBridgeMessageHandler(session, rate, onAck);
+
+    const setResMsg = buildSetResolutionMessage('15');
+    handler(setResMsg);
+
+    expect(session.setResolution).toHaveBeenCalledWith('15');
+    expect(onAck).toHaveBeenCalledWith(buildResolutionAckMessage(true, '15'));
   });
 });

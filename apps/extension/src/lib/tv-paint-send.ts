@@ -85,3 +85,27 @@ export function onTvState(
   browser.runtime.onMessage.addListener(handler);
   return () => browser.runtime.onMessage.removeListener(handler);
 }
+
+import type { BridgeResolution, BridgeResolutionAckMessage } from './tv-bridge/schema';
+import type { Timeframe } from './types';
+
+export const TIMEFRAME_TO_RESOLUTION: Record<Timeframe, BridgeResolution> = {
+  '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '1d': '1D',
+};
+export const TV_SET_RESOLUTION = 'tv:set-resolution';
+
+export async function requestResolution(
+  tabId: number,
+  timeframe: Timeframe | string,
+): Promise<{ ok: boolean; resolution?: BridgeResolution; error?: string }> {
+  const resolution = TIMEFRAME_TO_RESOLUTION[timeframe as Timeframe];
+  if (!resolution) return { ok: false, error: `invalid-timeframe: ${timeframe}` };
+  try {
+    const res = await browser.tabs.sendMessage(tabId, { type: TV_SET_RESOLUTION, resolution, timeframe });
+    if (!res || typeof res !== 'object') return { ok: false, resolution, error: 'no-response' };
+    const r = res as BridgeResolutionAckMessage;
+    return { ok: r.ok === true, resolution: r.resolution ?? resolution, error: r.error };
+  } catch (err) {
+    return { ok: false, resolution, error: String(err) };
+  }
+}
