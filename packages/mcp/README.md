@@ -29,6 +29,45 @@ Puntos abiertos de la revisión (rounds 7 y 7b): **ninguno**. Los hallazgos de l
 - el nocional del cap se deriva de `positionRisk` (`|positionAmt| × markPrice`, exposición bruta por fila, también en modo hedge) cuando la cuenta lo reporta en cero o ausente, y falla cerrado si no puede derivarse;
 - hay tests que fijan que un aplanamiento **fallido** del grid deja la intención pendiente (sin `grid_place_outcome`), y el contrapunto con aplanamiento correcto.
 
+## Primera prueba en testnet
+
+Para verificar las herramientas de escritura en Binance Futures Testnet antes de usarlas:
+
+1. **Crear claves de testnet:**
+   - Inicia sesión en [https://testnet.binancefuture.com](https://testnet.binancefuture.com) (con cuenta GitHub o email).
+   - En el panel inferior, haz clic en **API Key** y genera una clave de prueba.
+   - Copia la clave de API y la clave secreta generadas.
+
+2. **Crear el archivo `testnet.env`:**
+   Guarda las claves en el archivo dedicado `~/.config/swal-trade/testnet.env` (nunca uses claves reales de mainnet aquí):
+   ```bash
+   mkdir -p ~/.config/swal-trade
+   cat << 'EOF' > ~/.config/swal-trade/testnet.env
+   BINANCE_TESTNET_API_KEY=tu_api_key_de_testnet
+   BINANCE_TESTNET_API_SECRET=tu_api_secret_de_testnet
+   EOF
+   chmod 600 ~/.config/swal-trade/testnet.env
+   ```
+
+3. **Ejecutar el smoke test (un solo comando):**
+   Desde la raíz del repositorio:
+   ```bash
+   node packages/mcp/scripts/testnet-smoke.mjs
+   ```
+   Para validar herramientas y lecturas de cuenta sin enviar órdenes, usa el modo dry-run:
+   ```bash
+   node packages/mcp/scripts/testnet-smoke.mjs --dry
+   ```
+   El smoke test ejecuta: `account_risk` → `place_order` (tamaño mínimo con stop de protección ~1.5%) → verificación de posición y stop con `account_risk` → `close_position` → verificación de cuenta plana. Registra cada paso en el journal (`/tmp/swal-testnet-journal.jsonl`). Si ocurre cualquier estado inesperado, ejecuta un cierre de emergencia y alerta con `MANUAL ACTION REQUIRED`.
+
+4. **Registrar el wrapper de testnet en Claude Code:**
+   Para disponer de las herramientas de escritura en un entorno aislado de testnet dentro de Claude Code:
+   ```bash
+   claude mcp add --scope user swal-trade-testnet -- packages/mcp/scripts/swal-trade-mcp-testnet.sh
+   ```
+   El wrapper carga únicamente `~/.config/swal-trade/testnet.env`, fuerza `SWAL_MCP_TRADING=enabled` y `SWAL_MCP_NETWORK=testnet`, desactiva cualquier confirmación de mainnet y aplica límites conservadores (nocional 60 USD, porque BTCUSDT exige al menos 50 en testnet; apalancamiento 2; pérdida diaria 10 USD).
+
+
 ## Tools
 
 | Tool | Tipo | Qué hace |
