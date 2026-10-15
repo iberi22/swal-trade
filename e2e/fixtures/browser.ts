@@ -92,6 +92,21 @@ export async function installSiteMocks(page: Page) {
   });
 
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) => fulfillJson(route, toBinanceKlines()));
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/depth/, (route) =>
+    fulfillJson(route, {
+      lastUpdateId: 1,
+      bids: [
+        ['68000.00', '5.0'],
+        ['67900.00', '10.0'],
+        ['67500.00', '80.0'],
+      ],
+      asks: [
+        ['68100.00', '5.0'],
+        ['68200.00', '10.0'],
+        ['68600.00', '80.0'],
+      ],
+    }),
+  );
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/time/, (route) => fulfillJson(route, { serverTime: Date.now() }));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v3\/account/, (route) => fulfillJson(route, accountPayload()));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v2\/positionRisk/, (route) => fulfillJson(route, positionRiskPayload()));
