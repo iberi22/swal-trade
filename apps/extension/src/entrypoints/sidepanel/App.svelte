@@ -28,6 +28,7 @@
   } from '../../lib/settings';
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
+  import ExplainCard from './ExplainCard.svelte';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -522,6 +523,15 @@
       </ul>
     {/if}
   </section>
+
+  <ExplainCard
+    {symbol}
+    {timeframe}
+    {result}
+    ready={settingsLoaded}
+    enabled={settings.explainWithAi}
+    onToggle={(value) => applySettings({ ...settings, explainWithAi: value })}
+  />
 
   <details class="settings" bind:open={settingsOpen}>
     <summary>Ajustes</summary>

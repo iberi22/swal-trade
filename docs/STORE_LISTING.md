@@ -104,6 +104,7 @@ Pegar la columna que pida el formulario. Chrome revisa en inglés; la ficha púb
 | `https://fapi.binance.com/fapi/v1/klines*` | Host | Velas públicas `GET /fapi/v1/klines`. La URL lleva símbolo, temporalidad y límite. Sin clave. | Public candles, `GET /fapi/v1/klines`. The URL carries the symbol, the timeframe, and a limit. No API key. |
 | `wss://fstream.binance.com/*` | Host | Websocket público de la vela en curso. Primero `/market/ws/<símbolo>@kline_<tf>`; si no abre, `/ws/<símbolo>@kline_<tf>`. | Public websocket for the live candle. First `/market/ws/<symbol>@kline_<tf>`; if that does not open, `/ws/<symbol>@kline_<tf>`. |
 | `https://trade.swal.network/api/news*` | Host | Titulares públicos `GET /api/news?symbol=BTC\|ETH&limit=5`. Solo si el par es de BTC o de ETH. | Public headlines, `GET /api/news?symbol=BTC\|ETH&limit=5`. Only when the open pair is BTC or ETH. |
+| `https://trade.swal.network/api/explain*` | Host | Explicador del panel: `POST /api/explain` con el símbolo, la temporalidad y los patrones detectados (y sus niveles). Solo si el usuario enciende «Explicaciones con IA»; arranca apagado y nunca envía datos de cuenta. | Panel explainer: `POST /api/explain` with the symbol, the timeframe, and the detected patterns (and their levels). Only when the user turns on "AI explanations"; off by default and it never sends account data. |
 
 El permiso `https://fstream.binance.com/*` (https, no websocket) no está: el código no lo usa.
 

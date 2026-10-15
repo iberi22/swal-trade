@@ -416,3 +416,73 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
     await panel.close();
   }
 });
+
+test('explain card: opt-in gate, mocked AI answer, and local fallback on 429', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    let mode: 'ai' | 'rate_limited' = 'rate_limited';
+    const explainRequests: string[] = [];
+    await page.route(/trade\.swal\.network\/api\/explain/, async (route) => {
+      explainRequests.push(route.request().url());
+      if (mode === 'rate_limited') {
+        await fulfillJson(route, { error: 'rate_limited', retryAfterS: 600 }, 429);
+        return;
+      }
+      await fulfillJson(route, {
+        source: 'ai',
+        summary: 'El análisis ve un doble suelo sobre el soporte.',
+        scenarios: [
+          {
+            name: 'Doble suelo',
+            condition: 'cierre por encima de 101',
+            invalidation: 'cierre por debajo de 98',
+            risk_note: 'stop detrás de 98',
+          },
+        ],
+        caution: 'La fuerza del patrón no es una tasa de acierto.',
+      });
+    });
+
+    const card = page.getByTestId('explain-card');
+    await expect(card).toBeVisible();
+    const button = page.getByTestId('explain-button');
+    await expect(button).toBeDisabled();
+    await expect(card).toContainText('Explicación educativa. No es una recomendación de compra o venta.');
+    await expect(card).toContainText('nunca datos de tu cuenta');
+    expect(explainRequests).toEqual([]);
+
+    // Sin encender el interruptor no sale ninguna petición, ni al pulsar.
+    await card.getByRole('checkbox', { name: 'Explicaciones con IA' }).check();
+    await expect(button).toBeEnabled();
+
+    // 429: explicación local con el motivo, sin romper el panel.
+    await button.click();
+    const answer = page.getByTestId('explain-answer');
+    await expect(answer).toHaveAttribute('data-source', 'fallback');
+    await expect(answer).toContainText('límite por hora alcanzado');
+    await expect(answer).toContainText('Doble suelo');
+    await expect(answer).not.toContainText(/probabilidad/i);
+
+    // Al cambiar de temporalidad la explicación anterior se limpia.
+    mode = 'ai';
+    await page.locator('select[aria-label="Temporalidad"]').selectOption('1h');
+    await expect(page.getByTestId('explain-answer')).toHaveCount(0);
+    await button.click();
+    await expect(answer).toHaveAttribute('data-source', 'ai');
+    await expect(answer).toContainText('doble suelo sobre el soporte');
+    await expect(answer).toContainText('confirma');
+    await expect(answer).toContainText('invalida');
+    expect(explainRequests).toEqual([
+      'https://trade.swal.network/api/explain',
+      'https://trade.swal.network/api/explain',
+    ]);
+
+    // El 429 deliberado deja una traza «Failed to load resource» en consola:
+    // es ruido de red esperado, no un fallo de la tarjeta.
+    const unexpected = panel.errors.filter((line) => !/429|Too Many Requests/.test(line));
+    expect(unexpected, unexpected.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});

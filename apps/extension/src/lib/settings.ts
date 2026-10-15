@@ -13,6 +13,11 @@ export interface ExtensionSettings {
    * Arranca apagado: es una anotación sobre la página, no un añadido del panel.
    */
   paintOnChart: boolean;
+  /**
+   * Explicaciones con IA: manda el símbolo, la temporalidad y los patrones a
+   * trade.swal.network. Arranca apagado y exige un `true` explícito.
+   */
+  explainWithAi: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -20,6 +25,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   symbols: [],
   autoSync: true,
   paintOnChart: false,
+  explainWithAi: false,
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -85,6 +91,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     autoSync: record.autoSync === false ? false : DEFAULT_SETTINGS.autoSync,
     // Pintar en el gráfico necesita un `true` explícito: se sale del panel.
     paintOnChart: record.paintOnChart === true,
+    // Salir a la red necesita un `true` explícito: nunca por accidente.
+    explainWithAi: record.explainWithAi === true,
   };
 }
 
