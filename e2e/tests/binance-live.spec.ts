@@ -28,6 +28,17 @@ const KLINES = /https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/;
 const LIVE = process.env.E2E_BINANCE_LIVE === '1';
 
 /** Entidades que la API de TradingView tiene ahora mismo en el chart. */
+
+async function chartResolution(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    for (const frame of document.querySelectorAll('iframe')) {
+      const chart = (frame.contentWindow as any)?.tradingViewApi?.activeChart?.();
+      if (typeof chart?.resolution === 'function') return String(chart.resolution());
+    }
+    return null;
+  });
+}
+
 async function chartShapes(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     for (const frame of document.querySelectorAll('iframe')) {
@@ -176,6 +187,35 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
       await expect
         .poll(async () => (await chartShapes(page))?.length ?? -1, { timeout: 30_000, intervals: [1_000] })
         .toBe(0);
+    } finally {
+      await context.close();
+      await rm(userData, { recursive: true, force: true });
+    }
+  });
+
+  test('atajo F3 en el frame del gráfico cambia la resolución a 15', async () => {
+    const userData = await mkdtemp(path.join(tmpdir(), 'swal-binance-live-'));
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+    const context = await chromium.launchPersistentContext(userData, {
+      headless: false,
+      ...(executablePath ? { executablePath } : {}),
+      args: ['--headless=new', `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
+      ignoreDefaultArgs: ['--disable-extensions'],
+    });
+    try {
+      const page = await context.newPage();
+      await context.routeWebSocket(/fstream\.binance\.com/, () => {});
+      await context.route(KLINES, (route) => fulfillJson(route, liveBinanceKlines()));
+      await context.route(NEWS_URL, (route) => fulfillJson(route, { items: [] }));
+      await openFuturesPage(page);
+      const tvFrame = page.frames().find((f) => f.url().includes('tradingview')) ?? page.mainFrame();
+      if ((await chartResolution(page)) === '15') {
+        await tvFrame.locator('body').press('F1');
+        await expect.poll(() => chartResolution(page), { timeout: 30_000, intervals: [1_000] }).toBe('1');
+      }
+      await tvFrame.locator('body').press('F3');
+      await expect.poll(() => chartResolution(page), { timeout: 30_000, intervals: [1_000] }).toBe('15');
+      await page.screenshot({ path: path.join(repoRoot, 'e2e/test-results/binance-tv-f3-resolution.png') });
     } finally {
       await context.close();
       await rm(userData, { recursive: true, force: true });
