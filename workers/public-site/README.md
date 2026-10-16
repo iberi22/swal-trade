@@ -85,6 +85,22 @@ npx wrangler secret put FIRECRAWL_API_KEY
 
 Usan la D1 `DB` que ya está en `wrangler.toml` (migración `0002_news.sql`) y, si no hay D1, el KV `SNAPSHOTS`.
 
+Latidos del guardián y del radar locales (`POST /heartbeat/guardian` y `POST /heartbeat/radar`, migración `0005_heartbeats.sql`). El token va en la cabecera `Authorization: Bearer`, nunca en la URL, porque los logs de Workers guardan la URL. Cada servicio escribe en D1 como mucho una vez por minuto. El cron de 5 min avisa por Telegram, en texto plano, una vez si un servicio lleva más de `HEARTBEAT_STALE_S` segundos (defecto 600) sin latir y otra cuando vuelve. Solo vigila servicios que ya latieron alguna vez.
+
+```bash
+npx wrangler d1 migrations apply swal-trade-public --remote
+npx wrangler secret put HEARTBEAT_TOKEN
+```
+
+En el PC del dueño, en `~/.config/risk-guardian.env` (lo leen el guardián y el radar):
+
+```bash
+GUARDIAN_HEARTBEAT_URL=https://trade.swal.network/heartbeat/guardian
+GUARDIAN_HEARTBEAT_TOKEN=<el mismo token>
+RADAR_HEARTBEAT_URL=https://trade.swal.network/heartbeat/radar
+RADAR_HEARTBEAT_TOKEN=<el mismo token>
+```
+
 ### 3. Desplegar el Worker y los Assets Estáticos
 ```bash
 cd workers/public-site
