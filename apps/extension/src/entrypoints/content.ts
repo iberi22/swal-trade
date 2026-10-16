@@ -10,7 +10,7 @@ import { buildClearMessage, buildDrawMessage, buildSetResolutionMessage, coerceS
 import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
-import { TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
+import { PAINTABLE_URL, TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 
 /** Atributos que cambian cuando el usuario pulsa otro intervalo. */
@@ -112,7 +112,7 @@ export default defineContentScript({
           ? 'binance'
           : 'tradingview';
         const context = detectMarketContext({
-          url: location.href,
+          href: location.href,
           title: document.title,
           domInterval: probeDomInterval(document, source),
           storageInterval: probeStorageInterval(readStoredInterval, source),
@@ -207,9 +207,12 @@ export default defineContentScript({
     let lastTabSwitchTime = 0;
 
     /** Estado que refleja la sonda del DOM (sin puente que lo refinen). */
+    // Binance deja montado (oculto) el iframe de Trading View al volver a Original:
+    // por eso la pestaña activa del DOM manda sobre la presencia del iframe.
     const probedState = (): TvChartState => {
-      if (probeTvChart(document).present) return 'tradingview';
       const active = getActiveChartTab(document);
+      if (active === 'original') return 'original';
+      if (probeTvChart(document).present) return 'tradingview';
       if (active === 'tradingView') return 'tradingview';
       return 'original';
     };
@@ -278,13 +281,16 @@ export default defineContentScript({
         });
     }
 
+    // "Listo" para pintar: el puente ha reportado el gráfico. Con 'mismatch' el
+    // gráfico está pero muestra otro par o temporalidad: el puente no dibuja hasta
+    // casar (el panel adopta la temporalidad del gráfico y reenvía la orden).
     const waitForReady = (timeoutMs = 8000): Promise<boolean> => {
-      if (lastTvState === 'ready') return Promise.resolve(true);
+      if (lastTvState === 'ready' || lastTvState === 'mismatch') return Promise.resolve(true);
       return new Promise((resolve) => {
         let timer: ReturnType<typeof setTimeout>;
         const onAck = (data: unknown) => {
           const message = parseBridgeMessage(data);
-          if (message?.type === 'swal:ready' && message.ready) {
+          if (message?.type === 'swal:ready' && (message.ready || message.reason === 'mismatch')) {
             ackListeners.delete(onAck);
             clearTimeout(timer);
             resolve(true);
@@ -332,7 +338,8 @@ export default defineContentScript({
         const targetTab = record.tab === 'tradingView' ? 'tradingView' : 'original';
         const res = switchChartTab(document, targetTab);
         if (res.switched) {
-          probeChart();
+          // Re-sondear: el estado 'ready' de antes ya no vale tras cambiar de pestaña.
+          applyReady(false, undefined);
         }
         sendResponse(res);
         return true;
@@ -349,6 +356,14 @@ export default defineContentScript({
           paint(command, enabled);
           sendResponse({ ok: true, switched: false });
           return;
+        }
+
+        // El DOM manda: si se ve Original no puede haber un 'ready' vigente (puede
+        // quedar de antes, p. ej. tras apagar el interruptor o volver a Original).
+        const activeNow = getActiveChartTab(document);
+        const showsOriginal = activeNow === 'original' || (activeNow === null && probedState() === 'original');
+        if (showsOriginal && (lastTvState === 'ready' || lastTvState === 'mismatch')) {
+          applyReady(false, undefined);
         }
 
         // Si el puente ya está en 'ready', pintar directamente sin tocar pestañas
