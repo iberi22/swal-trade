@@ -15,6 +15,8 @@ const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const work = mkdtempSync(path.join(tmpdir(), 'swal-verify-pack-'));
 let client;
 try {
+  // No se confía en los ganchos de npm (ignore-scripts=true es habitual): se construye a mano.
+  execFileSync('npm', ['run', 'build'], { cwd: pkg, stdio: 'pipe' });
   const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', work], { cwd: pkg, encoding: 'utf8' }))[0];
   const tarball = path.join(work, packed.filename);
   const app = path.join(work, 'app');

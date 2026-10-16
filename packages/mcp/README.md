@@ -24,7 +24,7 @@ Después, registra `node /ruta/absoluta/swal-trade/packages/mcp/dist/index.js` e
 | opencode | `opencode mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
 | Gemini CLI, Cursor, otros | Añade un servidor `stdio` con `command: node` y `args: ["/ruta/packages/mcp/dist/index.js"]` en su fichero de configuración MCP (en Gemini CLI, `mcpServers` de `~/.gemini/settings.json`). No probado en esta máquina. |
 
-Cuando el paquete esté publicado en npm, sustituye `node /ruta/...` por `npx -y @swal-trade/mcp`. Antes de publicar, `node scripts/verify-pack.mjs` empaqueta, instala en un directorio vacío y llama a `analyze_chart` desde el paquete instalado (el tarball lleva su propia copia del núcleo de análisis en `core/`).
+Cuando el paquete esté publicado en npm, sustituye `node /ruta/...` por `npx -y @swal-trade/mcp`. Antes de publicar, ejecuta `npm run build` (compila y copia el núcleo y la licencia al paquete; no depende de ganchos de npm, que muchos entornos desactivan con `ignore-scripts`) y después `node scripts/verify-pack.mjs`, que empaqueta, instala en un directorio vacío y llama a `analyze_chart` desde el paquete instalado (el tarball lleva su propia copia del núcleo de análisis en `core/`).
 
 **Claves.** No las pongas en la configuración de la herramienta (los ficheros de configuración suelen acabar en copias de seguridad y repositorios). Usa un script que lea un fichero `chmod 600` y exporte solo lo necesario, y una clave de Binance **sin permiso de retiro**; para solo lectura basta con la de lectura.
 

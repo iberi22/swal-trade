@@ -38,6 +38,14 @@ test('resolveCorePath: SWAL_ANALYSIS_CORE manda sobre todo', () => {
   assert.equal(resolveCorePath({ SWAL_ANALYSIS_CORE: '/tmp/otro-core.js' }), '/tmp/otro-core.js');
 });
 
+test('npm run build deja listos el núcleo y la licencia para empaquetar (sin depender de prepack)', () => {
+  rmSync(path.join(PKG, 'core'), { recursive: true, force: true });
+  rmSync(path.join(PKG, 'LICENSE'), { force: true });
+  execFileSync('node', [path.join(PKG, 'scripts/bundle-core.mjs')], { stdio: 'pipe' });
+  assert.ok(existsSync(path.join(PKG, 'core/analysis-core.js')));
+  assert.ok(existsSync(path.join(PKG, 'LICENSE')));
+});
+
 test('el tarball incluye binarios, núcleo y licencia, y no incluye fuentes ni tests', () => {
   execFileSync('node', [path.join(PKG, 'scripts/bundle-core.mjs')], { stdio: 'pipe' });
   assert.ok(existsSync(path.join(PKG, PACKAGED_CORE_RELATIVE)));
