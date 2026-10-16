@@ -49,8 +49,9 @@ export function isTabActive(element: Element): boolean {
 
   if (ACTIVE_CLASS.test(classNames)) return true;
 
-  // En Binance Tailwind: pestaña activa usa textPrimary / primaryText; inactivas textSecondary
-  if (/text-textPrimary|text-primaryText|text-text-primary/i.test(classNames)) {
+  // En Binance Tailwind: pestaña activa usa textPrimary / primaryText / text-[--color-PrimaryText];
+  // la inactiva usa textSecondary o text-[--color-TertiaryText] (ambas tienen hover:text-[--color-PrimaryText]).
+  if (/(?:^|\s)text-(?:textPrimary|primaryText|text-primary|\[--color-PrimaryText\])(?:\s|$)/i.test(classNames)) {
     return true;
   }
 
