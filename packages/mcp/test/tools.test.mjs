@@ -31,7 +31,7 @@ test("lists the read-only tools and keeps the write tools out when the flag is o
   await withClient({ env: {}, fetchFn: async () => jsonResponse({}) }, async (client) => {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name).sort();
-    assert.deepEqual(names, ["account_risk", "analyze_chart", "explain_analysis", "grid_plan", "market_context", "propose_order"]);
+    assert.deepEqual(names, ["account_risk", "analyze_chart", "explain_analysis", "grid_plan", "market_context", "propose_order", "radar_alerts", "radar_mark_taken", "radar_stats"]);
     const byName = Object.fromEntries(listed.tools.map((tool) => [tool.name, tool.description]));
     assert.match(byName.analyze_chart, /Strength is pattern quality, not probability/);
     assert.match(byName.explain_analysis, /Strength is pattern quality, not probability/);
