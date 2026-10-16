@@ -86,6 +86,36 @@ export function historicalHitRate(kind, timeframe, symbol) { // eslint-disable-l
   return null;
 }
 export const NO_HISTORY_TEXT = 'no superó al azar en nuestra medición (2026-10)';
+export const UNMEASURED_TEXT = 'aún no medido';
+
+/**
+ * Tipos de patrones medidos en el estudio público con n >= 30 eventos (HOLDOUT x bucket-all).
+ * Fuente: research/hitrates/results/hit-rates.public.json
+ */
+export const MEASURED_KINDS = Object.freeze(new Set([
+  'ascending_triangle',
+  'bear_flag',
+  'bull_flag',
+  'candle_doji',
+  'descending_triangle',
+  'double_bottom',
+  'double_top',
+  'falling_wedge',
+  'range_breakout',
+  'rising_wedge',
+  'rsi_divergence_bearish',
+  'rsi_divergence_bullish',
+  'shock',
+  'symmetric_triangle',
+]));
+
+export const HIT_RATE_NOTES = Object.freeze(
+  Object.fromEntries([...MEASURED_KINDS].map((k) => [k, NO_HISTORY_TEXT]))
+);
+
+export function hitRateNote(kind) {
+  return (kind && HIT_RATE_NOTES[kind]) ? HIT_RATE_NOTES[kind] : UNMEASURED_TEXT;
+}
 
 // ---------- utilidades ----------
 const clamp01 = (x) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
@@ -1811,7 +1841,7 @@ export function analyzeSync({ symbol = '', timeframe = '', candles = [], options
     ...wedges(candles, pivots, o),
     ...flags(candles, pivots, o),
     ...candlestickPatterns(candles, pivots, zones, o),
-  ].map((f) => ({ ...f, hitRate: historicalHitRate(f.kind, timeframe, symbol), hitRateNote: NO_HISTORY_TEXT }));
+  ].map((f) => ({ ...f, hitRate: historicalHitRate(f.kind, timeframe, symbol), hitRateNote: hitRateNote(f.kind) }));
   findings.sort((a, b) => b.strength - a.strength || b.to - a.to);
   const top = selectTop(findings, o.topLimit, o.topPerKind);
   const levels = findings.flatMap((f) => f.levels.map((l) => ({ ...l, findingId: f.id, kind: f.kind })));

@@ -13,21 +13,21 @@ async function saveAndWatch(page: import('@playwright/test').Page) {
   await expect(page.locator('#perm-status')).toHaveText('Permisos: solo lectura.');
 }
 
-test('free tier shows the daily breach and only the largest position', async ({ page, problems }) => {
+test('free tier shows daily breach and all positions', async ({ page, problems }) => {
   await page.goto('/guardian/', { waitUntil: 'load' });
-  await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posición vigilada)');
+  await expect(page.locator('#tier-badge')).toHaveText('Gratis');
   await expect(page.locator('#tg-section')).toBeHidden();
   await expect(page.locator('#tg-locked')).toBeVisible();
   await expect(page.locator('#selfhost-link')).toBeHidden();
 
   await saveAndWatch(page);
   const rows = page.locator('#pos-body tr');
-  await expect(rows).toHaveCount(1);
-  await expect(rows).toContainText('BTCUSDT');
-  await expect(rows).toContainText('SIN STOP');
-  await expect(page.locator('#pos-body')).not.toContainText('ETHUSDT');
-  await expect(page.locator('#free-note')).toContainText('Plan gratuito');
-  await expect(page.locator('#free-note')).toContainText('1 sin vigilar');
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator('#pos-body')).toContainText('BTCUSDT');
+  await expect(page.locator('#pos-body')).toContainText('ETHUSDT');
+  await expect(page.locator('#pos-body')).toContainText('SIN STOP');
+  await expect(page.locator('#pos-body')).toContainText('con stop');
+  await expect(page.locator('#free-note')).toHaveText('');
   await assertClean(page, problems);
 });
 

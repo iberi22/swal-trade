@@ -28,7 +28,7 @@ for (const path of PAGES) {
       await expect(page.locator('#chip-engine-status')).not.toHaveText('—');
     }
     if (path === '/guardian/') {
-      await expect(page.locator('#tier-badge')).toHaveText('Gratis (1 posición vigilada)');
+      await expect(page.locator('#tier-badge')).toHaveText('Gratis');
     }
 
     const text = textForClaimCheck(path, await page.locator('body').innerText());
@@ -71,4 +71,34 @@ test('nav and footer links open a 200 document', async ({ page, problems }) => {
   expect(seen.has('/guardian/')).toBe(true);
   expect(seen.has('/risk/')).toBe(true);
   await assertClean(page, problems);
+});
+
+test('screenshots of /apoyar/ and /extension/ at 390 and 1280 px in /tmp/swt-support/', async ({ page, problems }) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const outDir = '/tmp/swt-support';
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const routes = ['/apoyar/', '/extension/'];
+  const viewports = [
+    { width: 390, height: 844, suffix: '390' },
+    { width: 1280, height: 800, suffix: '1280' },
+  ];
+
+  for (const route of routes) {
+    for (const vp of viewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      const response = await page.goto(route, { waitUntil: 'load' });
+      expect(response?.status()).toBe(200);
+
+      const name = `${route.replace(/\//g, '')}-${vp.suffix}.png`;
+      await page.screenshot({ path: path.join(outDir, name), fullPage: true });
+
+      const filteredErrors = problems.consoleErrors.filter(
+        (err) => !err.includes('static.cloudflareinsights.com'),
+      );
+      expect(filteredErrors, `Console errors on ${route} at ${vp.suffix}px`).toEqual([]);
+      expect(problems.pageErrors).toEqual([]);
+    }
+  }
 });

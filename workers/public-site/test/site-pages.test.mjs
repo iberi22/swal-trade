@@ -19,7 +19,7 @@ function htmlFiles(dir) {
 const rel = (p) => '/' + p.slice(STATIC.length + 1).replace(/index\.html$/, '');
 const all = htmlFiles(STATIC);
 // Páginas de marketing/legales de esta isla. operativa (panel con KPIs), guardian y checkout son de otros dueños.
-const PUBLIC = ['/', '/pricing/', '/terms/', '/privacy/', '/risk/', '/contact/', '/extension-privacy/'];
+const PUBLIC = ['/', '/pricing/', '/terms/', '/privacy/', '/risk/', '/contact/', '/extension-privacy/', '/apoyar/', '/extension/'];
 const OTHER_OWNED = ['/guardian/', '/checkout/'];
 
 const FORBIDDEN = /ganancia[s]? garantizad|rentabilidad|win\s?rate|ingreso[s]? pasivo|retorno[s]? garantizad|\bROI\b|\+\d+(\.\d+)?\s?%/i;

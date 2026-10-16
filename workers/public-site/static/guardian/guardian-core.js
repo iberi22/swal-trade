@@ -2,7 +2,7 @@
 
 export const USD = new Set(['USDT', 'USDC', 'FDUSD', 'BUSD']);
 export const PNL_TYPES = new Set(['REALIZED_PNL', 'COMMISSION', 'FUNDING_FEE']);
-export const FREE_MAX_POSITIONS = 1;
+export const FREE_MAX_POSITIONS = Infinity;
 
 export function dayStartMs(nowMs, tzH) {
   const off = Math.trunc(tzH * 3600000);
@@ -104,13 +104,13 @@ export function tierFor(license) {
   const pro = license && license.status === 'pro';
   return {
     tier: pro ? 'pro' : 'free',
-    maxPositions: pro ? Infinity : FREE_MAX_POSITIONS,
+    maxPositions: Infinity,
     telegram: !!pro,
     selfHostLink: !!pro,
   };
 }
 
-/** Posiciones vigiladas segun el plan (free: la de mayor nocional). */
+/** Posiciones vigiladas segun el plan (el guardian es gratis y vigila todas las posiciones). */
 export function monitoredPositions(pos, tier) {
   if (pos.length <= tier.maxPositions) return pos;
   return [...pos].sort((a, b) => b.notional - a.notional).slice(0, tier.maxPositions);
