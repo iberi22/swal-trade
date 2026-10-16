@@ -16,7 +16,7 @@ Paquete local de la extensión en `apps/extension`. Este documento no publica na
 | Categoría Firefox (AMO) | Other |
 | Id de Firefox | `extension@swal.network` |
 
-Hay que desplegar `workers/public-site/static/extension-privacy/` a https://trade.swal.network/extension-privacy/ antes de enviar la ficha. Este trabajo no despliega.
+La página de privacidad en `workers/public-site/static/extension-privacy/` ya está desplegada y pública en https://trade.swal.network/extension-privacy/.
 
 ## Textos en español
 
@@ -209,11 +209,11 @@ No los hace este repositorio. No hay push ni subida a ninguna tienda en este cam
 Chrome Web Store (registro de desarrollador, 5 USD una sola vez):
 
 1. Entra en https://chrome.google.com/webstore/devconsole con la cuenta de Google que será la editora y paga el registro único de 5 USD.
-2. Despliega la página de privacidad a https://trade.swal.network/extension-privacy/ y comprueba que abre.
+2. Comprueba que la página de privacidad (https://trade.swal.network/extension-privacy/) responde (ya está desplegada y pública).
 3. «Nuevo elemento» y sube `.output/swal-trade-extension-0.1.0-chrome.zip`.
 4. Ficha: categoría Productivity, idioma español por defecto, añade el inglés. Pega los textos de arriba. Icono: `public/icon/128.png`. Capturas: las de `store-assets/`.
 5. Privacy: la URL de arriba. Marca Website content y las tres certificaciones. Pega la columna English de la tabla de permisos en cada campo «permission justification».
-6. Revisa la vista previa. No escribas cifras de acierto ni promesas de resultado. Envía a revisión cuando la URL de privacidad ya responda en producción.
+6. Revisa la vista previa. No escribas cifras de acierto ni promesas de resultado. Envía a revisión (la URL de privacidad ya está desplegada y responde en producción).
 
 Firefox AMO (cuenta gratis):
 
