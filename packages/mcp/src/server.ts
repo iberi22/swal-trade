@@ -36,6 +36,7 @@ import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
 import type { WriteDeps } from "./write.js";
 import { type ChartBridge, getOrCreateBridge, validateShapes } from "./chart-bridge.js";
+import { parseRadarUrl, fetchRadarAlerts, fetchRadarStats, markRadarAlertTaken, RADAR_TOOL_NOTE } from "./radar.js";
 
 const STRENGTH_NOTE = "Strength is pattern quality, not probability.";
 
@@ -89,6 +90,8 @@ export interface ServerDeps {
   writeLock?: WriteDeps["writeLock"];
   sweep?: WriteDeps["sweep"];
   chartBridge?: ChartBridge;
+  radarTokenPath?: string;
+  radarUrl?: string;
 }
 
 interface ToolText {
@@ -599,6 +602,92 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       },
     );
   }
+
+  server.registerTool(
+    "radar_alerts",
+    {
+      title: "Radar alerts",
+      description: `Fetch entry alerts from the local radar service. Validated, compact list. ${RADAR_TOOL_NOTE} This tool is read-only.`,
+      inputSchema: {
+        status: z
+          .enum(["active", "resolved", "all"])
+          .optional()
+          .default("active")
+          .describe("Filter alerts by status (active, resolved, all). Default active."),
+        symbol: z.string().optional().describe("Optional symbol filter, e.g. BTCUSDC."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .default(20)
+          .describe("Maximum number of alerts to return (1..100). Default 20."),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async (args) => {
+      const radarUrl = parseRadarUrl(deps.radarUrl ?? env.SWAL_RADAR_URL);
+      if (!radarUrl.ok) return fail(radarUrl.error);
+      const res = await fetchRadarAlerts({
+        baseUrl: radarUrl.url,
+        status: args.status,
+        symbol: args.symbol,
+        limit: args.limit,
+        fetchFn,
+      });
+      if (!res.ok) return fail(res.error);
+      return ok(res.alerts);
+    },
+  );
+
+  server.registerTool(
+    "radar_stats",
+    {
+      title: "Radar stats",
+      description: `Statistical summary of radar alerts forward-testing: overall, by pattern kind, and user-taken alerts with Wilson 95% intervals and honesty note. ${RADAR_TOOL_NOTE} This tool is read-only.`,
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async () => {
+      const radarUrl = parseRadarUrl(deps.radarUrl ?? env.SWAL_RADAR_URL);
+      if (!radarUrl.ok) return fail(radarUrl.error);
+      const res = await fetchRadarStats({
+        baseUrl: radarUrl.url,
+        fetchFn,
+      });
+      if (!res.ok) return fail(res.error);
+      return ok(res.stats);
+    },
+  );
+
+  server.registerTool(
+    "radar_mark_taken",
+    {
+      title: "Radar mark taken",
+      description: `Record whether a radar alert was taken by the user, and an optional note (up to 200 chars). Local radar note only, does not place orders. ${RADAR_TOOL_NOTE}`,
+      inputSchema: {
+        alert_id: z.number().int().min(1).describe("Alert ID to update."),
+        taken: z.boolean().describe("Whether this alert was taken by the user."),
+        note: z.string().max(200).optional().describe("Optional note (up to 200 chars)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async (args) => {
+      const radarUrl = parseRadarUrl(deps.radarUrl ?? env.SWAL_RADAR_URL);
+      if (!radarUrl.ok) return fail(radarUrl.error);
+      const res = await markRadarAlertTaken({
+        baseUrl: radarUrl.url,
+        alertId: args.alert_id,
+        taken: args.taken,
+        note: args.note,
+        tokenPath: deps.radarTokenPath ?? env.SWAL_RADAR_TOKEN_PATH,
+        fetchFn,
+      });
+      if (!res.ok) return fail(res.error);
+      return ok(res.alert);
+    },
+  );
 
   return server;
 }
