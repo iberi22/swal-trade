@@ -13,6 +13,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const work = mkdtempSync(path.join(tmpdir(), 'swal-verify-pack-'));
+let client;
 try {
   const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', work], { cwd: pkg, encoding: 'utf8' }))[0];
   const tarball = path.join(work, packed.filename);
@@ -24,7 +25,7 @@ try {
   const bin = path.join(app, 'node_modules/@swal-trade/mcp/dist/index.js');
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith('SWAL_') || k.startsWith('BINANCE_')) delete env[k];
-  const client = new Client({ name: 'verify-pack', version: '0.0.0' });
+  client = new Client({ name: 'verify-pack', version: '0.0.0' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [bin], env, cwd: app, stderr: 'pipe' }));
 
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
@@ -37,8 +38,11 @@ try {
   const body = JSON.parse(res.content.find((c) => c.type === 'text').text);
   assert.ok(Array.isArray(body.findings), 'analyze_chart sin núcleo: ' + JSON.stringify(body).slice(0, 200));
   console.log('analyze_chart desde el paquete instalado: OK,', body.findings.length, 'hallazgos');
-  await client.close();
   console.log('verify-pack: OK');
 } finally {
-  rmSync(work, { recursive: true, force: true });
+  try {
+    await client?.close();
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
