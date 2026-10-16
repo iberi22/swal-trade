@@ -97,6 +97,9 @@ test("with the flag on but the configuration broken the tool refuses before any 
       "market_context",
       "place_order",
       "propose_order",
+      "radar_alerts",
+      "radar_mark_taken",
+      "radar_stats",
     ]);
     const text = errorText(await client.callTool({ name: "place_order", arguments: placeArgs }));
     assert.match(text, /SWAL_MCP_SYMBOLS must list at least one symbol/);

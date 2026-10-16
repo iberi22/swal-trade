@@ -35,6 +35,10 @@ export interface ExtensionSettings {
   claudeBridgeEnabled: boolean;
   claudeBridgePort: number;
   claudeBridgeToken: string;
+  /** Consulta el servicio de radar local swal-radar. */
+  radarEnabled: boolean;
+  /** Puerto del servicio de radar local. */
+  radarPort: number;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -48,6 +52,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   claudeBridgeEnabled: false,
   claudeBridgePort: 47321,
   claudeBridgeToken: "",
+  radarEnabled: true,
+  radarPort: 47322,
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -142,6 +148,14 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
       typeof record.claudeBridgeToken === "string"
         ? record.claudeBridgeToken.trim().slice(0, 128)
         : DEFAULT_SETTINGS.claudeBridgeToken,
+    radarEnabled: record.radarEnabled === false ? false : DEFAULT_SETTINGS.radarEnabled,
+    radarPort:
+      typeof record.radarPort === "number" &&
+      Number.isInteger(record.radarPort) &&
+      record.radarPort >= 1024 &&
+      record.radarPort <= 65535
+        ? record.radarPort
+        : DEFAULT_SETTINGS.radarPort,
   };
 }
 

@@ -41,7 +41,7 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   const names = listed.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ['account_risk', 'analyze_chart', 'explain_analysis', 'grid_plan', 'market_context', 'propose_order']);
+  assert.deepEqual(names, ['account_risk', 'analyze_chart', 'explain_analysis', 'grid_plan', 'market_context', 'propose_order', 'radar_alerts', 'radar_mark_taken', 'radar_stats']);
   // explain_analysis habla con el hosting por POST: aquí solo se comprueba que existe y es de lectura.
   const explain = listed.tools.find((tool) => tool.name === 'explain_analysis');
   assert.match(explain.description, /deterministic fallback/);

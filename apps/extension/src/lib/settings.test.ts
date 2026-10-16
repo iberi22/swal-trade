@@ -87,6 +87,8 @@ describe('normalizeSettings', () => {
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
+      radarEnabled: true,
+      radarPort: 47322,
     });
   });
 
@@ -110,6 +112,8 @@ describe('normalizeSettings', () => {
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
+      radarEnabled: true,
+      radarPort: 47322,
     });
   });
 
@@ -127,6 +131,8 @@ describe('normalizeSettings', () => {
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
+      radarEnabled: true,
+      radarPort: 47322,
     });
   });
 
@@ -160,6 +166,22 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({}).hotkeysEnabled).toBe(true);
   });
 
+  it('radarEnabled solo se apaga con false explícito', () => {
+    expect(normalizeSettings({ radarEnabled: false }).radarEnabled).toBe(false);
+    expect(normalizeSettings({ radarEnabled: 'false' }).radarEnabled).toBe(true);
+    expect(normalizeSettings({ radarEnabled: 0 }).radarEnabled).toBe(true);
+    expect(normalizeSettings({}).radarEnabled).toBe(true);
+  });
+
+  it('radarPort normaliza puertos y descarta inválidos', () => {
+    expect(normalizeSettings({ radarPort: 8080 }).radarPort).toBe(8080);
+    expect(normalizeSettings({ radarPort: 1023 }).radarPort).toBe(47322);
+    expect(normalizeSettings({ radarPort: 70000 }).radarPort).toBe(47322);
+    expect(normalizeSettings({ radarPort: 8080.5 }).radarPort).toBe(47322);
+    expect(normalizeSettings({ radarPort: '47322' }).radarPort).toBe(47322);
+    expect(normalizeSettings({}).radarPort).toBe(47322);
+  });
+
   it('no se deja intoxicar con campos inventados', () => {
     const settings = normalizeSettings({
       defaultTimeframe: '1d',
@@ -178,6 +200,8 @@ describe('normalizeSettings', () => {
       'hotkeyMap',
       'hotkeysEnabled',
       'paintOnChart',
+      'radarEnabled',
+      'radarPort',
       'symbols',
     ]);
   });
@@ -208,6 +232,8 @@ describe('settingsFromStorage', () => {
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
+      radarEnabled: true,
+      radarPort: 47322,
     });
   });
 
@@ -223,6 +249,8 @@ describe('settingsFromStorage', () => {
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
+      radarEnabled: true,
+      radarPort: 47322,
     });
   });
 
