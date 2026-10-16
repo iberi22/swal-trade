@@ -39,7 +39,7 @@ function applyTierUi() {
   $('tg-section').classList.toggle('hidden', !tier.telegram);
   $('tg-locked').classList.toggle('hidden', tier.telegram);
   $('selfhost-link').classList.toggle('hidden', !tier.selfHostLink);
-  text($('tier-badge'), tier.tier === 'pro' ? 'Pro' : 'Gratis (1 posición vigilada)');
+  text($('tier-badge'), tier.tier === 'pro' ? 'Pro' : 'Gratis');
 }
 
 function notify(msg) {
@@ -101,8 +101,7 @@ async function poll() {
     bar.firstElementChild.style.width = `${(frac * 100).toFixed(0)}%`;
     bar.className = 'bar' + (br.daily_hit ? ' hit' : br.daily_warn ? ' warn' : '');
     renderPositions(pos, lev, algo);
-    if (all.length > pos.length) text($('free-note'), `Plan gratuito: se vigila solo la posición de mayor nocional (${all.length - pos.length} sin vigilar). Pro: ilimitado.`);
-    else text($('free-note'), '');
+    text($('free-note'), '');
     const list = $('breach-list');
     list.replaceChildren();
     for (const m of [...Object.values(br), ...unprotected(pos, algo).map((p) => `SIN STOP: ${p.symbol}`)]) { const li = document.createElement('li'); li.textContent = m; list.appendChild(li); }
