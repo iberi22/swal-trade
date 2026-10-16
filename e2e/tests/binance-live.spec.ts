@@ -61,8 +61,27 @@ async function chartShapes(page: import('@playwright/test').Page) {
   });
 }
 
-/** Abre la página pública, descarta el banner y cambia a la pestaña Trading View. */
-async function openFuturesPage(page: import('playwright/test').Page) {
+/**
+ * true si el iframe de la Charting Library (pestaña "Trading View") se ve. Binance
+ * deja el iframe montado pero oculto al volver a Original, así que no basta con
+ * que exista en el DOM.
+ */
+function tradingViewShown(page: import('@playwright/test').Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const frame = [...document.querySelectorAll('iframe')].find((f) =>
+      (f.getAttribute('src') ?? '').includes('/static/chart/tradingview/'),
+    );
+    if (!frame) return false;
+    const rect = frame.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  });
+}
+
+/** Abre la página pública, descarta el banner y cambia a la pestaña indicada (por defecto Trading View). */
+async function openFuturesPage(
+  page: import('playwright/test').Page,
+  tab: 'Trading View' | 'Original' = 'Trading View',
+) {
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page.waitForTimeout(9_000);
   // Único clic permitido sobre la página: el banner de cookies.
@@ -78,15 +97,17 @@ async function openFuturesPage(page: import('playwright/test').Page) {
     }
   }
   await page.waitForTimeout(2_000);
-  await page.evaluate(() => {
+  const tabPattern = tab === 'Original' ? 'Original' : 'Trading\\s*View';
+  await page.evaluate((pattern) => {
     const matches = [...document.querySelectorAll('div,span,a,button,li')].filter(
       (element) =>
         element.childElementCount <= 2 &&
-        /^\s*Trading\s*View\s*$/i.test(element.textContent ?? '') &&
+        new RegExp(`^\\s*${pattern}\\s*$`, 'i').test(element.textContent ?? '') &&
         element.offsetParent !== null,
     );
     matches[matches.length - 1]?.click();
-  });
+  }, tabPattern);
+  if (tab === 'Original') return;
   // El iframe tarda en montar el chart y en tener rango visible.
   await expect
     .poll(() => chartShapes(page), { timeout: 45_000, intervals: [1_000] })
@@ -216,6 +237,77 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
       await tvFrame.locator('body').press('F3');
       await expect.poll(() => chartResolution(page), { timeout: 30_000, intervals: [1_000] }).toBe('15');
       await page.screenshot({ path: path.join(repoRoot, 'e2e/test-results/binance-tv-f3-resolution.png') });
+    } finally {
+      await context.close();
+      await rm(userData, { recursive: true, force: true });
+    }
+  });
+
+  test('desde Original, pintar cambia a Trading View y "Volver a Original" regresa', async () => {
+    const manifestRaw = await readFile(path.join(extensionDir, 'manifest.json'), 'utf8').catch(() => {
+      throw new Error(
+        `Falta el build de la extensión en ${extensionDir}. Corre npm run build en apps/extension.`,
+      );
+    });
+    const sidePath =
+      (JSON.parse(manifestRaw) as { side_panel?: { default_path?: string } }).side_panel
+        ?.default_path ?? 'sidepanel.html';
+
+    const userData = await mkdtemp(path.join(tmpdir(), 'swal-binance-live-'));
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+    const context = await chromium.launchPersistentContext(userData, {
+      headless: false,
+      ...(executablePath ? { executablePath } : {}),
+      args: ['--headless=new', `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
+      ignoreDefaultArgs: ['--disable-extensions'],
+    });
+    try {
+      let worker = context.serviceWorkers()[0];
+      if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 20_000 });
+      const extensionId = new URL(worker.url()).host;
+
+      const page = await context.newPage();
+      await context.routeWebSocket(/fstream\.binance\.com/, () => {});
+      await context.route(KLINES, (route) => fulfillJson(route, liveBinanceKlines()));
+      await context.route(NEWS_URL, (route) => fulfillJson(route, { items: [] }));
+      await openFuturesPage(page, 'Original');
+
+      // Original activa: no hay iframe de Trading View montado.
+      await expect
+        .poll(() => tradingViewShown(page), { timeout: 15_000, intervals: [500] })
+        .toBe(false);
+
+      const panel = await context.newPage();
+      await panel.goto(`chrome-extension://${extensionId}/${sidePath}`);
+      const settings = panel.locator('details.settings');
+      await settings.locator('summary').click();
+      const toggle = panel.getByRole('checkbox', {
+        name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
+      });
+      await expect(toggle).toBeEnabled();
+      await toggle.check();
+
+      // (a) El content script cambia la página a Trading View antes de pintar.
+      await expect
+        .poll(() => tradingViewShown(page), { timeout: 45_000, intervals: [1_000] })
+        .toBe(true);
+
+      // (b) El puente confirmó el canal y dibujó las formas en el chart.
+      await expect
+        .poll(async () => (await chartShapes(page))?.length ?? 0, { timeout: 45_000, intervals: [1_000] })
+        .toBeGreaterThan(0);
+      const painted = (await chartShapes(page)) ?? [];
+      expect(painted.map((shape) => shape.name)).toContain('horizontal_line');
+      await page.screenshot({ path: path.join(repoRoot, 'e2e/test-results/binance-tv-auto-switched.png') });
+
+      // Volver a Original desde el panel: el iframe de Trading View deja de verse.
+      const backButton = panel.getByRole('button', { name: 'Volver a Original' });
+      await expect(backButton).toBeVisible({ timeout: 15_000 });
+      await backButton.click();
+      await expect
+        .poll(() => tradingViewShown(page), { timeout: 30_000, intervals: [1_000] })
+        .toBe(false);
+      await page.screenshot({ path: path.join(repoRoot, 'e2e/test-results/binance-original-restored.png') });
     } finally {
       await context.close();
       await rm(userData, { recursive: true, force: true });
