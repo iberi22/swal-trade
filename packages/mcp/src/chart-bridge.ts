@@ -10,6 +10,8 @@ import type { Duplex } from "node:stream";
 export const MAX_FRAME_BYTES = 64 * 1024;
 export const WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 export const DEFAULT_CHART_BRIDGE_PORT = 47321;
+export const DEFAULT_BRIDGE_CONTROL_PORT = 47330;
+export const MAX_CONTROL_BODY_BYTES = 64 * 1024;
 export const DEFAULT_AUTH_TIMEOUT_MS = 5000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
 
@@ -606,4 +608,323 @@ export function getOrCreateBridge(env: NodeJS.ProcessEnv): ChartBridgeServer {
     });
   }
   return sharedBridge;
+}
+
+export interface BridgeDaemonOptions {
+  wsPort?: number;
+  controlPort?: number;
+  tokenPath?: string;
+  authTimeoutMs?: number;
+  requestTimeoutMs?: number;
+}
+
+export class BridgeDaemon {
+  readonly bridgeServer: ChartBridgeServer;
+  private controlServer: http.Server | null = null;
+  controlPort: number;
+  readonly token: string;
+  readonly tokenPath: string;
+  private controlSockets = new Set<Duplex>();
+
+  constructor(options: BridgeDaemonOptions = {}) {
+    this.controlPort = options.controlPort ?? DEFAULT_BRIDGE_CONTROL_PORT;
+    this.bridgeServer = new ChartBridgeServer({
+      port: options.wsPort ?? DEFAULT_CHART_BRIDGE_PORT,
+      tokenPath: options.tokenPath,
+      authTimeoutMs: options.authTimeoutMs,
+      requestTimeoutMs: options.requestTimeoutMs,
+    });
+    this.token = this.bridgeServer.token;
+    this.tokenPath = this.bridgeServer.tokenPath;
+  }
+
+  get wsPort(): number {
+    return this.bridgeServer.port;
+  }
+
+  async start(): Promise<void> {
+    await this.bridgeServer.start();
+
+    this.controlServer = http.createServer(async (req, res) => {
+      const rawHeader = req.headers["x-bridge-token"];
+      const tokenHeader = typeof rawHeader === "string" ? rawHeader : Array.isArray(rawHeader) ? rawHeader[0] ?? "" : "";
+      const expected = Buffer.from(this.token, "utf8");
+      const actual = Buffer.from(tokenHeader, "utf8");
+      const valid = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+
+      if (!valid) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+        return;
+      }
+
+      const url = new URL(req.url ?? "/", "http://127.0.0.1:" + this.controlPort);
+      const pathname = url.pathname;
+
+      if (req.method === "GET" && pathname === "/v1/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            extensionConnected: this.bridgeServer.isConnected(),
+          })
+        );
+        return;
+      }
+
+      if (req.method !== "POST") {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "not found" }));
+        return;
+      }
+
+      const contentLength = req.headers["content-length"] ? parseInt(req.headers["content-length"], 10) : NaN;
+      if (!Number.isNaN(contentLength) && contentLength > MAX_CONTROL_BODY_BYTES) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "payload too large" }));
+        return;
+      }
+
+      let bodyBytes = 0;
+      const chunks: Buffer[] = [];
+      let tooLarge = false;
+
+      for await (const chunk of req) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bodyBytes += buf.length;
+        if (bodyBytes > MAX_CONTROL_BODY_BYTES) {
+          tooLarge = true;
+          break;
+        }
+        chunks.push(buf);
+      }
+
+      if (tooLarge) {
+        req.resume();
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "payload too large" }));
+        return;
+      }
+
+      const rawBody = Buffer.concat(chunks).toString("utf8");
+      let body: any = {};
+      if (rawBody.trim().length > 0) {
+        try {
+          body = JSON.parse(rawBody);
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "invalid JSON body" }));
+          return;
+        }
+      }
+
+      const handleBridgeError = (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        let status = 500;
+        if (msg.includes("extension not connected")) {
+          status = 503;
+        } else if (msg.includes("timed out")) {
+          status = 504;
+        } else if (msg.includes("invalid timeframe") || msg.includes("shapes")) {
+          status = 400;
+        }
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: msg }));
+      };
+
+      if (pathname === "/v1/chart/state") {
+        try {
+          const state = await this.bridgeServer.getChartState();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(state));
+        } catch (err) {
+          handleBridgeError(err);
+        }
+        return;
+      }
+
+      if (pathname === "/v1/chart/paint") {
+        const validated = validateShapes(body?.shapes);
+        if (!validated.ok) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: validated.error }));
+          return;
+        }
+        try {
+          const result = await this.bridgeServer.paint(validated.shapes);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result ?? { ok: true }));
+        } catch (err) {
+          handleBridgeError(err);
+        }
+        return;
+      }
+
+      if (pathname === "/v1/chart/clear") {
+        try {
+          const result = await this.bridgeServer.clear();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result ?? { ok: true }));
+        } catch (err) {
+          handleBridgeError(err);
+        }
+        return;
+      }
+
+      if (pathname === "/v1/chart/timeframe") {
+        const tf = body?.timeframe;
+        if (typeof tf !== "string" || !tf) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "timeframe is required" }));
+          return;
+        }
+        if (!TIMEFRAME_TO_RESOLUTION[tf]) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "invalid timeframe: " + tf }));
+          return;
+        }
+        try {
+          const result = await this.bridgeServer.setTimeframe(tf);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result ?? { ok: true }));
+        } catch (err) {
+          handleBridgeError(err);
+        }
+        return;
+      }
+
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "not found" }));
+    });
+
+    this.controlServer.on("connection", (socket) => {
+      this.controlSockets.add(socket);
+      socket.on("close", () => this.controlSockets.delete(socket));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      this.controlServer!.listen(this.controlPort, "127.0.0.1", () => {
+        const address = this.controlServer!.address();
+        if (address && typeof address === "object") {
+          this.controlPort = address.port;
+        }
+        resolve();
+      });
+      this.controlServer!.on("error", reject);
+    });
+  }
+
+  async close(): Promise<void> {
+    await this.bridgeServer.close();
+    for (const socket of this.controlSockets) {
+      socket.destroy();
+    }
+    this.controlSockets.clear();
+    if (this.controlServer) {
+      const srv = this.controlServer;
+      this.controlServer = null;
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+    }
+  }
+}
+
+export interface ChartBridgeHttpClientOptions {
+  controlPort?: number;
+  tokenPath?: string;
+  fetchFn?: typeof fetch;
+}
+
+export class ChartBridgeHttpClient implements ChartBridge {
+  readonly controlPort: number;
+  readonly tokenPath: string;
+  private readonly fetchFn: typeof fetch;
+
+  constructor(options: ChartBridgeHttpClientOptions | NodeJS.ProcessEnv = {}) {
+    if (
+      "SWAL_BRIDGE_CONTROL_PORT" in options ||
+      "SWAL_MCP_CHART_PORT" in options ||
+      "HOME" in options ||
+      "SWAL_MCP_CHART_BRIDGE" in options ||
+      "SWAL_BRIDGE_TOKEN_PATH" in options
+    ) {
+      const env = options as NodeJS.ProcessEnv;
+      this.controlPort = env.SWAL_BRIDGE_CONTROL_PORT
+        ? parseInt(env.SWAL_BRIDGE_CONTROL_PORT, 10)
+        : DEFAULT_BRIDGE_CONTROL_PORT;
+      this.tokenPath =
+        env.SWAL_BRIDGE_TOKEN_PATH ??
+        path.join(env.HOME || os.homedir(), ".config", "swal-trade", "chart-bridge-token");
+      this.fetchFn = fetch;
+    } else {
+      const opts = options as ChartBridgeHttpClientOptions;
+      this.controlPort =
+        opts.controlPort ??
+        (process.env.SWAL_BRIDGE_CONTROL_PORT
+          ? parseInt(process.env.SWAL_BRIDGE_CONTROL_PORT, 10)
+          : DEFAULT_BRIDGE_CONTROL_PORT);
+      this.tokenPath =
+        opts.tokenPath ??
+        (process.env.SWAL_BRIDGE_TOKEN_PATH ??
+          path.join(process.env.HOME || os.homedir(), ".config", "swal-trade", "chart-bridge-token"));
+      this.fetchFn = opts.fetchFn ?? fetch;
+    }
+  }
+
+  private readToken(): string {
+    try {
+      return fs.readFileSync(this.tokenPath, "utf8").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  private async post<T>(endpoint: string, body?: unknown): Promise<T> {
+    const token = this.readToken();
+    let res: Response;
+    try {
+      res = await this.fetchFn("http://127.0.0.1:" + this.controlPort + endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Bridge-Token": token,
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw new Error("servicio swal-bridge apagado: systemctl --user start swal-bridge");
+    }
+
+    if (!res.ok) {
+      let errorMsg = "HTTP " + res.status;
+      try {
+        const data = (await res.json()) as { ok?: boolean; error?: string };
+        if (data && typeof data.error === "string") {
+          errorMsg = data.error;
+        }
+      } catch {
+        // fallback to status
+      }
+      throw new Error(errorMsg);
+    }
+
+    return (await res.json()) as T;
+  }
+
+  async getChartState(): Promise<ChartStateResult> {
+    return this.post<ChartStateResult>("/v1/chart/state");
+  }
+
+  async paint(shapes: BridgeShape[]): Promise<unknown> {
+    return this.post<unknown>("/v1/chart/paint", { shapes });
+  }
+
+  async clear(): Promise<unknown> {
+    return this.post<unknown>("/v1/chart/clear");
+  }
+
+  async setTimeframe(timeframe: string): Promise<unknown> {
+    return this.post<unknown>("/v1/chart/timeframe", { timeframe });
+  }
+
+  async close(): Promise<void> {}
 }

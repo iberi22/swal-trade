@@ -1,0 +1,13 @@
+[Unit]
+Description=swal-trade chart bridge daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/proyectosSWAL/synapse/swal-trade/packages/mcp
+ExecStart=/run/current-system/sw/bin/node %h/proyectosSWAL/synapse/swal-trade/packages/mcp/dist/bridge-daemon.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

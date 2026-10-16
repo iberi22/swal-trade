@@ -8,7 +8,8 @@
     "node": ">=20"
   },
   "bin": {
-    "swal-trade-mcp": "./dist/index.js"
+    "swal-trade-mcp": "./dist/index.js",
+    "swal-bridge": "./dist/bridge-daemon.js"
   },
   "main": "./dist/index.js",
   "exports": {
@@ -20,7 +21,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs"
+    "test": "tsc -p tsconfig.json && node --test test/*.test.mjs",
+    "bridge": "node dist/bridge-daemon.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

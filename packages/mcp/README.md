@@ -165,29 +165,69 @@ El stop se comprueba además contra la estimación de liquidación del exchange 
 
 Permite que un agente local de IA (como Claude Code conectado a este servidor MCP) lea el estado del gráfico abierto en el navegador y dibuje niveles, zonas, líneas de tendencia y flechas sobre el gráfico de TradingView de Binance Futures mediante la extensión de navegador SWAL Trade.
 
+### Arquitectura de servicio único y modo cliente
+
+Para evitar colisiones de puerto cuando varias sesiones de Claude Code (o sus subagentes) se ejecutan concurrentemente, la conexión con la extensión está desacoplada en un servicio local siempre activo:
+
+1. **Servicio demonio (`swal-bridge`)**:
+   - Escucha en `127.0.0.1:47321` para la conexión WebSocket única de la extensión de navegador.
+   - Expone una API de control HTTP local en `127.0.0.1:47330` (autenticada mediante el encabezado `X-Bridge-Token` con el token de `~/.config/swal-trade/chart-bridge-token`).
+   - Se mantiene siempre en ejecución como servicio de usuario en systemd o mediante `npm run bridge`.
+
+2. **Modo cliente en MCP (`SWAL_MCP_CHART_BRIDGE=client`)**:
+   - Es el **modo predeterminado y recomendado** para los usuarios.
+   - Cada proceso MCP invocado por Claude Code actúa como cliente HTTP ligero de la API de control.
+   - **No abre ni vincula ningún puerto local**: múltiples sesiones de Claude Code y subagentes concurrentes pueden consultar y pintar en el mismo gráfico simultáneamente sin conflictos de `EADDRINUSE`.
+   - Si el servicio no está corriendo, las herramientas devuelven un error claro en español: `"servicio swal-bridge apagado: systemctl --user start swal-bridge"`.
+   - El modo embebido `SWAL_MCP_CHART_BRIDGE=enabled` se mantiene disponible para retrocompatibilidad y suites de pruebas aisladas.
+
 ### Cómo activarlo
 
-1. **En el servidor MCP**: define la variable de entorno:
+1. **Instalar e iniciar el servicio demonio**:
    ```bash
-   export SWAL_MCP_CHART_BRIDGE=enabled
-   # Opcional (puerto por defecto 47321):
-   export SWAL_MCP_CHART_PORT=47321
+   # Copiar el servicio systemd de usuario
+   mkdir -p ~/.config/systemd/user
+   cp scripts/swal-bridge.service ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now swal-bridge
+
+   # Verificar estado:
+   systemctl --user status swal-bridge
    ```
-2. **Token de emparejamiento**: en el primer arranque con el puente habilitado, el servidor genera un token criptográfico seguro (32 bytes aleatorios en base64url) en:
+   *(Alternativa manual sin systemd: `npm run bridge` o `npx swal-bridge`)*.
+
+2. **Configurar el servidor MCP en modo cliente**:
+   Define la variable de entorno en tu wrapper o configuración MCP:
+   ```bash
+   export SWAL_MCP_CHART_BRIDGE=client
+   # Opcional (puerto de control por defecto 47330):
+   # export SWAL_BRIDGE_CONTROL_PORT=47330
+   ```
+
+3. **Token de emparejamiento**:
+   Al iniciar por primera vez, el demonio genera un token criptográfico seguro (32 bytes aleatorios en base64url) en:
    ```bash
    ~/.config/swal-trade/chart-bridge-token
    ```
    El archivo se crea con permisos restrictivos `0600` (solo legible por tu usuario local).
-3. **En la extensión**:
+
+4. **En la extensión de navegador**:
    - Abre el panel lateral de la extensión SWAL Trade en tu navegador.
    - Despliega la sección **Ajustes**.
    - Activa el interruptor **"Permitir que Claude use el gráfico"**.
    - Copia el token de `~/.config/swal-trade/chart-bridge-token` y pégalo en el campo "Token de emparejamiento" (el campo lo mantiene enmascarado).
-   - En un instante, el indicador cambiará a **"Claude conectado"** (punto verde).
+   - El indicador cambiará a **"Claude conectado"** (punto verde).
+
+### Cómo varias sesiones de Claude comparten un mismo gráfico
+
+Cada sesión de Claude Code —incluyendo subagentes lanzados en paralelo— ejecuta su propio proceso MCP con `SWAL_MCP_CHART_BRIDGE=client`. Dado que los clientes MCP solo realizan peticiones HTTP locales hacia el demonio `swal-bridge` y leen el token en cada llamada:
+- Ninguna sesión MCP compite por el puerto del navegador.
+- El navegador mantiene una única conexión WebSocket estable con el demonio local.
+- Todas las sesiones pueden solicitar el estado del gráfico (`chart_state`) y pintar formas (`chart_paint`) sobre la misma pestaña activa.
 
 ### Las cuatro herramientas MCP
 
-Cuando `SWAL_MCP_CHART_BRIDGE=enabled`, se registran automáticamente 4 herramientas:
+Cuando `SWAL_MCP_CHART_BRIDGE=client` (o `enabled`), se registran automáticamente 4 herramientas:
 
 - `chart_state`: devuelve el estado actual del gráfico (`{ connected, symbol, timeframe, paintEnabled, tabUrlHost }`).
 - `chart_paint({ shapes })`: valida y dibuja formas en el gráfico de Binance abierto. Se validan con los mismos límites que la extensión (máximo 30 formas, texto ≤ 60 caracteres, marcas de tiempo y precios finitos y positivos). Todas las formas dibujadas por Claude llevan automáticamente el prefijo visual distintivo `"IA:"`.
@@ -196,10 +236,12 @@ Cuando `SWAL_MCP_CHART_BRIDGE=enabled`, se registran automáticamente 4 herramie
 
 ### Modelo de seguridad
 
-- **Solo local**: el servidor WebSocket se vincula estrictamente a `127.0.0.1` (localhost). No escucha en interfaces de red externas ni expone puertos a internet.
-- **Autenticación con token**: la extensión debe enviar el token de emparejamiento como su primer mensaje (`hello`) dentro de los primeros 5 segundos de conexión. La validación se realiza en tiempo constante (`crypto.timingSafeEqual`) contra ataques de temporización.
-- **Validación de Origin**: se rechazan de inmediato conexiones cuyo encabezado `Origin` no provenga de una extensión de navegador (`chrome-extension://` o `moz-extension://`).
-- **Un solo cliente activo**: solo se admite una extensión conectada a la vez.
+- **Solo local**: tanto el servidor WebSocket (`127.0.0.1:47321`) como la API de control HTTP (`127.0.0.1:47330`) se vinculan estrictamente a `127.0.0.1` (localhost). No escuchan en interfaces externas ni exponen puertos a la red.
+- **Sin encabezados CORS**: la API de control HTTP no incluye encabezados CORS, bloqueando solicitudes iniciadas por sitios web desde navegadores.
+- **Autenticación con token**: tanto el WebSocket como la API de control requieren el token de emparejamiento. Las comparaciones se ejecutan en tiempo constante (`crypto.timingSafeEqual`) contra ataques de temporización.
+- **Límite de cuerpo**: la API de control y el WebSocket rechazan cualquier carga útil que supere los 64 KB (`413 Payload Too Large`).
+- **Validación de Origin**: el WebSocket rechaza conexiones cuyo encabezado `Origin` no provenga de una extensión de navegador (`chrome-extension://` o `moz-extension://`).
+- **Un solo cliente de extensión activo**: solo se admite una extensión conectada a la vez en el demonio.
 - **Solo lectura y dibujo — nunca trading**: el puente no tiene acceso a cookies, credenciales, órdenes, balances ni DOM de cuentas. Solo reenvía formas geométricas de análisis y lee el símbolo/temporalidad activa.
 - **Tiempo de espera**: las peticiones tienen un timeout estricto de 5 segundos; si la extensión o la pestaña no responden, devuelven un error limpio y explicativo.
 

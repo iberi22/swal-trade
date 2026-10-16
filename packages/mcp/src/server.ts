@@ -35,7 +35,7 @@ import { parseTradingConfig, readBase, tradingEnabled } from "./trading-config.j
 import { errorMessage, redactSecrets } from "./types.js";
 import type { FetchLike } from "./types.js";
 import type { WriteDeps } from "./write.js";
-import { type ChartBridge, getOrCreateBridge, validateShapes } from "./chart-bridge.js";
+import { type ChartBridge, ChartBridgeHttpClient, getOrCreateBridge, validateShapes } from "./chart-bridge.js";
 import { parseRadarUrl, fetchRadarAlerts, fetchRadarStats, markRadarAlertTaken, RADAR_TOOL_NOTE } from "./radar.js";
 
 const STRENGTH_NOTE = "Strength is pattern quality, not probability.";
@@ -510,9 +510,14 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     );
   }
 
-  const bridgeEnabled = env.SWAL_MCP_CHART_BRIDGE === "enabled";
-  if (bridgeEnabled) {
-    const bridge = deps.chartBridge ?? getOrCreateBridge(env);
+  const bridgeMode = env.SWAL_MCP_CHART_BRIDGE;
+  const bridgeActive = bridgeMode === "client" || bridgeMode === "enabled";
+  if (bridgeActive) {
+    const bridge =
+      deps.chartBridge ??
+      (bridgeMode === "enabled"
+        ? getOrCreateBridge(env)
+        : new ChartBridgeHttpClient(env));
 
     server.registerTool(
       "chart_state",

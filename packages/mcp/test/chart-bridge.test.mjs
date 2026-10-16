@@ -8,6 +8,8 @@ import {
   ensureBridgeToken,
   validateShapes,
   ChartBridgeServer,
+  BridgeDaemon,
+  ChartBridgeHttpClient,
   MAX_FRAME_BYTES,
 } from "../dist/chart-bridge.js";
 import { createServer } from "../dist/server.js";
@@ -389,4 +391,388 @@ test("a bridge that could not bind its port reports why instead of 'not connecte
   } finally {
     await first.close();
   }
+});
+
+test("daemon control API: auth, health shape, body cap, and extension-not-connected error", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-daemon-test-"));
+  const tokenFile = path.join(tmpDir, "chart-bridge-token");
+
+  const daemon = new BridgeDaemon({
+    wsPort: 0,
+    controlPort: 0,
+    tokenPath: tokenFile,
+    authTimeoutMs: 500,
+    requestTimeoutMs: 500,
+  });
+
+  await daemon.start();
+  const token = daemon.token;
+  const controlPort = daemon.controlPort;
+
+  try {
+    // 1. Token required: without token -> 401
+    const noTokenRes = await fetch(`http://127.0.0.1:${controlPort}/v1/health`);
+    assert.equal(noTokenRes.status, 401);
+    const noTokenData = await noTokenRes.json();
+    assert.equal(noTokenData.ok, false);
+
+    // With wrong token -> 401
+    const wrongTokenRes = await fetch(`http://127.0.0.1:${controlPort}/v1/health`, {
+      headers: { "X-Bridge-Token": "bad-token" },
+    });
+    assert.equal(wrongTokenRes.status, 401);
+
+    // 2. Health shape with valid token (extension not connected)
+    const healthRes = await fetch(`http://127.0.0.1:${controlPort}/v1/health`, {
+      headers: { "X-Bridge-Token": token },
+    });
+    assert.equal(healthRes.status, 200);
+    const healthData = await healthRes.json();
+    assert.deepEqual(healthData, { ok: true, extensionConnected: false });
+
+    // 3. Extension not connected errors on chart endpoints
+    const stateRes = await fetch(`http://127.0.0.1:${controlPort}/v1/chart/state`, {
+      method: "POST",
+      headers: { "X-Bridge-Token": token },
+    });
+    assert.equal(stateRes.status, 503);
+    const stateData = await stateRes.json();
+    assert.ok(stateData.error.includes("extension not connected"));
+
+    const paintRes = await fetch(`http://127.0.0.1:${controlPort}/v1/chart/paint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Token": token },
+      body: JSON.stringify({
+        shapes: [{ kind: "level", points: [{ time: 1700000000, price: 3000 }] }],
+      }),
+    });
+    assert.equal(paintRes.status, 503);
+    assert.ok((await paintRes.json()).error.includes("extension not connected"));
+
+    const clearRes = await fetch(`http://127.0.0.1:${controlPort}/v1/chart/clear`, {
+      method: "POST",
+      headers: { "X-Bridge-Token": token },
+    });
+    assert.equal(clearRes.status, 503);
+    assert.ok((await clearRes.json()).error.includes("extension not connected"));
+
+    const tfRes = await fetch(`http://127.0.0.1:${controlPort}/v1/chart/timeframe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Token": token },
+      body: JSON.stringify({ timeframe: "15m" }),
+    });
+    assert.equal(tfRes.status, 503);
+    assert.ok((await tfRes.json()).error.includes("extension not connected"));
+
+    // 4. Body cap: payload > 64 KB -> 413
+    const bigPayload = {
+      shapes: [{ kind: "level", points: [{ time: 1700000000, price: 3000 }] }],
+      padding: "x".repeat(65 * 1024),
+    };
+    const capRes = await fetch(`http://127.0.0.1:${controlPort}/v1/chart/paint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Token": token },
+      body: JSON.stringify(bigPayload),
+    });
+    assert.equal(capRes.status, 413);
+    const capData = await capRes.json();
+    assert.equal(capData.ok, false);
+    assert.equal(capData.error, "payload too large");
+  } finally {
+    await daemon.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("daemon control API: state, paint, clear, timeframe forwarded to extension over WS", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-daemon-fwd-"));
+  const tokenFile = path.join(tmpDir, "chart-bridge-token");
+
+  const daemon = new BridgeDaemon({
+    wsPort: 0,
+    controlPort: 0,
+    tokenPath: tokenFile,
+    authTimeoutMs: 1000,
+    requestTimeoutMs: 1000,
+  });
+
+  await daemon.start();
+  const token = daemon.token;
+
+  try {
+    const client = await connectTestClient(daemon.wsPort);
+    assert.equal(client.status, 101);
+    client.sendJson({ type: "hello", token, version: 1 });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(daemon.bridgeServer.isConnected(), true);
+
+    const healthRes = await fetch(`http://127.0.0.1:${daemon.controlPort}/v1/health`, {
+      headers: { "X-Bridge-Token": token },
+    });
+    const healthData = await healthRes.json();
+    assert.deepEqual(healthData, { ok: true, extensionConnected: true });
+
+    // 1. POST /v1/chart/state
+    const statePromise = fetch(`http://127.0.0.1:${daemon.controlPort}/v1/chart/state`, {
+      method: "POST",
+      headers: { "X-Bridge-Token": token },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const stateReq = client.messages.find((m) => m.type === "chart_state");
+    assert.ok(stateReq && stateReq.id);
+    client.sendJson({
+      id: stateReq.id,
+      ok: true,
+      state: {
+        connected: true,
+        symbol: "SOLUSDT",
+        timeframe: "5m",
+        paintEnabled: true,
+        tabUrlHost: "www.binance.com",
+      },
+    });
+    const stateRes = await statePromise;
+    assert.equal(stateRes.status, 200);
+    const stateData = await stateRes.json();
+    assert.deepEqual(stateData, {
+      connected: true,
+      symbol: "SOLUSDT",
+      timeframe: "5m",
+      paintEnabled: true,
+      tabUrlHost: "www.binance.com",
+    });
+
+    // 2. POST /v1/chart/paint
+    const paintPromise = fetch(`http://127.0.0.1:${daemon.controlPort}/v1/chart/paint`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Token": token },
+      body: JSON.stringify({
+        shapes: [
+          {
+            kind: "level",
+            text: "resistance",
+            points: [{ time: 1700000000, price: 150 }],
+          },
+        ],
+      }),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const paintReq = client.messages.find((m) => m.type === "chart_paint");
+    assert.ok(paintReq && paintReq.id);
+    assert.equal(paintReq.shapes.length, 1);
+    assert.equal(paintReq.shapes[0].text, "IA: resistance");
+    client.sendJson({
+      id: paintReq.id,
+      ok: true,
+      result: { sent: 1, count: 1 },
+    });
+    const paintRes = await paintPromise;
+    assert.equal(paintRes.status, 200);
+    const paintData = await paintRes.json();
+    assert.deepEqual(paintData, { sent: 1, count: 1 });
+
+    // 3. POST /v1/chart/clear
+    const clearPromise = fetch(`http://127.0.0.1:${daemon.controlPort}/v1/chart/clear`, {
+      method: "POST",
+      headers: { "X-Bridge-Token": token },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const clearReq = client.messages.find((m) => m.type === "chart_clear");
+    assert.ok(clearReq && clearReq.id);
+    client.sendJson({
+      id: clearReq.id,
+      ok: true,
+      result: { cleared: true },
+    });
+    const clearRes = await clearPromise;
+    assert.equal(clearRes.status, 200);
+    const clearData = await clearRes.json();
+    assert.deepEqual(clearData, { cleared: true });
+
+    // 4. POST /v1/chart/timeframe
+    const tfPromise = fetch(`http://127.0.0.1:${daemon.controlPort}/v1/chart/timeframe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bridge-Token": token },
+      body: JSON.stringify({ timeframe: "1h" }),
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const tfReq = client.messages.find((m) => m.type === "set_resolution");
+    assert.ok(tfReq && tfReq.id);
+    assert.equal(tfReq.resolution, "60");
+    client.sendJson({
+      id: tfReq.id,
+      ok: true,
+      result: { resolution: "60" },
+    });
+    const tfRes = await tfPromise;
+    assert.equal(tfRes.status, 200);
+    const tfData = await tfRes.json();
+    assert.deepEqual(tfData, { resolution: "60" });
+
+    client.close();
+  } finally {
+    await daemon.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("MCP client mode: tools call control API over HTTP with token read at call time", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "swal-client-mode-"));
+  const tokenFile = path.join(tmpDir, "chart-bridge-token");
+  fs.writeFileSync(tokenFile, "test-client-token-12345", { mode: 0o600 });
+
+  const calls = [];
+  const fakeServer = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) {
+      body += chunk.toString("utf8");
+    }
+    calls.push({
+      method: req.method,
+      url: req.url,
+      token: req.headers["x-bridge-token"],
+      body: body ? JSON.parse(body) : null,
+    });
+
+    if (req.url === "/v1/chart/state") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          connected: true,
+          symbol: "BTCUSDT",
+          timeframe: "15m",
+          paintEnabled: true,
+          tabUrlHost: "www.binance.com",
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/chart/paint") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, painted: true }));
+      return;
+    }
+    if (req.url === "/v1/chart/clear") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, cleared: true }));
+      return;
+    }
+    if (req.url === "/v1/chart/timeframe") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, resolution: "15" }));
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: "not found" }));
+  });
+
+  await new Promise((resolve) => fakeServer.listen(0, "127.0.0.1", resolve));
+  const fakePort = fakeServer.address().port;
+
+  try {
+    await withClient(
+      {
+        env: {
+          SWAL_MCP_CHART_BRIDGE: "client",
+          SWAL_BRIDGE_CONTROL_PORT: String(fakePort),
+          SWAL_BRIDGE_TOKEN_PATH: tokenFile,
+        },
+      },
+      async (client) => {
+        const list = await client.listTools();
+        const names = list.tools.map((t) => t.name);
+        assert.ok(names.includes("chart_state"));
+        assert.ok(names.includes("chart_paint"));
+        assert.ok(names.includes("chart_clear"));
+        assert.ok(names.includes("chart_set_timeframe"));
+
+        // chart_state
+        const stateRes = await callOrCatch(client, "chart_state", {});
+        const stateData = JSON.parse(textOf(stateRes));
+        assert.equal(stateData.symbol, "BTCUSDT");
+
+        // chart_paint
+        const paintRes = await callOrCatch(client, "chart_paint", {
+          shapes: [{ kind: "level", points: [{ time: 1700000000, price: 60000 }] }],
+        });
+        const paintData = JSON.parse(textOf(paintRes));
+        assert.equal(paintData.painted, true);
+
+        // chart_clear
+        const clearRes = await callOrCatch(client, "chart_clear", {});
+        const clearData = JSON.parse(textOf(clearRes));
+        assert.equal(clearData.cleared, true);
+
+        // chart_set_timeframe
+        const tfRes = await callOrCatch(client, "chart_set_timeframe", { timeframe: "15m" });
+        const tfData = JSON.parse(textOf(tfRes));
+        assert.equal(tfData.resolution, "15");
+
+        // Verify calls received by fake control API
+        assert.equal(calls.length, 4);
+        for (const call of calls) {
+          assert.equal(call.token, "test-client-token-12345");
+          assert.equal(call.method, "POST");
+        }
+        assert.equal(calls[0].url, "/v1/chart/state");
+        assert.equal(calls[1].url, "/v1/chart/paint");
+        assert.equal(calls[2].url, "/v1/chart/clear");
+        assert.equal(calls[3].url, "/v1/chart/timeframe");
+        assert.equal(calls[3].body.timeframe, "15m");
+      }
+    );
+  } finally {
+    await new Promise((resolve) => fakeServer.close(resolve));
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("MCP client mode: daemon down -> clear Spanish error", async () => {
+  const unusedPort = 47399;
+
+  await withClient(
+    {
+      env: {
+        SWAL_MCP_CHART_BRIDGE: "client",
+        SWAL_BRIDGE_CONTROL_PORT: String(unusedPort),
+      },
+    },
+    async (client) => {
+      const stateRes = await callOrCatch(client, "chart_state", {});
+      assert.ok(stateRes.isError);
+      assert.equal(
+        errorText(stateRes),
+        "servicio swal-bridge apagado: systemctl --user start swal-bridge"
+      );
+
+      const paintRes = await callOrCatch(client, "chart_paint", {
+        shapes: [{ kind: "level", points: [{ time: 1700000000, price: 50000 }] }],
+      });
+      assert.ok(paintRes.isError);
+      assert.equal(
+        errorText(paintRes),
+        "servicio swal-bridge apagado: systemctl --user start swal-bridge"
+      );
+    }
+  );
+});
+
+test("MCP client mode binds no port", async () => {
+  const unusedPort = 47398;
+  await withClient(
+    {
+      env: {
+        SWAL_MCP_CHART_BRIDGE: "client",
+        SWAL_BRIDGE_CONTROL_PORT: String(unusedPort),
+      },
+    },
+    async () => {
+      const probeServer = http.createServer();
+      await new Promise((resolve, reject) => {
+        probeServer.listen(0, "127.0.0.1", resolve);
+        probeServer.on("error", reject);
+      });
+      await new Promise((resolve) => probeServer.close(resolve));
+    }
+  );
 });
