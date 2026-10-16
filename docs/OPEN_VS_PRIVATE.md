@@ -21,7 +21,7 @@ Decisión de Belal (ADR-007 D2, 2026-10-09). Este repositorio (`swal-trade`) es 
 - **Automatización de compra/venta:** daemon, orquestador y ejecución automática de órdenes.
 - **Estrategias y señales** del laboratorio, incluido su research y sus parámetros.
 - **Calibración propietaria:** el arnés de backtests que mide las tasas de acierto, los resultados por operación y los ajustes de pesos derivados de ellos. Solo se publica la tabla agregada.
-- **Prompts y configuración del agente IA** del servicio alojado.
+- **Prompts y configuración de los agentes IA del laboratorio** y del servicio alojado de pago. El prompt del explicador gratuito del sitio (`explain-prompt.js`) es público a propósito: está en la tabla de arriba.
 - **Cobro (billing-worker)** y operación: claves, direcciones, listas de sanciones.
 
 ## Reglas

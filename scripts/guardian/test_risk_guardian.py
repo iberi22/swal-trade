@@ -77,6 +77,14 @@ class Heartbeat(unittest.TestCase):
             rg.heartbeat({"heartbeat": "https://hc.example/ping/abc"})
         self.assertEqual(u.call_args[0][0], "https://hc.example/ping/abc")
 
+    def test_token_goes_in_bearer_header_by_post(self):
+        with mock.patch.object(rg.urllib.request, "urlopen") as u:
+            rg.heartbeat({"heartbeat": "https://trade.example/heartbeat/guardian", "heartbeat_token": "tok"})
+        req = u.call_args[0][0]
+        self.assertEqual(req.full_url, "https://trade.example/heartbeat/guardian")
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.get_header("Authorization"), "Bearer tok")
+
     def test_no_url_no_call(self):
         with mock.patch.object(rg.urllib.request, "urlopen") as u:
             rg.heartbeat({"heartbeat": ""})
@@ -87,6 +95,10 @@ class Heartbeat(unittest.TestCase):
                 mock.patch("builtins.print") as pr:
             rg.heartbeat({"heartbeat": "https://hc.example/ping/abc"})
         self.assertNotIn("abc", " ".join(map(str, pr.call_args[0])))
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 class RecvWindow(unittest.TestCase):
@@ -127,5 +139,79 @@ class RecvWindow(unittest.TestCase):
         self.assertEqual(u.call_count, 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+class UnreadAlerts(unittest.TestCase):
+    def test_no_alert_before_threshold(self):
+        st = {"last_ok": 1000}
+        msgs = rg.unread_alerts(st, False, "timeout", 1120, threshold_s=180)
+        self.assertEqual(msgs, [])
+        self.assertEqual(st["fails"], 1)
+        self.assertFalse(st["alerted"])
+
+    def test_exactly_one_alert_at_threshold(self):
+        st = {"last_ok": 1000}
+        msgs = rg.unread_alerts(st, False, "HTTP 500 Server Error", 1180, threshold_s=180)
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(
+            msgs[0],
+            "GUARDIAN: no puedo leer tu cuenta de Binance desde hace 3 min (ultimo error: HTTP 500 Server Error). No estoy vigilando tus posiciones.",
+        )
+        self.assertTrue(st["alerted"])
+        # Poll immediately after still within suppression window
+        msgs2 = rg.unread_alerts(st, False, "HTTP 500 Server Error", 1195, threshold_s=180)
+        self.assertEqual(msgs2, [])
+
+    def test_rate_limit_of_repeats(self):
+        st = {"last_ok": 1000}
+        rg.unread_alerts(st, False, "err1", 1180, threshold_s=180, repeat_s=1800)
+        # 29 min after first alert -> suppressed
+        self.assertEqual(rg.unread_alerts(st, False, "err2", 2920, threshold_s=180, repeat_s=1800), [])
+        # 30 min after first alert (1180 + 1800 = 2980, 33 min elapsed from last_ok) -> repeat alert
+        msgs = rg.unread_alerts(st, False, "err3", 2980, threshold_s=180, repeat_s=1800)
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(
+            msgs[0],
+            "GUARDIAN: no puedo leer tu cuenta de Binance desde hace 33 min (ultimo error: err3). No estoy vigilando tus posiciones.",
+        )
+        # Next poll suppressed
+        self.assertEqual(rg.unread_alerts(st, False, "err3", 2995, threshold_s=180, repeat_s=1800), [])
+
+    def test_recovery_message_once(self):
+        st = {"last_ok": 1000}
+        rg.unread_alerts(st, False, "down", 1180, threshold_s=180)
+        self.assertTrue(st["alerted"])
+        # First successful read recovers
+        msgs = rg.unread_alerts(st, True, None, 1200, threshold_s=180)
+        self.assertEqual(msgs, ["GUARDIAN: vuelvo a leer tu cuenta. Vigilancia restablecida."])
+        self.assertFalse(st["alerted"])
+        self.assertEqual(st["fails"], 0)
+        self.assertEqual(st["last_ok"], 1200)
+        # Second successful read sends nothing
+        self.assertEqual(rg.unread_alerts(st, True, None, 1215, threshold_s=180), [])
+        # Recovery is not sent if failure never reached threshold
+        st2 = {"last_ok": 1000}
+        rg.unread_alerts(st2, False, "down", 1030, threshold_s=180)
+        self.assertEqual(rg.unread_alerts(st2, True, None, 1045, threshold_s=180), [])
+
+    def test_secrets_and_signature_never_leak(self):
+        cfg = {"key": "dummy_key_fixture", "secret": "dummy_secret_fixture"}
+        raw_err = (
+            "HTTP 400 https://fapi.binance.com/fapi/v1/order?symbol=BTCUSDT"
+            "&timestamp=1700000000000&signature=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+            " key dummy_key_fixture secret dummy_secret_fixture"
+        )
+        st = {"last_ok": 1000}
+        msgs = rg.unread_alerts(st, False, raw_err, 1180, threshold_s=180, cfg=cfg)
+        self.assertEqual(len(msgs), 1)
+        alert = msgs[0]
+        self.assertNotIn("dummy_key_fixture", alert)
+        self.assertNotIn("dummy_secret_fixture", alert)
+        self.assertNotIn("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", alert)
+        self.assertNotIn("?", alert)
+
+    def test_unread_alert_minutes_cfg(self):
+        base = {"BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s", "GUARDIAN_DAILY_LOSS_USD": "10"}
+        with mock.patch.dict(os.environ, base, clear=True):
+            self.assertEqual(rg.get_cfg()["unread_alert_s"], 180)
+        with mock.patch.dict(os.environ, {**base, "GUARDIAN_UNREAD_ALERT_MINUTES": "5"}, clear=True):
+            self.assertEqual(rg.get_cfg()["unread_alert_s"], 300)
