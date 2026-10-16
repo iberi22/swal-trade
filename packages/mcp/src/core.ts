@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
@@ -6,8 +7,14 @@ import { isRecord } from "./types.js";
 
 export const ANALYSIS_CORE_MISSING = "analysis core not available";
 
-/** Default location relative to the package directory (packages/mcp). */
+/** Default location relative to the package directory (packages/mcp), valid in a repo checkout. */
 export const DEFAULT_CORE_RELATIVE = "../../workers/public-site/static/analisis/analysis-core.js";
+
+/**
+ * Copy of the core shipped inside the npm package (`npm pack` runs scripts/bundle-core.mjs).
+ * An installed package has no repo around it, so the checkout path above does not exist there.
+ */
+export const PACKAGED_CORE_RELATIVE = "core/analysis-core.js";
 
 export interface Finding {
   id: string;
@@ -47,8 +54,14 @@ export function packageRoot(moduleUrl: string = import.meta.url): string {
 
 export function resolveCorePath(env: NodeJS.ProcessEnv, root: string = packageRoot()): string {
   const configured = env.SWAL_ANALYSIS_CORE?.trim();
-  if (!configured) return path.resolve(root, DEFAULT_CORE_RELATIVE);
-  return path.isAbsolute(configured) ? path.normalize(configured) : path.resolve(root, configured);
+  if (configured) return path.isAbsolute(configured) ? path.normalize(configured) : path.resolve(root, configured);
+  // A checkout keeps using the repo's own file (so it is never stale); an installed package
+  // falls back to the copy bundled at pack time. If neither exists the repo path is returned so
+  // the "analysis core not available" error still names the expected location.
+  const repoCore = path.resolve(root, DEFAULT_CORE_RELATIVE);
+  if (existsSync(repoCore)) return repoCore;
+  const packaged = path.resolve(root, PACKAGED_CORE_RELATIVE);
+  return existsSync(packaged) ? packaged : repoCore;
 }
 
 function strengthOf(value: unknown): number {
