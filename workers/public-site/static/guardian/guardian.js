@@ -26,7 +26,7 @@ async function initLicense() {
     return tierFor({ status: 'unsupported' });
   }
   const token = tokenFromStored(localStorage.getItem(LICENSE_KEY));
-  if (!token) { text(info, 'Plan gratuito. La licencia Pro se obtiene en /checkout/.'); return tierFor(null); }
+  if (!token) { text(info, 'Todo es gratis durante las pruebas. El respaldo cifrado se activa gratis en /checkout/.'); return tierFor(null); }
   const pubkeySpki = await loadPubkey({ fetchFn: fetch.bind(globalThis), storage: localStorage });
   if (!pubkeySpki) { text(info, 'No se pudo obtener la clave pública de licencias; plan gratuito.'); return tierFor(null); }
   const lic = await checkLicense({ token, pubkeySpki, subtle: crypto.subtle });

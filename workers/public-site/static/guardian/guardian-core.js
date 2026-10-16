@@ -105,7 +105,9 @@ export function tierFor(license) {
   return {
     tier: pro ? 'pro' : 'free',
     maxPositions: Infinity,
-    telegram: !!pro,
+    // Telegram usa el bot propio del usuario (BotFather) y el envio sale del navegador: cuesta
+    // cero al servicio, asi que es gratis para todos durante las pruebas.
+    telegram: true,
     selfHostLink: !!pro,
   };
 }

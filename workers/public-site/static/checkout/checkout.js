@@ -11,7 +11,7 @@ const LS_INVOICE = 'swal.invoice'; // factura en curso, para reanudar al recarga
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
 
-const state = { plans: [], methods: [], plan: parsePlan(location.search), account: null, invoice: null, timer: null, pollDelay: POLL_INTERVAL_MS };
+const state = { plans: [], methods: [], freeUntil: null, plan: parsePlan(location.search), account: null, invoice: null, timer: null, pollDelay: POLL_INTERVAL_MS };
 
 function showError(msg) { const e = $('error'); e.textContent = msg || ''; show('error', !!msg); }
 
@@ -69,6 +69,7 @@ function accountReady(account) {
   show('account-choice', false); show('existing-box', false); show('secret-box', false);
   $('account-ok').textContent = 'Cuenta lista en este navegador.';
   show('account-ok');
+  if (state.freeUntil) { show('step-free'); return; }
   show('step-method');
   renderMethods();
 }
@@ -176,9 +177,18 @@ async function fetchLicense() {
       expires_at: lic.expires_at, valid_until: lic.valid_until, grace_days: lic.grace_days,
       stored_at: new Date().toISOString(),
     }));
-    show('step-invoice', false); show('step-done');
-    $('license-line').textContent = `Plan ${PLAN_LABELS[lic.plan] || lic.plan}. Tu membresía vale hasta el ${formatDate(lic.valid_until)}.`;
+    show('step-invoice', false); show('step-free', false); show('step-done');
+    if (lic.plan === 'early_access') {
+      $('done-title').textContent = 'Listo, acceso gratuito activo';
+      $('license-line').textContent = `Tu acceso gratuito de pruebas vale hasta el ${formatDate(lic.valid_until)}.`;
+    } else {
+      $('license-line').textContent = `Plan ${PLAN_LABELS[lic.plan] || lic.plan}. Tu membresía vale hasta el ${formatDate(lic.valid_until)}.`;
+    }
   } catch (e) {
+    if (state.freeUntil && !state.invoice) {
+      show('btn-free'); $('btn-free').disabled = false;
+      return showError(`No se pudo activar el acceso: ${e.message}`);
+    }
     // El pago ya esta registrado; la licencia puede tardar un instante o fallar la red.
     showError(`Pago recibido, pero no se pudo obtener la licencia: ${e.message} Reintentando…`);
     setTimeout(fetchLicense, 10000);
@@ -192,6 +202,7 @@ async function init() {
   $('btn-use-existing').addEventListener('click', useExisting);
   $('btn-copy-secret').addEventListener('click', (e) => copy(state.pending.account_secret, e.currentTarget));
   $('btn-download-secret').addEventListener('click', () => download('swal-trade-secreto.txt', secretFileContents(state.pending.account_id, state.pending.account_secret)));
+  $('btn-free').addEventListener('click', () => { showError(''); $('btn-free').disabled = true; fetchLicense(); });
   $('saved-check').addEventListener('change', (e) => { $('btn-continue').disabled = !e.target.checked; });
   $('btn-continue').addEventListener('click', () => {
     localStorage.setItem(LS_ACCOUNT, JSON.stringify(state.pending));
@@ -202,15 +213,24 @@ async function init() {
   try {
     const data = await api('/v1/plans');
     state.plans = data.plans; state.methods = data.methods;
+    state.freeUntil = data.free_until && new Date(data.free_until) > new Date() ? data.free_until : null;
     if (!state.plans.some((p) => p.id === state.plan)) state.plan = state.plans[0].id;
   } catch (e) { $('plan-loading').textContent = ''; return showError(e.message); }
   $('plan-loading').remove();
-  renderPlans(); show('step-account');
+  if (state.freeUntil) {
+    // Fase de pruebas: no hay plan que elegir ni factura que pagar.
+    show('step-plan', false);
+    $('intro').textContent = 'Durante las pruebas el acceso es gratis. Tu cuenta es un secreto que solo guardas tú; no pedimos datos personales.';
+    $('free-line').textContent = `Tu acceso gratuito vale hasta el ${formatDate(state.freeUntil)}. Incluye el respaldo cifrado de extremo a extremo.`;
+  } else {
+    renderPlans();
+  }
+  show('step-account');
 
   const acc = loadAccount();
   if (acc) {
     accountReady(acc);
-    const inv = safeParse(localStorage.getItem(LS_INVOICE) || 'null');
+    const inv = state.freeUntil ? null : safeParse(localStorage.getItem(LS_INVOICE) || 'null');
     if (inv && inv.invoice_id && new Date(inv.expires_at) > new Date()) showInvoice(inv);
   }
 }

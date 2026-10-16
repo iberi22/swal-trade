@@ -29,7 +29,7 @@ async function initLicense() {
   }
   token = tokenFromStored(localStorage.getItem(LICENSE_KEY));
   if (!token) {
-    text($('lic-info'), 'Sin licencia Socio activa. Obtén el respaldo cifrado en /checkout/.');
+    text($('lic-info'), 'Sin acceso activo. Actívalo gratis durante las pruebas en /checkout/.');
     return true; // el servidor puede aceptar el token en modo desarrollo
   }
   const pubkey = await loadPubkey({ fetchFn: fetch.bind(globalThis), storage: localStorage });
@@ -38,7 +38,7 @@ async function initLicense() {
   // checkLicense devuelve 'pro' cuando la firma y la caducidad son buenas: es el estado válido.
   const msg = {
     pro: 'Licencia Socio válida. Respaldo cifrado disponible.',
-    none: 'Sin licencia Socio activa. Obtén el respaldo cifrado en /checkout/.',
+    none: 'Sin acceso activo. Actívalo gratis durante las pruebas en /checkout/.',
     expired: 'Licencia caducada: el servidor puede rechazar el respaldo.',
     invalid: 'Licencia inválida: el servidor puede rechazar el respaldo.',
     unsupported: 'Este navegador no puede verificar la licencia Socio.',

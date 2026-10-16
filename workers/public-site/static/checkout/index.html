@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex">
-  <title>Hazte socio Pro — SWAL Trade</title>
+  <title>Socio SWAL — SWAL Trade</title>
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="checkout.css">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -14,8 +14,8 @@
 </head>
 <body>
 <main class="wrap">
-  <h1>Hazte socio Pro</h1>
-  <p class="muted">Pago en cripto a una wallet de autocustodia. Sin tarjeta, sin datos personales: tu cuenta es un secreto que solo guardas tú.</p>
+  <h1>Socio SWAL</h1>
+  <p id="intro" class="muted">Pago en cripto a una wallet de autocustodia. Sin tarjeta, sin datos personales: tu cuenta es un secreto que solo guardas tú.</p>
 
   <div id="error" class="alert bad hidden" role="alert"></div>
 
@@ -59,6 +59,13 @@
     <p id="account-ok" class="hidden ok-line"></p>
   </section>
 
+  <!-- Fase gratuita de pruebas: sin factura, el Worker de licencias emite la licencia al activar -->
+  <section id="step-free" class="card hidden">
+    <h2>3. Acceso gratuito</h2>
+    <p id="free-line"></p>
+    <button id="btn-free" class="btn primary" type="button">Activar acceso gratuito</button>
+  </section>
+
   <!-- Paso 3: red y token -->
   <section id="step-method" class="card hidden">
     <h2>3. Red y token</h2>
@@ -96,7 +103,7 @@
 
   <!-- Paso 5: licencia -->
   <section id="step-done" class="card hidden">
-    <h2>Listo, eres socio Pro</h2>
+    <h2 id="done-title">Listo, eres socio Pro</h2>
     <p id="license-line"></p>
     <p><a class="btn primary" href="/guardian/">Ir al Guardián</a></p>
     <p class="muted small">La licencia se guardó en este navegador (clave <code>swal.license</code>) y el Guardián la lee de ahí.</p>
