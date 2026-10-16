@@ -2,7 +2,7 @@
 """Guardian de riesgo para Binance USD-M Futures (trading manual). Solo stdlib.
 Avisa por Telegram del limite de perdida diaria y de posiciones SIN STOP (solo aviso, nunca crea ordenes);
 GUARDIAN_ENFORCE=true cierra a mercado al limite diario. --once: solo imprime."""
-import hashlib, hmac, json, os, sys, time, urllib.parse, urllib.request
+import hashlib, hmac, json, os, re, sys, time, urllib.parse, urllib.request
 
 USD = {"USDT", "USDC", "FDUSD", "BUSD"}
 PNL_TYPES = {"REALIZED_PNL", "COMMISSION", "FUNDING_FEE"}
@@ -72,6 +72,46 @@ def close_orders(pos, hedge):
              **({"positionSide": p["positionSide"]} if hedge and p["positionSide"] != "BOTH" else {"reduceOnly": "true"})}
             for p in pos]
 
+def sanitize_error(err, cfg=None):
+    s = str(err or "")
+    if cfg:
+        for k in ("secret", "key", "tg_token"):
+            v = cfg.get(k)
+            if v and len(v) >= 3:
+                s = s.replace(v, "***")
+    s = re.sub(r"(https?://[^\s?]+)\?[^\s\"'\)]*", r"\1", s)
+    s = re.sub(r"[?&]signature=[^&\s\"'\)]*", "", s)
+    s = re.sub(r"signature=[0-9a-zA-Z]+", "signature=***", s, flags=re.I)
+    s = re.sub(r'"signature"\s*:\s*"[^"]+"', '"signature":"***"', s, flags=re.I)
+    s = re.sub(r"\b[0-9a-fA-F]{64}\b", "***", s)
+    s = " ".join(s.split())
+    return s[:120].strip()
+
+def unread_alerts(state, ok, err, now, threshold_s, repeat_s=1800, cfg=None):
+    """Mensajes de alerta/recuperacion de lectura de cuenta. Actualiza state in-place."""
+    state.setdefault("last_ok", now)
+    state.setdefault("last_alert", 0)
+    state.setdefault("alerted", False)
+    state.setdefault("fails", 0)
+    if ok:
+        state["fails"] = 0
+        state["last_ok"] = now
+        if state["alerted"]:
+            state["alerted"] = False
+            state["last_alert"] = 0
+            return ["GUARDIAN: vuelvo a leer tu cuenta. Vigilancia restablecida."]
+        return []
+    state["fails"] += 1
+    elapsed = now - state["last_ok"]
+    if elapsed >= threshold_s:
+        if not state["alerted"] or (now - state["last_alert"] >= repeat_s):
+            state["alerted"] = True
+            state["last_alert"] = now
+            mins = max(1, int(elapsed / 60))
+            s_err = sanitize_error(err, cfg)
+            return [f"GUARDIAN: no puedo leer tu cuenta de Binance desde hace {mins} min (ultimo error: {s_err}). No estoy vigilando tus posiciones."]
+    return []
+
 # --- IO ---
 def load_env():
     f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", ".env")
@@ -93,7 +133,8 @@ def get_cfg():
                "enforce": e("GUARDIAN_ENFORCE", "false").lower() in ("1", "true", "yes"),
                "require_stop": e("GUARDIAN_REQUIRE_STOP", "true").lower() in ("1", "true", "yes"),
                "stop_every": max(1, float(e("GUARDIAN_STOP_ALERT_MINUTES", "15"))) * 60,
-               "heartbeat": e("GUARDIAN_HEARTBEAT_URL", ""),
+               "unread_alert_s": max(1, float(e("GUARDIAN_UNREAD_ALERT_MINUTES", "3"))) * 60,
+               "heartbeat": e("GUARDIAN_HEARTBEAT_URL", ""), "heartbeat_token": e("GUARDIAN_HEARTBEAT_TOKEN", ""),
                # Con ~0,5 s de ida y vuelta, 5 s no bastaban en picos de red (-1021). Binance admite hasta 60 s.
                "recv_window": min(60000, max(5000, int(float(e("GUARDIAN_RECV_WINDOW_MS", "15000")))))}
     except ValueError as x:
@@ -139,10 +180,15 @@ def send(cfg, text):
             print("telegram fallo:", type(x).__name__)  # sin URL: lleva el token
 
 def heartbeat(cfg):
-    """Ping dead-man (healthchecks.io-style). Un fallo se registra, nunca es fatal."""
+    """Ping dead-man (healthchecks.io-style). Con GUARDIAN_HEARTBEAT_TOKEN va por POST con
+    Authorization: Bearer (el Worker de trade.swal.network no acepta el token en la URL).
+    Un fallo se registra, nunca es fatal."""
     if cfg.get("heartbeat"):
         try:
-            urllib.request.urlopen(cfg["heartbeat"], timeout=10).read()
+            tok = cfg.get("heartbeat_token")
+            req = urllib.request.Request(cfg["heartbeat"], data=b"", headers={
+                "Authorization": f"Bearer {tok}", "User-Agent": "swal-guardian/1"}) if tok else cfg["heartbeat"]
+            urllib.request.urlopen(req, timeout=10).read()
         except Exception as x:
             print("heartbeat fallo:", type(x).__name__, flush=True)  # sin URL: puede llevar el uuid
 
@@ -178,15 +224,14 @@ def main():
         return
     send(cfg, f"GUARDIAN activo. Limite -{cfg['limit']:.2f} USD (aviso {cfg['warn']:.0%}), nocional max {cfg['max_notional']}, "
               f"apalancamiento max {cfg['max_lev']}, ENFORCE {'ON' if cfg['enforce'] else 'OFF'}.")
-    day, alerted, fails, blind, stop_last = None, set(), 0, False, {}
+    day, alerted, stop_last, unread_st = None, set(), {}, {"last_ok": time.time()}
     while True:
         start = day_start_ms(int(time.time() * 1000), cfg["tz"])
         day, alerted = (start, set()) if start != day else (day, alerted)  # dia nuevo: reinicia alertas
         try:
             pos, lev, real, pnl, br = snapshot(cfg, start)
-            if blind:
-                send(cfg, "GUARDIAN recuperado")
-            fails, blind = 0, False
+            for m in unread_alerts(unread_st, True, None, time.time(), cfg["unread_alert_s"], cfg=cfg):
+                send(cfg, m)
             for k in sorted(br.keys() - alerted):
                 alerted.add(k)
                 send(cfg, br[k])
@@ -201,11 +246,9 @@ def main():
                     print("error openAlgoOrders:", x, flush=True)
             heartbeat(cfg)
         except Exception as x:  # cualquier fallo (JSON raro incluido) no puede matar al guardian
-            fails += 1
             print("error:", x, flush=True)
-            if fails >= 5 and not blind:
-                blind = True
-                send(cfg, f"GUARDIAN ciego: no puedo leer la cuenta ({x})")
+            for m in unread_alerts(unread_st, False, x, time.time(), cfg["unread_alert_s"], cfg=cfg):
+                send(cfg, m)
         time.sleep(cfg["poll"])
 
 if __name__ == "__main__":
