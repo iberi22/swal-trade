@@ -21,12 +21,12 @@
   "points_formula": "1 punto = 1 pb (0,01 %) de rendimiento neto acumulado del bot tras comisiones y funding",
   "bots": [
     {
-      "id": "DualThrust",
-      "name": "Dual Thrust",
+      "id": "bot-a",
+      "name": "Bot A",
       "status": "disabled",
       "allocation_pct": 0.0,
       "fidelity": "unmeasured",
-      "research_verdict": "negativa en 48/48 combinaciones",
+      "research_verdict": "sin ventaja estadística validada",
       "points": -4,
       "trades": 3,
       "wins": 1,
@@ -36,27 +36,27 @@
       "last_trade_at": "2026-09-28T18:00:00Z"
     },
     {
-      "id": "RocBreakout",
-      "name": "ROC Breakout",
+      "id": "bot-b",
+      "name": "Bot B",
       "status": "disabled",
       "allocation_pct": 0.0,
       "fidelity": "diverges",
-      "research_verdict": "refutado en holdout (PF 0.90)",
+      "research_verdict": "sin ventaja estadística validada",
       "points": -8,
       "trades": 5,
       "wins": 2,
       "win_rate": 40.0,
-      "profit_factor": 0.90,
+      "profit_factor": 0.9,
       "pnl_pct": -0.08,
       "last_trade_at": "2026-09-29T11:20:00Z"
     },
     {
-      "id": "LiquiditySweep",
-      "name": "Liquidity Sweep",
+      "id": "bot-c",
+      "name": "Bot C",
       "status": "disabled",
       "allocation_pct": 0.0,
       "fidelity": "diverges",
-      "research_verdict": "sin edge (PF 0.61-0.72)",
+      "research_verdict": "sin ventaja estadística validada",
       "points": -12,
       "trades": 4,
       "wins": 1,
@@ -66,12 +66,12 @@
       "last_trade_at": "2026-09-28T22:00:00Z"
     },
     {
-      "id": "MomentumBreakout",
-      "name": "Momentum Breakout",
+      "id": "bot-d",
+      "name": "Bot D",
       "status": "active",
       "allocation_pct": 100.0,
       "fidelity": "diverges",
-      "research_verdict": "sin edge (PF 0.78 OOS)",
+      "research_verdict": "sin ventaja estadística validada",
       "points": -18,
       "trades": 8,
       "wins": 3,
@@ -81,12 +81,12 @@
       "last_trade_at": "2026-09-29T15:10:00Z"
     },
     {
-      "id": "VolatilityExpansion",
-      "name": "Volatility Expansion",
+      "id": "bot-e",
+      "name": "Bot E",
       "status": "disabled",
       "allocation_pct": 0.0,
       "fidelity": "diverges",
-      "research_verdict": "sobreajuste (PF 0.07 OOS)",
+      "research_verdict": "sin ventaja estadística validada",
       "points": -35,
       "trades": 3,
       "wins": 0,
@@ -98,7 +98,7 @@
   ],
   "open_positions": [
     {
-      "bot": "MomentumBreakout",
+      "bot": "bot-d",
       "symbol": "SOLUSDT",
       "side": "long",
       "entry_price": 142.35,
@@ -108,18 +108,18 @@
   ],
   "recent_trades": [
     {
-      "bot": "MomentumBreakout",
+      "bot": "bot-d",
       "symbol": "SOLUSDT",
       "side": "long",
-      "entry_price": 142.00,
-      "exit_price": 141.20,
+      "entry_price": 142.0,
+      "exit_price": 141.2,
       "pnl_pct": -0.56,
       "exit_reason": "SL",
       "opened_at": "2026-09-29T13:10:00Z",
       "closed_at": "2026-09-29T15:10:00Z"
     },
     {
-      "bot": "RocBreakout",
+      "bot": "bot-b",
       "symbol": "BTCUSDT",
       "side": "long",
       "entry_price": 63400.0,
@@ -130,7 +130,7 @@
       "closed_at": "2026-09-29T11:20:00Z"
     },
     {
-      "bot": "MomentumBreakout",
+      "bot": "bot-d",
       "symbol": "ETHUSDT",
       "side": "short",
       "entry_price": 2650.0,
@@ -141,7 +141,7 @@
       "closed_at": "2026-09-29T07:20:00Z"
     },
     {
-      "bot": "LiquiditySweep",
+      "bot": "bot-c",
       "symbol": "ETHUSDT",
       "side": "long",
       "entry_price": 2660.0,
@@ -152,11 +152,11 @@
       "closed_at": "2026-09-28T22:00:00Z"
     },
     {
-      "bot": "DualThrust",
+      "bot": "bot-a",
       "symbol": "SOLUSDT",
       "side": "short",
-      "entry_price": 141.50,
-      "exit_price": 141.80,
+      "entry_price": 141.5,
+      "exit_price": 141.8,
       "pnl_pct": -0.21,
       "exit_reason": "SL",
       "opened_at": "2026-09-28T16:00:00Z",
@@ -164,13 +164,37 @@
     }
   ],
   "equity_curve": [
-    { "t": "2026-09-28T00:00:00Z", "equity_pct": 0.0 },
-    { "t": "2026-09-28T06:00:00Z", "equity_pct": -0.10 },
-    { "t": "2026-09-28T12:00:00Z", "equity_pct": -0.05 },
-    { "t": "2026-09-28T18:00:00Z", "equity_pct": -0.25 },
-    { "t": "2026-09-29T00:00:00Z", "equity_pct": -0.51 },
-    { "t": "2026-09-29T06:00:00Z", "equity_pct": -0.35 },
-    { "t": "2026-09-29T12:00:00Z", "equity_pct": -0.62 },
-    { "t": "2026-09-29T16:30:00Z", "equity_pct": -0.77 }
+    {
+      "t": "2026-09-28T00:00:00Z",
+      "equity_pct": 0.0
+    },
+    {
+      "t": "2026-09-28T06:00:00Z",
+      "equity_pct": -0.1
+    },
+    {
+      "t": "2026-09-28T12:00:00Z",
+      "equity_pct": -0.05
+    },
+    {
+      "t": "2026-09-28T18:00:00Z",
+      "equity_pct": -0.25
+    },
+    {
+      "t": "2026-09-29T00:00:00Z",
+      "equity_pct": -0.51
+    },
+    {
+      "t": "2026-09-29T06:00:00Z",
+      "equity_pct": -0.35
+    },
+    {
+      "t": "2026-09-29T12:00:00Z",
+      "equity_pct": -0.62
+    },
+    {
+      "t": "2026-09-29T16:30:00Z",
+      "equity_pct": -0.77
+    }
   ]
 }
