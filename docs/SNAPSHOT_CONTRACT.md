@@ -39,7 +39,7 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
     "feed_ok": true,                          // hay precio de mercado con < 120 s de antigüedad
     "last_price_update_at": "2026-09-29T16:59:58Z",
     "uptime_s": 12345,
-    "strategies_registered": 20
+    "strategies_registered": 5
   },
   "account": {
     "initial_capital": 100.0,                 // solo si mode == "paper", si no null
@@ -53,12 +53,12 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
   "points_formula": "1 punto = 1 pb (0,01 %) de rendimiento neto acumulado del bot tras comisiones y funding",
   "bots": [
     {
-      "id": "MomentumBreakout",
-      "name": "Momentum Breakout",
+      "id": "bot-d",
+      "name": "Bot D",
       "status": "active",                     // "active" | "gated" | "disabled"
       "allocation_pct": 100.0,                // % del capital asignado por el gating; null si no aplica
       "fidelity": "diverges",                 // de simulator_fidelity: "verified" | "diverges" | "unmeasured"
-      "research_verdict": "sin edge (PF 0.78 OOS)", // texto corto o null
+      "research_verdict": "sin ventaja estadística validada", // texto corto o null
       "points": -123,                         // round(sum(pnl_pct_neto) * 100)
       "trades": 10,
       "wins": 4,
@@ -69,11 +69,11 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
     }
   ],
   "open_positions": [
-    { "bot": "MomentumBreakout", "symbol": "SOLUSDT", "side": "long",
+    { "bot": "bot-d", "symbol": "SOLUSDT", "side": "long",
       "entry_price": 115.87, "upnl_pct": 1.6, "opened_at": "2026-09-29T11:00:00Z" }
   ],
   "recent_trades": [                          // últimos 50 cerrados, más reciente primero
-    { "bot": "MomentumBreakout", "symbol": "ETHUSDT", "side": "short",
+    { "bot": "bot-d", "symbol": "ETHUSDT", "side": "short",
       "entry_price": 2730.7, "exit_price": 2700.1, "pnl_pct": 1.1,
       "exit_reason": "TP", "opened_at": "...", "closed_at": "..." }
   ],
@@ -89,4 +89,4 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
 
 La página muestra siempre `mode` y el aviso: *"Operativa en paper trading. Ninguna estrategia
 tiene todavía una ventaja estadística validada fuera de muestra. No es asesoría financiera."*
-mientras ninguna estrategia haya superado la validación fuera de muestra (puerta interna F4 del laboratorio).
+mientras ninguna estrategia haya superado la validación fuera de muestra (criterio interno del laboratorio).
