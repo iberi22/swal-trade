@@ -85,7 +85,7 @@ test('tier gating is pure', () => {
   for (const s of ['none', 'expired', 'invalid', 'unsupported']) {
     const t = g.tierFor({ status: s });
     assert.equal(t.tier, 'free');
-    assert.equal(t.telegram, false);
+    assert.equal(t.telegram, true, 'Telegram con bot propio es gratis para todos durante las pruebas');
     assert.equal(t.maxPositions, Infinity);
   }
   assert.equal(g.tierFor(null).tier, 'free');
