@@ -27,6 +27,15 @@ binding = "ASSETS"
 [ai]
 binding = "AI"
 
+# Cupo diario del explicador en producción: ~60 llamadas caben en los 10.000 neurons
+# gratuitos de Workers AI (prompts de ~10 KB). Al agotarse responde el respaldo determinista.
+[vars]
+EXPLAIN_DAILY_CAP = "60"
+
+# Logs de Workers (dentro del cupo gratuito) para diagnosticar fallos del sitio y del dead-man.
+[observability]
+enabled = true
+
 # KV namespace for public trading snapshots.
 # The orchestrator or deployer fills the namespace ID below after creating it via:
 # wrangler kv namespace create SNAPSHOTS
