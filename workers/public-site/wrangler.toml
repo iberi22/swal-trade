@@ -6,7 +6,9 @@ routes = [
   { pattern = "trade.swal.network", custom_domain = true }
 ]
 
-# Dead-man: avisa por Telegram si dejan de llegar snapshots (STALE_AFTER_S, defecto 300).
+# Dead-man: avisa por Telegram si dejan de llegar snapshots (STALE_AFTER_S, defecto 300)
+# o si el guardián o el radar dejan de latir (POST /heartbeat/<nombre>, secret HEARTBEAT_TOKEN;
+# vars opcionales HEARTBEAT_STALE_S, defecto 600, y HEARTBEAT_NAMES, defecto "guardian,radar").
 # El mismo cron (cada 5 min) recoge noticias, pero el worker solo llama a un proveedor
 # cada 30 min (rotación). Secrets (wrangler secret put):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID

@@ -23,3 +23,4 @@ import './news-sentiment.test.mjs';
 import './pwa.test.mjs';
 import './analisis-pulse.test.mjs';
 import './support-pages.test.mjs';
+import './heartbeat.test.mjs';

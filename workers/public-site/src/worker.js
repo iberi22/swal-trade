@@ -365,9 +365,24 @@ export async function checkDeadman(env, nowMs = Date.now(), fetchImpl = fetch) {
     ? `SYNAPSE SIN SNAPSHOT: ${ageS === null ? 'no hay snapshot' : `ultimo hace ${Math.round(ageS / 60)} min`} (umbral ${Math.round(staleAfterS / 60)} min). El bot o el host pueden estar caidos.`
     : 'SYNAPSE recuperado: vuelven a llegar snapshots.';
 
+  if (!(await sendTelegram(env, text, fetchImpl, 'deadman'))) return { state, alert, sent: false };
+  await store.put(DEADMAN_KEY, state);
+  return { state, alert, sent: true };
+}
+
+/**
+ * Envía un aviso de texto plano (sin parse_mode) al chat del dueño. Nunca lanza.
+ *
+ * @param {object} env - TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+ * @param {string} text
+ * @param {typeof fetch} fetchImpl
+ * @param {string} tag - Prefijo de los logs.
+ * @returns {Promise<boolean>} true si Telegram lo aceptó.
+ */
+async function sendTelegram(env, text, fetchImpl, tag) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) {
-    console.warn('deadman: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID');
-    return { state, alert, sent: false };
+    console.warn(`${tag}: faltan TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID`);
+    return false;
   }
   try {
     const res = await fetchImpl(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -376,12 +391,112 @@ export async function checkDeadman(env, nowMs = Date.now(), fetchImpl = fetch) {
       body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text })
     });
     if (!res.ok) throw new Error(`telegram http ${res.status}`);
+    return true;
   } catch (err) {
-    console.warn('deadman: telegram fallo', err && err.message);
-    return { state, alert, sent: false };
+    console.warn(`${tag}: telegram fallo`, err && err.message);
+    return false;
   }
-  await store.put(DEADMAN_KEY, state);
-  return { state, alert, sent: true };
+}
+
+// Latidos de los servicios locales del dueño (guardián, radar). Cada uno hace
+// POST /heartbeat/<nombre> con Authorization: Bearer HEARTBEAT_TOKEN tras cada ciclo sano.
+// El token va en la cabecera, no en la URL: los logs de Workers guardan la URL.
+const DEFAULT_HEARTBEAT_NAMES = 'guardian,radar';
+const DEFAULT_HEARTBEAT_STALE_S = 600;
+const HEARTBEAT_MIN_WRITE_S = 60;
+const HEARTBEAT_LABELS = { guardian: 'GUARDIAN', radar: 'RADAR' };
+
+/**
+ * Nombres admitidos (var HEARTBEAT_NAMES, separados por comas). Evita que el dueño del token
+ * cree filas arbitrarias en D1.
+ *
+ * @param {object} env
+ * @returns {Set<string>}
+ */
+export function heartbeatNames(env) {
+  const raw = env && typeof env.HEARTBEAT_NAMES === 'string' ? env.HEARTBEAT_NAMES : DEFAULT_HEARTBEAT_NAMES;
+  return new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter((s) => /^[a-z0-9-]{1,32}$/.test(s)));
+}
+
+/**
+ * POST /heartbeat/<nombre>: registra el latido en D1 (tabla heartbeats, migración 0005).
+ * Escribe como mucho una vez cada 60 s por nombre; el estado ok/stale lo lleva el cron.
+ *
+ * @param {Request} request
+ * @param {object} env - HEARTBEAT_TOKEN (secret), DB, HEARTBEAT_NAMES.
+ * @param {string} name
+ * @param {number} [nowMs]
+ * @returns {Promise<Response>}
+ */
+export async function handleHeartbeatRequest(request, env, name, nowMs = Date.now()) {
+  if (request.method !== 'POST') {
+    return new Response(null, { status: 405, headers: { 'Allow': 'POST' } });
+  }
+  const authHeader = request.headers.get('Authorization') || '';
+  const expectedToken = env && env.HEARTBEAT_TOKEN ? String(env.HEARTBEAT_TOKEN) : '';
+  if (!expectedToken || !authHeader.startsWith('Bearer ')
+      || !(await timingSafeEqualString(authHeader.slice(7), expectedToken))) {
+    return new Response(null, { status: 401 });
+  }
+  if (!heartbeatNames(env).has(name)) {
+    return new Response(null, { status: 404 });
+  }
+  if (!env.DB || typeof env.DB.prepare !== 'function') {
+    return new Response(null, { status: 503 });
+  }
+  const now = Math.floor(nowMs / 1000);
+  await env.DB
+    .prepare(
+      "INSERT INTO heartbeats (name, last_seen, state) VALUES (?1, ?2, 'ok') " +
+        'ON CONFLICT(name) DO UPDATE SET last_seen = excluded.last_seen ' +
+        'WHERE heartbeats.last_seen <= excluded.last_seen - ?3'
+    )
+    .bind(name, now, HEARTBEAT_MIN_WRITE_S)
+    .run();
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * Cron: avisa por Telegram (texto plano) una vez cuando un servicio deja de latir y otra cuando
+ * vuelve. Solo vigila nombres que ya latieron alguna vez (no avisa antes de configurarlos).
+ *
+ * @param {object} env - DB, HEARTBEAT_STALE_S, HEARTBEAT_NAMES, TELEGRAM_*.
+ * @param {number} [nowMs]
+ * @param {typeof fetch} [fetchImpl]
+ * @returns {Promise<Array<{name: string, state: string, alert: string|null, sent: boolean}>|null>}
+ */
+export async function checkHeartbeats(env, nowMs = Date.now(), fetchImpl = fetch) {
+  if (!env || !env.DB || typeof env.DB.prepare !== 'function') return null;
+  const parsedStale = Number(env.HEARTBEAT_STALE_S);
+  const staleAfterS = Number.isFinite(parsedStale) && parsedStale > 0 ? parsedStale : DEFAULT_HEARTBEAT_STALE_S;
+  const names = heartbeatNames(env);
+  const now = Math.floor(nowMs / 1000);
+
+  const { results = [] } = await env.DB.prepare('SELECT name, last_seen, state FROM heartbeats').all();
+  const out = [];
+  for (const row of results) {
+    if (!row || !names.has(row.name)) continue;
+    const ageS = Math.max(0, now - Number(row.last_seen));
+    const { state, alert } = decideDeadman(ageS, row.state, staleAfterS);
+    let sent = false;
+    if (alert) {
+      const label = HEARTBEAT_LABELS[row.name] || row.name.toUpperCase();
+      const text = alert === 'stale'
+        ? `${label} SIN LATIDO: ultimo hace ${Math.round(ageS / 60)} min (umbral ${Math.round(staleAfterS / 60)} min). El servicio, la red o el PC pueden estar caidos.`
+        : `${label} recuperado: vuelve a latir.`;
+      sent = await sendTelegram(env, text, fetchImpl, 'heartbeat');
+      // Si Telegram falla, el estado no cambia y el siguiente tick reintenta el aviso.
+      if (!sent) {
+        out.push({ name: row.name, state, alert, sent });
+        continue;
+      }
+    }
+    if (state !== row.state) {
+      await env.DB.prepare('UPDATE heartbeats SET state = ?1 WHERE name = ?2').bind(state, row.name).run();
+    }
+    out.push({ name: row.name, state, alert, sent });
+  }
+  return out;
 }
 
 export default {
@@ -398,6 +513,10 @@ export default {
     const run = Promise.all([
       checkDeadman(env).catch((err) => {
         console.warn('deadman: cron fallo', err && err.message);
+        return null;
+      }),
+      checkHeartbeats(env).catch((err) => {
+        console.warn('heartbeat: cron fallo', err && err.message);
         return null;
       }),
       ingestNews(env).catch((err) => {
@@ -557,7 +676,13 @@ export default {
       return withSecurityHeaders(await handleBackupRequest(request, env), url.pathname);
     }
 
-    // 5. Static assets fallback
+    // 6. POST /heartbeat/<nombre> — latido del guardián o del radar locales (dead-man por servicio).
+    const hb = /^\/heartbeat\/([a-z0-9-]{1,32})$/.exec(url.pathname);
+    if (hb) {
+      return withSecurityHeaders(await handleHeartbeatRequest(request, env, hb[1]), url.pathname);
+    }
+
+    // 7. Static assets fallback
     if (env && env.ASSETS && typeof env.ASSETS.fetch === 'function') {
       const assetResponse = await env.ASSETS.fetch(request);
       return withSecurityHeaders(assetResponse, url.pathname);
