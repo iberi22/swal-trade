@@ -58,6 +58,8 @@ export default defineConfig({
       'https://trade.swal.network/api/explain*',
       // Puente local Claude: comunicación con el servidor MCP en localhost.
       'ws://127.0.0.1/*',
+      // Radar local: lectura de alertas y estadísticas en localhost.
+      'http://127.0.0.1/*',
     ],
     action: {
       default_title: '__MSG_actionTitle__',
