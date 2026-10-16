@@ -81,6 +81,9 @@ Para verificar las herramientas de escritura en Binance Futures Testnet antes de
 | `place_order` | escritura | Una orden de entrada más el `STOP_MARKET` obligatorio por el Algo Service. Requiere la bandera. |
 | `close_position` | escritura | MARKET `reduceOnly` y cancelación de las órdenes y órdenes algo del símbolo. Requiere la bandera. |
 | `grid_place` | escritura | El grid como órdenes límite post-only más un stop protector. Requiere la bandera. |
+| `radar_alerts` | lectura | Lista compacta y validada de alertas del radar local con métricas hacia adelante. |
+| `radar_stats` | lectura | Resumen estadístico del radar local con intervalos Wilson y nota de honestidad. |
+| `radar_mark_taken` | nota local | Registra si el usuario tomó un alerta y nota (≤ 200 caracteres) en el radar local. No envía órdenes. |
 
 Las tres herramientas de escritura **no se registran** si `SWAL_MCP_TRADING` no es `enabled`: no aparecen en `listTools` y una llamada directa falla.
 
@@ -199,6 +202,25 @@ Cuando `SWAL_MCP_CHART_BRIDGE=enabled`, se registran automáticamente 4 herramie
 - **Un solo cliente activo**: solo se admite una extensión conectada a la vez.
 - **Solo lectura y dibujo — nunca trading**: el puente no tiene acceso a cookies, credenciales, órdenes, balances ni DOM de cuentas. Solo reenvía formas geométricas de análisis y lee el símbolo/temporalidad activa.
 - **Tiempo de espera**: las peticiones tienen un timeout estricto de 5 segundos; si la extensión o la pestaña no responden, devuelven un error limpio y explicativo.
+
+## Radar local
+
+Permite a Claude u otros clientes MCP consultar los experimentos de entrada detectados por el servicio local `swal-radar`, revisar su evolución hacia adelante (forward outcomes) y registrar si el usuario tomó un alerta.
+
+Las herramientas de radar están siempre registradas (modo solo lectura + notas locales), independientemente de `SWAL_MCP_TRADING`.
+
+### Herramientas
+
+- `radar_alerts({ status, symbol, limit })`: devuelve una lista compacta y validada de alertas (`id`, `symbol`, `tf`, `direction`, `title`, `entry`, `stop`, `target_1r`, `target_2r`, `strength`, `status`, `outcomes`, `taken_by_user`). Admite filtro por estado (`active`, `resolved`, `all`), símbolo y límite (1..100, por defecto 20).
+- `radar_stats()`: estadísticas generales, por tipo de patrón y de alertas tomadas por el usuario, acompañadas de la nota de honestidad del radar. Si `n < 30`, el texto indica explícitamente `"sin evidencia (n<30)"`.
+- `radar_mark_taken({ alert_id, taken, note })`: registra si el usuario tomó el alerta y una nota opcional (≤ 200 caracteres) mediante `POST /v1/alerts/<id>/note` autenticado con `X-Radar-Token`.
+
+### Nota de honestidad y modelo de seguridad
+
+- **Experimentos, no señales**: cada alerta es un experimento medido hacia adelante; nuestro backtest no halló evidencia de superar el azar. No constituyen recomendaciones de trading.
+- **Solo local**: se conecta a `http://127.0.0.1:47322` por defecto (o `SWAL_RADAR_URL` si apunta a `http://127.0.0.1` o `http://localhost`). Cualquier URL no local es rechazada de inmediato.
+- **Token protegido**: el token vive en `~/.config/swal-trade/radar-token` (permisos 0600). Se lee en tiempo de llamada y nunca se imprime ni se expone en salidas de herramientas ni mensajes de error.
+- **Tolerancia y fallos limpios**: timeouts estrictos de 4 segundos. Si el servicio radar está apagado, devuelve `radar local apagado: systemctl --user start swal-radar`.
 
 ## Reglas de seguridad
 
