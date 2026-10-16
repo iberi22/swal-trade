@@ -35,7 +35,7 @@ export type TvChartState =
 /** Aviso que se le enseña al usuario según el estado. */
 export function tvStateHint(state: TvChartState | null | undefined): string | null {
   if (state === 'original') {
-    return 'La pestaña Original es el gráfico propio de Binance y no se puede pintar: cambia a la pestaña Trading View.';
+    return 'Para pintar, el gráfico cambia a la pestaña Trading View';
   }
   if (state === 'none') {
     return 'Abre un futuro en Binance para pintar sobre su gráfico.';

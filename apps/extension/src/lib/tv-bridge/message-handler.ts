@@ -53,11 +53,11 @@ export function createBridgeMessageHandler(
       return;
     }
 
-    if (!seenHello) {
-      const hello = parseHello(data);
-      if (!hello) return;
+    const hello = parseHello(data);
+    if (hello) {
       seenHello = true;
       if (hello.enabled) ensureRunning();
+      else if (running) stop();
       return;
     }
 

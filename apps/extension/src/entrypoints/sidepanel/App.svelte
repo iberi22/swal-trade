@@ -3,7 +3,7 @@
   import { browser } from 'wxt/browser';
   import { analyze, usingAnalysisStub, volumeFlowOf } from '../../lib/analysis';
   import { mountChart, mountFlowPane, type ChartHandle, type FlowPaneHandle } from '../../lib/chart';
-  import { onTvState, requestTvState, sendPaintCommand } from '../../lib/tv-paint-send';
+  import { onTvState, requestTvState, sendPaintCommand, requestSwitchTab } from '../../lib/tv-paint-send';
   import { shapesForFindings } from '../../lib/tv-bridge/shapes';
   import { tvStateHint, type TvChartState } from '../../lib/tv-paint';
   import {
@@ -435,6 +435,13 @@
           {tvStateHint(tvState) ??
             `Pintando ${symbol} · ${timeframe} sobre el gráfico de Binance. Se borran al apagar el interruptor.`}
         </p>
+        {#if tvState === "original" || tvState === "ready" || tvState === "tradingview"}
+          <button
+            type="button"
+            class="btn-return-original"
+            onclick={() => void requestSwitchTab("original")}
+          >Volver a Original</button>
+        {/if}
       {/if}
     {/if}
   </header>

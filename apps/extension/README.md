@@ -112,8 +112,8 @@ Cómo funciona:
 
 Detalles que importan:
 
-- **Solo la pestaña Trading View.** La pestaña "Original" es el lienzo propio de
-  Binance y no expone API: el panel lo dice ("cambia a la pestaña Trading View").
+- **Solo la pestaña Trading View.** El gráfico Original de Binance es una librería
+  interna de canvas sin API pública; la extensión cambia automáticamente a la pestaña Trading View para pintar.
 - **Un tono neutro y opacidad baja**, igual que el gráfico del panel. Las formas
   se crean bloqueadas (`locked` / `disableSelection`) para que no se muevan sin
   querer.

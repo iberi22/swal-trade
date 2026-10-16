@@ -7,10 +7,11 @@ import {
   type PageSource,
 } from '../lib/page-probe';
 import { buildClearMessage, buildDrawMessage, buildSetResolutionMessage, coerceShapes, isBridgeResolution, parseBridgeMessage } from '../lib/tv-bridge/schema';
-import { TV_SET_RESOLUTION } from '../lib/tv-paint-send';
+import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
-import { TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
+import { PAINTABLE_URL, TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
+import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 
 /** Atributos que cambian cuando el usuario pulsa otro intervalo. */
 const OBSERVED_ATTRS = [
@@ -58,52 +59,48 @@ function isIntervalNode(node: Node): boolean {
 }
 
 /**
- * Filtro de ruido: el gráfico en vivo muta cientos de nodos por segundo y
- * releer la barra cada vez saldría caro. Solo pasan las mutaciones de un nodo
- * que sea, contenga o se llame como un control de intervalo.
+ * Filtra mutaciones ajenas: si ningún nodo añadido o cambiado tiene que ver con
+ * intervalos, nos ahorramos reescanear el DOM.
  */
 function shouldRescan(records: MutationRecord[]): boolean {
   for (const record of records) {
+    if (record.type === 'characterData') {
+      if (record.target.parentElement && isIntervalNode(record.target.parentElement)) return true;
+      continue;
+    }
     if (record.type === 'attributes') {
-      const name = (record.attributeName ?? '').toLowerCase();
-      if (SPECIFIC_ATTRS.has(name)) return true;
+      const name = record.attributeName;
+      if (name && SPECIFIC_ATTRS.has(name)) return true;
       if (isIntervalNode(record.target)) return true;
       continue;
     }
-    if (isIntervalNode(record.target)) return true;
+    if (record.type === 'childList') {
+      for (let i = 0; i < record.addedNodes.length; i++) {
+        if (isIntervalNode(record.addedNodes[i]!)) return true;
+      }
+      for (let i = 0; i < record.removedNodes.length; i++) {
+        if (isIntervalNode(record.removedNodes[i]!)) return true;
+      }
+    }
   }
   return false;
 }
 
-/** Cada cuánto se mira si la pestaña del gráfico ha cambiado. */
-const TV_PROBE_MS = 2_500;
+const TV_PROBE_MS = 2000;
 
-// Expresión regular para saber si estamos en una página que puede tener el gráfico
-const PAINTABLE_URL = /^https:\/\/www\.binance\.com\/[^\/]+\/futures\//;
-
-/**
- * Lee el símbolo y la temporalidad de la URL, del DOM (barra de intervalos) y,
- * si la página no la pinta, de la clave de storage que la guarda. No lee
- * balances, órdenes, formularios, cookies ni el resto del almacenamiento.
- */
 export default defineContentScript({
-  matches: ['https://www.binance.com/*/futures/*', 'https://www.tradingview.com/chart/*'],
-  // document_start: el saludo con el puente MAIN-world tiene que ocurrir antes
-  // de que corra el primer script de la página (ver tv-bridge/handshake).
-  runAt: 'document_start',
-  allFrames: false,
-  world: 'ISOLATED',
+  matches: [
+    'https://www.binance.com/*/futures/*',
+    'https://www.tradingview.com/chart/*',
+  ],
+  runAt: 'document_idle',
   main() {
     let lastKey = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const source: PageSource = location.hostname.endsWith('tradingview.com')
-      ? 'tradingview'
-      : 'binance';
-
     const readStoredInterval = (key: string): string | null => {
       try {
-        return localStorage.getItem(key);
+        return window.localStorage.getItem(key);
       } catch {
         return null;
       }
@@ -111,6 +108,9 @@ export default defineContentScript({
 
     const publish = () => {
       try {
+        const source: PageSource = location.hostname.includes('binance.com')
+          ? 'binance'
+          : 'tradingview';
         const context = detectMarketContext({
           href: location.href,
           title: document.title,
@@ -204,9 +204,19 @@ export default defineContentScript({
 
     let lastTvState: TvChartState | null = null;
     let lastTvChart: { symbol: string; tf: string } | null = null;
+    let lastTabSwitchTime = 0;
+
     /** Estado que refleja la sonda del DOM (sin puente que lo refinen). */
-    const probedState = (): TvChartState =>
-      probeTvChart(document).present ? 'tradingview' : 'original';
+    // Binance deja montado (oculto) el iframe de Trading View al volver a Original:
+    // por eso la pestaña activa del DOM manda sobre la presencia del iframe.
+    const probedState = (): TvChartState => {
+      const active = getActiveChartTab(document);
+      if (active === 'original') return 'original';
+      if (probeTvChart(document).present) return 'tradingview';
+      if (active === 'tradingView') return 'tradingview';
+      return 'original';
+    };
+
     const applyReady = (
       ready: boolean,
       reason: string | undefined,
@@ -229,6 +239,7 @@ export default defineContentScript({
       lastTvChart = null;
       publishTvState(probed);
     };
+
     const probeChart = () => {
       // El puente manda sobre la sonda cuando sabe si el chart está listo o no
       // casa: no lo pisamos mientras estemos en ready o mismatch.
@@ -240,12 +251,13 @@ export default defineContentScript({
       publishTvState(state);
     };
 
+    let session = createSession();
+    let linkPromise: Promise<BridgeChannel | null> | null = null;
     let channel: BridgeChannel | null = null;
     const ackListeners = new Set<(data: unknown) => void>();
-    if (PAINTABLE_URL.test(location.href)) {
-      const session = createSession();
 
-      establishLink('content', 3000)
+    if (PAINTABLE_URL.test(location.href)) {
+      linkPromise = establishLink('content', 3000)
         .then((ch) => {
           channel = ch;
           channel.onMessage((data: unknown) => {
@@ -258,14 +270,39 @@ export default defineContentScript({
           });
           // Send hello
           channel.send(buildHello(session, false));
+          return ch;
         })
         .catch(() => {
           if (!channel) {
             lastTvState = 'unavailable';
             publishTvState('unavailable');
           }
+          return null;
         });
     }
+
+    // "Listo" para pintar: el puente ha reportado el gráfico. Con 'mismatch' el
+    // gráfico está pero muestra otro par o temporalidad: el puente no dibuja hasta
+    // casar (el panel adopta la temporalidad del gráfico y reenvía la orden).
+    const waitForReady = (timeoutMs = 8000): Promise<boolean> => {
+      if (lastTvState === 'ready' || lastTvState === 'mismatch') return Promise.resolve(true);
+      return new Promise((resolve) => {
+        let timer: ReturnType<typeof setTimeout>;
+        const onAck = (data: unknown) => {
+          const message = parseBridgeMessage(data);
+          if (message?.type === 'swal:ready' && (message.ready || message.reason === 'mismatch')) {
+            ackListeners.delete(onAck);
+            clearTimeout(timer);
+            resolve(true);
+          }
+        };
+        ackListeners.add(onAck);
+        timer = setTimeout(() => {
+          ackListeners.delete(onAck);
+          resolve(lastTvState === 'ready');
+        }, timeoutMs);
+      });
+    };
 
     const paint = (command: PaintCommand, enabled: boolean) => {
       if (!channel) return; // sin canal privado no se pinta
@@ -294,14 +331,104 @@ export default defineContentScript({
         key?: unknown;
         enabled?: unknown;
         resolution?: unknown;
+        tab?: unknown;
       };
-      if (record.type === TV_PAINT) {
-        paint(
-          { key: typeof record.key === 'string' ? record.key : '', shapes: coerceShapes(record.shapes) },
-          record.enabled === true,
-        );
-        return;
+
+      if (record.type === TV_SWITCH_TAB) {
+        const targetTab = record.tab === 'tradingView' ? 'tradingView' : 'original';
+        const res = switchChartTab(document, targetTab);
+        if (res.switched) {
+          // Re-sondear: el estado 'ready' de antes ya no vale tras cambiar de pestaña.
+          applyReady(false, undefined);
+        }
+        sendResponse(res);
+        return true;
       }
+
+      if (record.type === TV_PAINT) {
+        const enabled = record.enabled === true;
+        const shapes = coerceShapes(record.shapes);
+        const key = typeof record.key === 'string' ? record.key : '';
+        const command: PaintCommand = { key, shapes };
+
+        // Nunca hacer clic si pintar es una orden de limpiar o vacía
+        if (!enabled || shapes.length === 0) {
+          paint(command, enabled);
+          sendResponse({ ok: true, switched: false });
+          return;
+        }
+
+        // El DOM manda: si se ve Original no puede haber un 'ready' vigente (puede
+        // quedar de antes, p. ej. tras apagar el interruptor o volver a Original).
+        const activeNow = getActiveChartTab(document);
+        const showsOriginal = activeNow === 'original' || (activeNow === null && probedState() === 'original');
+        if (showsOriginal && (lastTvState === 'ready' || lastTvState === 'mismatch')) {
+          applyReady(false, undefined);
+        }
+
+        // Si el puente ya está en 'ready', pintar directamente sin tocar pestañas
+        if (channel && lastTvState === 'ready') {
+          paint(command, true);
+          sendResponse({ ok: true, switched: false });
+          return;
+        }
+
+        const executeSwitchAndPaint = async () => {
+          if (!channel && linkPromise) {
+            await linkPromise;
+          }
+
+          const activeTab = getActiveChartTab(document);
+          const isOriginal = activeTab === 'original' || (activeTab === null && probedState() === 'original');
+
+          if (!isOriginal) {
+            if (channel) {
+              channel.send(buildHello(session, true));
+            }
+            const ready = await waitForReady(8000);
+            if (ready) {
+              paint(command, true);
+              sendResponse({ ok: true, switched: false });
+            } else {
+              sendResponse({ ok: false, switched: false, error: 'bridge-timeout' });
+            }
+            return;
+          }
+
+          // Está en Original: no pulsar más de 1 vez cada 10 s para evitar bucles
+          const now = Date.now();
+          if (now - lastTabSwitchTime < 10_000) {
+            sendResponse({ ok: false, switched: false, error: 'rate-limited' });
+            return;
+          }
+
+          const tabSwitch = switchChartTab(document, 'tradingView');
+          if (!tabSwitch.ok) {
+            sendResponse({ ok: false, switched: false, error: tabSwitch.error });
+            return;
+          }
+
+          if (tabSwitch.switched) {
+            lastTabSwitchTime = Date.now();
+          }
+
+          if (channel) {
+            channel.send(buildHello(session, true));
+          }
+
+          const ready = await waitForReady(8000);
+          if (ready) {
+            paint(command, true);
+            sendResponse({ ok: true, switched: tabSwitch.switched });
+          } else {
+            sendResponse({ ok: false, switched: tabSwitch.switched, error: 'bridge-timeout' });
+          }
+        };
+
+        void executeSwitchAndPaint();
+        return true;
+      }
+
       if (record.type === TV_SET_RESOLUTION) {
         const res = record.resolution;
         if (!isBridgeResolution(res)) { sendResponse({ ok: false, error: 'invalid-resolution' }); return; }
