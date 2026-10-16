@@ -2,8 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://trade.swal.network/</loc></url>
   <url><loc>https://trade.swal.network/analisis/</loc></url>
+  <url><loc>https://trade.swal.network/apoyar/</loc></url>
   <url><loc>https://trade.swal.network/backup/</loc></url>
   <url><loc>https://trade.swal.network/contact/</loc></url>
+  <url><loc>https://trade.swal.network/extension/</loc></url>
   <url><loc>https://trade.swal.network/extension-privacy/</loc></url>
   <url><loc>https://trade.swal.network/guardian/</loc></url>
   <url><loc>https://trade.swal.network/guardian/self-host/</loc></url>

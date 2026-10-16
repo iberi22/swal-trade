@@ -34,6 +34,7 @@
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import ExplainCard from './ExplainCard.svelte';
   import SizingCard from './SizingCard.svelte';
+  import SidepanelFooter from './SidepanelFooter.svelte';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -643,6 +644,7 @@
             </div>
           {/each}
         </div>
+      </div>
       <div class="claude-bridge-section">
         <label class="field check">
           <input
@@ -705,4 +707,5 @@
       </p>
     </div>
   </details>
+  <SidepanelFooter {symbol} />
 </div>

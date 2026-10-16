@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>Extensión para Binance — SWAL Trade</title>
+  <meta name="description" content="Extensión de panel lateral para Binance Futures USDⓈ-M: análisis técnico determinista, pulso de mercado, cálculo de tamaño y atajos de teclado sin salir de tu operativa.">
+  <link rel="canonical" href="https://trade.swal.network/extension/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SWAL Trade">
+  <meta property="og:title" content="Extensión para Binance — SWAL Trade">
+  <meta property="og:description" content="Extensión de panel lateral para Binance Futures USDⓈ-M: análisis técnico determinista, pulso de mercado, cálculo de tamaño y atajos de teclado sin salir de tu operativa.">
+  <meta property="og:url" content="https://trade.swal.network/extension/">
+  <meta property="og:locale" content="es_CO">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/site.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f8f6f1">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <script src="/pwa-register.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="site-brand" href="/">SWAL Trade</a>
+    <nav class="site-nav" aria-label="Principal">
+      <a href="/">Inicio</a>
+      <a href="/pricing/">Precios</a>
+      <a href="/operativa/">Operativa</a>
+      <a href="/analisis/">Análisis</a>
+      <a href="/guardian/">Guardián</a>
+      <a href="/extension/" aria-current="page">Extensión</a>
+      <a href="/apoyar/">Apoya</a>
+      <a href="/terms/">Términos</a>
+      <a href="/privacy/">Privacidad</a>
+      <a href="/risk/">Riesgo</a>
+      <a href="/contact/">Contacto</a>
+    </nav>
+  </header>
+  <main class="site-main">
+    <section class="hero">
+      <p class="eyebrow">Panel lateral en tu navegador</p>
+      <h1>Extensión para Binance</h1>
+      <p class="lead">Herramientas de análisis, pulso de mercado y gestión de riesgo directamente en Binance Futures USDⓈ-M. Código abierto, sin custodia ni permisos invasivos.</p>
+      <p><a class="btn" href="swal-trade-extension.zip" download>Descargar extensión (.zip)</a> <a class="btn btn-ghost" href="/extension-privacy/">Privacidad de la extensión</a></p>
+      <p class="muted">Versión preliminar (v0.1.0). Mientras completamos el proceso de revisión en las tiendas oficiales de Chrome y Firefox, puedes instalarla cargando la carpeta descomprimida en tu navegador.</p>
+    </section>
+
+    <h2>Qué hace la extensión</h2>
+    <ul class="bullets">
+      <li>
+        <h3>Análisis técnico determinista</h3>
+        Detecta soportes, resistencias, dobles techos/suelos, triángulos y divergencias de forma reproducible en el panel lateral. Clasifica los hallazgos por fuerza cualitativa, sin promesas milagrosas: ningún patrón superó al azar en nuestra medición.
+      </li>
+      <li>
+        <h3>Pulso de mercado en tiempo real</h3>
+        Visualiza muros del libro de órdenes por profundidad acumulada y flujo de liquidaciones recientes en 5 y 15 minutos para entender la absorción de mercado al instante.
+      </li>
+      <li>
+        <h3>Calculadora de tamaño de posición (sizing)</h3>
+        Calcula el tamaño de contrato adecuado a partir de tu capital total y porcentaje de riesgo deseado hasta el stop loss, previniendo sobreapalancamiento emocional.
+      </li>
+      <li>
+        <h3>Explicaciones didácticas con IA (opcional)</h3>
+        Resumen didáctico bajo demanda con escenarios de confirmación e invalidación del análisis determinista. Viene apagado por defecto y requiere activación explícita (opt-in).
+      </li>
+      <li>
+        <h3>Radar de patrones con servicio local</h3>
+        Conexión opcional con el servicio <code>swal-radar</code> en <code>127.0.0.1</code> para contrastar entradas frente a validaciones estadísticas conservadoras en tu propia máquina.
+      </li>
+      <li>
+        <h3>Atajos de teclado para temporalidad (F1..F12)</h3>
+        Cambia de temporalidad al instante en Binance Futures mediante teclas rápidas configurables, bloqueando acciones molestas del navegador (como abrir la ayuda de Windows o recargar la página).
+      </li>
+      <li>
+        <h3>Puente local con Claude (opt-in)</h3>
+        Permite que un agente local de inteligencia artificial (Claude Code a través del servidor MCP de SWAL Trade) lea velas y trace niveles en el gráfico activo mediante un canal WebSocket seguro y local.
+      </li>
+    </ul>
+
+    <h2>Capturas de la interfaz</h2>
+    <div class="grid">
+      <figure class="card">
+        <img src="/extension/img/sidepanel-chart-1280x800.png" alt="Panel lateral con gráfico de velas y patrones detectados" style="max-width:100%;height:auto;border-radius:calc(var(--radius) - .25rem);display:block;margin-bottom:.75rem">
+        <figcaption><strong>Análisis de gráfico:</strong> Velas, flujo de volumen delta taker (CVD) y hallazgos ordenados por fuerza.</figcaption>
+      </figure>
+      <figure class="card">
+        <img src="/extension/img/sidepanel-pulse-1280x800.png" alt="Pulso de mercado con muros de liquidez y liquidaciones" style="max-width:100%;height:auto;border-radius:calc(var(--radius) - .25rem);display:block;margin-bottom:.75rem">
+        <figcaption><strong>Pulso de mercado:</strong> Muros del libro de órdenes y eventos de liquidación recientes.</figcaption>
+      </figure>
+      <figure class="card">
+        <img src="/extension/img/sidepanel-explain-1280x800.png" alt="Explicación didáctica con inteligencia artificial" style="max-width:100%;height:auto;border-radius:calc(var(--radius) - .25rem);display:block;margin-bottom:.75rem">
+        <figcaption><strong>Explicación con IA:</strong> Escenarios educativos de confirmación e invalidación (opt-in).</figcaption>
+      </figure>
+      <figure class="card">
+        <img src="/extension/img/sidepanel-settings-1280x800.png" alt="Ajustes de la extensión y atajos de teclado" style="max-width:100%;height:auto;border-radius:calc(var(--radius) - .25rem);display:block;margin-bottom:.75rem">
+        <figcaption><strong>Ajustes y atajos:</strong> Configuración de temporalidades, atajos F1..F12 y puentes locales.</figcaption>
+      </figure>
+    </div>
+
+    <h2>Cómo instalar hoy (paso a paso)</h2>
+    <p>Mientras la extensión se encuentra en revisión en las tiendas oficiales, puedes instalarla en navegadores Chromium (Brave, Chrome, Edge) en menos de dos minutos:</p>
+    <ol>
+      <li><strong>Descarga el archivo empaquetado:</strong> Haz clic en <a href="swal-trade-extension.zip" download>swal-trade-extension.zip</a> para guardar la versión compilada en tu equipo.</li>
+      <li><strong>Descomprime el archivo:</strong> Extrae el contenido en cualquier carpeta local. Obtendrás un directorio llamado <code>chrome-mv3</code>.</li>
+      <li><strong>Abre la página de extensiones:</strong> En la barra de direcciones de tu navegador, escribe <code>brave://extensions</code> o <code>chrome://extensions</code> y pulsa Intro.</li>
+      <li><strong>Activa el modo de desarrollador:</strong> Enciende el interruptor <em>«Modo de desarrollador»</em> situado en la esquina superior derecha de la ventana.</li>
+      <li><strong>Carga la extensión:</strong> Pulsa el botón <em>«Cargar descomprimida»</em> (Load unpacked) y selecciona la carpeta <code>chrome-mv3</code> que extrajiste en el paso 2.</li>
+    </ol>
+
+    <div class="warn">
+      <strong>Aviso de versión temprana:</strong> Esta versión corresponde a la fase inicial v0.1.0. La extensión no pide ni almacena tus claves API de Binance, no tiene permisos de retiro ni ejecución de órdenes, y todo el análisis se ejecuta localmente. Consulta todos los detalles de permisos en la <a href="/extension-privacy/">política de privacidad de la extensión</a>.
+    </div>
+  </main>
+  <footer class="site-footer">
+    <p id="disclaimer" class="disclaimer">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Ninguna estrategia del bot público tiene todavía una ventaja estadística validada. <a href="/risk/">Aviso de riesgo</a></p>
+    <nav aria-label="Pie"><a href="/">Inicio</a> · <a href="/pricing/">Precios</a> · <a href="/operativa/">Operativa</a> · <a href="/analisis/">Análisis</a> · <a href="/guardian/">Guardián</a> · <a href="/extension/" aria-current="page">Extensión</a> · <a href="/apoyar/">Apoya</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a> · <a href="/risk/">Riesgo</a> · <a href="/contact/">Contacto</a></nav>
+    <p class="muted">SWAL — Laboratorio de sistemas · Código abierto bajo AGPL-3.0 · <a href="https://github.com/iberi22/swal-trade" rel="noopener">github.com/iberi22/swal-trade</a></p>
+  </footer>
+</body>
+</html>
