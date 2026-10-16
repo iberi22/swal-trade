@@ -17,12 +17,15 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "core",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.json && node --test test/*.test.mjs",
-    "bridge": "node dist/bridge-daemon.js"
+    "bridge": "node dist/bridge-daemon.js",
+    "prepack": "npm run build && node scripts/bundle-core.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
@@ -31,5 +34,21 @@
   "devDependencies": {
     "@types/node": "^22.19.0",
     "typescript": "^5.9.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iberi22/swal-trade.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://trade.swal.network/extension/",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "binance",
+    "trading",
+    "risk",
+    "claude-code",
+    "codex",
+    "gemini-cli"
+  ]
 }

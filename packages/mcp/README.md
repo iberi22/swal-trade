@@ -4,17 +4,42 @@ Servidor MCP para swal-trade. Transporte **stdio**. Expone el análisis del núc
 
 Licencia: GNU AGPL-3.0 (ver `LICENSE` en la raíz del repositorio). Herramienta autodirigida, no asesoría de inversiones. **El servidor no da estrategia, ni señal, ni recomendación: ejecuta la instrucción explícita que recibe.**
 
-## Registro en Claude Code
+## Úsalo con tu propia herramienta, en local
+
+El servidor habla MCP por stdio: cualquier CLI o editor con soporte MCP lo arranca como un proceso hijo en tu máquina. Tus claves de Binance solo viven en tu entorno local; nada de esto pasa por servidores de SWAL (salvo el explicador y las noticias opcionales, que no llevan claves).
+
+**Hoy, desde un clon del repositorio** (el paquete aún no está publicado en npm):
 
 ```bash
-claude mcp add swal-trade -- npx -y @swal-trade/mcp
+git clone https://github.com/iberi22/swal-trade && cd swal-trade/packages/mcp
+npm ci && npm run build
 ```
 
-Variante de desarrollo local, desde la raíz del repo, después de `npm run build` en `packages/mcp`:
+Después, registra `node /ruta/absoluta/swal-trade/packages/mcp/dist/index.js` en tu herramienta:
+
+| Herramienta | Comando |
+|---|---|
+| Claude Code | `claude mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
+| Codex CLI | `codex mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
+| opencode | `opencode mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
+| Gemini CLI, Cursor, otros | Añade un servidor `stdio` con `command: node` y `args: ["/ruta/packages/mcp/dist/index.js"]` en su fichero de configuración MCP (en Gemini CLI, `mcpServers` de `~/.gemini/settings.json`). No probado en esta máquina. |
+
+Cuando el paquete esté publicado en npm, sustituye `node /ruta/...` por `npx -y @swal-trade/mcp`. Antes de publicar, `node scripts/verify-pack.mjs` empaqueta, instala en un directorio vacío y llama a `analyze_chart` desde el paquete instalado (el tarball lleva su propia copia del núcleo de análisis en `core/`).
+
+**Claves.** No las pongas en la configuración de la herramienta (los ficheros de configuración suelen acabar en copias de seguridad y repositorios). Usa un script que lea un fichero `chmod 600` y exporte solo lo necesario, y una clave de Binance **sin permiso de retiro**; para solo lectura basta con la de lectura.
 
 ```bash
-claude mcp add swal-trade -- node packages/mcp/dist/index.js
+#!/usr/bin/env bash
+set -euo pipefail
+set -a; . "$HOME/.config/swal-trade/mcp.env"; set +a   # BINANCE_API_KEY, BINANCE_API_SECRET, SWAL_*
+exec node /ruta/packages/mcp/dist/index.js
 ```
+
+**Gráfico de Binance.** Hace falta el demonio `swal-bridge` y la extensión; está explicado en la sección *Claude en tu gráfico* más abajo.
+
+**Qué necesita red.** Las velas y el contexto de mercado salen de la API pública de Binance. El explicador (`explain_analysis`) llama a `trade.swal.network/api/explain` con los hallazgos y sin claves; con `SWAL_EXPLAIN_URL=` vacío funciona sin conexión y devuelve el respaldo determinista.
+
+**Qué no incluye.** Las herramientas `radar_*` hablan con un radar local (`127.0.0.1:47322`) que no forma parte de este repositorio; sin él responden que no está disponible. Ver `docs/OPEN_VS_PRIVATE.md`.
 
 ## Estado de las herramientas de escritura (2026-10-11)
 
@@ -250,6 +275,8 @@ Cuando `SWAL_MCP_CHART_BRIDGE=client` (o `enabled`), se registran automáticamen
 Permite a Claude u otros clientes MCP consultar los experimentos de entrada detectados por el servicio local `swal-radar`, revisar su evolución hacia adelante (forward outcomes) y registrar si el usuario tomó un alerta.
 
 Las herramientas de radar están siempre registradas (modo solo lectura + notas locales), independientemente de `SWAL_MCP_TRADING`.
+
+> **El servicio `swal-radar` no forma parte de este repositorio**: vive en el repositorio privado del laboratorio. Estas herramientas solo hablan con él; sin él devuelven `radar local apagado`. Ver `docs/OPEN_VS_PRIVATE.md`.
 
 ### Herramientas
 
