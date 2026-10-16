@@ -16,8 +16,9 @@ async function saveAndWatch(page: import('@playwright/test').Page) {
 test('free tier shows daily breach and all positions', async ({ page, problems }) => {
   await page.goto('/guardian/', { waitUntil: 'load' });
   await expect(page.locator('#tier-badge')).toHaveText('Gratis');
-  await expect(page.locator('#tg-section')).toBeHidden();
-  await expect(page.locator('#tg-locked')).toBeVisible();
+  // Telegram con bot propio es gratis para todos durante las pruebas (envio desde el navegador).
+  await expect(page.locator('#tg-section')).toBeVisible();
+  await expect(page.locator('#tg-locked')).toBeHidden();
   await expect(page.locator('#selfhost-link')).toBeHidden();
 
   await saveAndWatch(page);
