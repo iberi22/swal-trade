@@ -913,3 +913,46 @@ test('analisis.js aplica el formato de precio a la serie de velas (regresion PEP
   const page = readFileSync(new URL('../static/analisis/analisis.js', import.meta.url), 'utf8');
   assert.match(page, /series\.applyOptions\(\{ priceFormat: chartPriceFormat\(last\.close\) \}\)/);
 });
+
+test('honesty per measured pattern kind: hitRateNote reflects measurement status', async () => {
+  const { hitRateNote, MEASURED_KINDS, NO_HISTORY_TEXT, UNMEASURED_TEXT } = await import('../static/analisis/analysis-core.js');
+
+  // 1. Measured kinds with n>=30 in public study
+  assert.equal(MEASURED_KINDS.size, 14);
+  assert.equal(hitRateNote('double_top'), 'no superó al azar en nuestra medición (2026-10)');
+  assert.equal(hitRateNote('double_bottom'), 'no superó al azar en nuestra medición (2026-10)');
+  assert.equal(hitRateNote('range_breakout'), 'no superó al azar en nuestra medición (2026-10)');
+  assert.equal(hitRateNote('shock'), 'no superó al azar en nuestra medición (2026-10)');
+
+  // 2. Unmeasured kinds or kinds with too few events (n < 30)
+  assert.equal(hitRateNote('sr_zone'), 'aún no medido');
+  assert.equal(hitRateNote('volume_profile'), 'aún no medido');
+  assert.equal(hitRateNote('fvg_bullish'), 'aún no medido');
+  assert.equal(hitRateNote('order_block_bullish'), 'aún no medido');
+  assert.equal(hitRateNote('candle_hammer'), 'aún no medido');
+  assert.equal(hitRateNote('absorption'), 'aún no medido');
+  assert.equal(hitRateNote('climax'), 'aún no medido');
+
+  // 3. Unknown kind
+  assert.equal(hitRateNote('unknown_kind_xyz'), 'aún no medido');
+  assert.equal(hitRateNote(''), 'aún no medido');
+  assert.equal(hitRateNote(null), 'aún no medido');
+
+  // 4. Verify analyzeSync assigns correct hitRateNote and keeps historicalHitRate null
+  const out = analyzeSync({ symbol: 'BTCUSDT', timeframe: '1m', candles: dtop() });
+  const measuredFinding = out.findings.find((f) => f.kind === 'double_top');
+  assert.ok(measuredFinding, 'double_top finding exists');
+  assert.equal(measuredFinding.hitRate, null);
+  assert.equal(measuredFinding.hitRateNote, 'no superó al azar en nuestra medición (2026-10)');
+
+  const unmeasuredFinding = out.findings.find((f) => !MEASURED_KINDS.has(f.kind));
+  if (unmeasuredFinding) {
+    assert.equal(unmeasuredFinding.hitRate, null);
+    assert.equal(unmeasuredFinding.hitRateNote, 'aún no medido');
+  }
+
+  // historicalHitRate continues returning null
+  assert.equal(historicalHitRate('double_top', '1m', 'BTCUSDT'), null);
+  assert.equal(historicalHitRate('sr_zone', '1m', 'BTCUSDT'), null);
+  assert.equal(historicalHitRate('unknown_kind_xyz', '1m', 'BTCUSDT'), null);
+});

@@ -1,5 +1,5 @@
 // analisis.js — UI de /analisis/. Toda la logica de deteccion vive en analysis-core.js (pura).
-import { analyzeSync, trendOf, NO_HISTORY_TEXT, chartPriceFormat } from './analysis-core.js';
+import { analyzeSync, trendOf, NO_HISTORY_TEXT, hitRateNote, chartPriceFormat } from './analysis-core.js';
 import { cvdHistogramData, cvdLineData, flowLegend, volumeShockMarkers } from './volume-flow-view.js';
 import {
   EXPLAIN_DISCLAIMER,
@@ -328,7 +328,7 @@ function renderFindings(res) {
     const p = document.createElement('p'); p.className = 'expl'; p.textContent = f.explanation;
     const m = document.createElement('div'); m.className = 'meter'; const i = document.createElement('i'); i.style.width = `${PCT(f.strength)}%`; m.append(i);
     const meta = document.createElement('div'); meta.className = 'meta';
-    meta.textContent = `${DIR[f.direction]} · ${f.status === 'confirmed' ? 'confirmado' : 'en formación'} · acierto histórico: ${NO_HISTORY_TEXT}`;
+    meta.textContent = `${DIR[f.direction]} · ${f.status === 'confirmed' ? 'confirmado' : 'en formación'} · acierto histórico: ${f.hitRateNote || hitRateNote(f.kind)}`;
     li.append(row, p, m, meta);
     li.addEventListener('click', () => focusFinding(f));
     li.addEventListener('keydown', (e) => {
