@@ -94,4 +94,19 @@ describe('Bridge Message Handler', () => {
     expect(session.setResolution).toHaveBeenCalledWith('15');
     expect(onAck).toHaveBeenCalledWith(buildResolutionAckMessage(true, '15'));
   });
+  it("hello disabled -> hello enabled starts the session", () => {
+    const session = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      apply: vi.fn(),
+    };
+    const rate = new DrawRateLimit(4);
+    const handler = createBridgeMessageHandler(session, rate);
+
+    handler(buildHello("sess-1", false));
+    expect(session.start).not.toHaveBeenCalled();
+
+    handler(buildHello("sess-1", true));
+    expect(session.start).toHaveBeenCalledTimes(1);
+  });
 });

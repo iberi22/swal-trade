@@ -93,6 +93,7 @@ export const TIMEFRAME_TO_RESOLUTION: Record<Timeframe, BridgeResolution> = {
   '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '1d': '1D',
 };
 export const TV_SET_RESOLUTION = 'tv:set-resolution';
+export const TV_SWITCH_TAB = 'tv:switch-tab';
 
 export async function requestResolution(
   tabId: number,
@@ -108,4 +109,22 @@ export async function requestResolution(
   } catch (err) {
     return { ok: false, resolution, error: String(err) };
   }
+}
+
+export async function requestSwitchTab(
+  tab: 'original' | 'tradingView',
+): Promise<{ ok: boolean; switched?: boolean; error?: string }> {
+  const tabs = await browser.tabs.query({}).catch(() => []);
+  for (const t of tabs) {
+    if (t.id == null || !PAINTABLE_URL.test(t.url ?? '')) continue;
+    try {
+      const res = await browser.tabs.sendMessage(t.id, { type: TV_SWITCH_TAB, tab });
+      if (res && typeof res === 'object') {
+        return res as { ok: boolean; switched?: boolean; error?: string };
+      }
+    } catch {
+      // Si la pestaña no responde, intenta la siguiente
+    }
+  }
+  return { ok: false, error: 'no-paintable-tab' };
 }
