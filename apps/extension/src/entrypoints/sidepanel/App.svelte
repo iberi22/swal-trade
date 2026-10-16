@@ -16,6 +16,7 @@
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import MarketPulse from './MarketPulse.svelte';
+  import RadarCard from './RadarCard.svelte';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { NEWS_REFRESH_MS, fetchNews, relativeTime, type NewsItem } from '../../lib/news';
@@ -552,6 +553,8 @@
   </section>
 
   <MarketPulse symbol={symbol} />
+
+  <RadarCard {symbol} port={settings.radarPort} paintEnabled={settings.paintOnChart} enabled={settings.radarEnabled} />
 
   <ExplainCard
     {symbol}
