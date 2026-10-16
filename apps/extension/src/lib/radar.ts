@@ -3,7 +3,7 @@ import { formatPrice } from './tv-bridge/shapes';
 
 export const RADAR_TIMEOUT_MS = 4000;
 export type RadarDirection = 'long' | 'short';
-export type RadarAlertStatus = 'pending' | 'triggered' | 'win_1r' | 'win_2r' | 'loss' | 'expired';
+export type RadarAlertStatus = 'pending' | 'triggered' | 'win_1r' | 'win_2r' | 'loss' | 'expired' | 'missed';
 
 export interface RadarAlert {
   id: number | string;
@@ -40,7 +40,7 @@ export interface RadarStats { overall: RadarStatSummary; by_kind: RadarKindStat[
 export interface RadarSnapshot { reachable: boolean; version?: string; alerts: RadarAlert[]; stats: RadarStats | null; error?: string }
 
 export const RADAR_STATUS_LABELS: Record<RadarAlertStatus, string> = {
-  pending: 'Pendiente', triggered: 'Activada', win_1r: 'Ganó 1R', win_2r: 'Ganó 2R', loss: 'Perdió', expired: 'Caducó',
+  pending: 'Pendiente', triggered: 'Activada', win_1r: 'Ganó 1R', win_2r: 'Ganó 2R', loss: 'Perdió', expired: 'Caducó', missed: 'Entrada superada',
 };
 export const RADAR_DIRECTION_LABELS: Record<RadarDirection, string> = { long: 'Largo', short: 'Corto' };
 export const radarStatusLabel = (s: string) => RADAR_STATUS_LABELS[s as RadarAlertStatus] ?? s;
@@ -60,13 +60,15 @@ export function formatR(r: number | null | undefined): string {
 
 const num = (v: unknown, def: number | null = null) => (typeof v === 'number' && Number.isFinite(v) ? v : def);
 const txt = (v: unknown, max: number, def = '') => (typeof v === 'string' ? v.trim().slice(0, max) : def);
-const STATUSES = new Set(['pending', 'triggered', 'win_1r', 'win_2r', 'loss', 'expired']);
+const STATUSES = new Set(['pending', 'triggered', 'win_1r', 'win_2r', 'loss', 'expired', 'missed']);
 
 export function sanitizeRadarAlert(raw: unknown): RadarAlert | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const entry = num(r.entry), stop = num(r.stop), t1 = num(r.target_1r), t2 = num(r.target_2r);
   if (entry === null || stop === null || t1 === null || t2 === null) return null;
+  // An unknown status is dropped, never shown as 'Pendiente': that would invent an open alert.
+  if (typeof r.status !== 'string' || !STATUSES.has(r.status)) return null;
   return {
     id: typeof r.id === 'number' || typeof r.id === 'string' ? r.id : 'unknown',
     source: txt(r.source, 32, 'core'),
@@ -77,7 +79,7 @@ export function sanitizeRadarAlert(raw: unknown): RadarAlert | null {
     direction: r.direction === 'short' ? 'short' : 'long',
     entry, stop, target_1r: t1, target_2r: t2,
     strength: Math.min(1, Math.max(0, num(r.strength, 0.5) ?? 0.5)),
-    status: (typeof r.status === 'string' && STATUSES.has(r.status) ? r.status : 'pending') as RadarAlertStatus,
+    status: r.status as RadarAlertStatus,
     created_at: txt(r.created_at, 40, new Date().toISOString()),
     triggered_at: typeof r.triggered_at === 'string' ? txt(r.triggered_at, 40) : null,
     resolved_at: typeof r.resolved_at === 'string' ? txt(r.resolved_at, 40) : null,

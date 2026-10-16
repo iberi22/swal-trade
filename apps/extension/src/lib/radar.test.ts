@@ -27,7 +27,11 @@ describe('sanitizeRadarAlert', () => {
     expect(sanitizeRadarAlert(valid)?.symbol).toBe('BTCUSDC');
     expect(sanitizeRadarAlert(null)).toBeNull();
     expect(sanitizeRadarAlert({ ...valid, entry: NaN })).toBeNull();
-    expect(sanitizeRadarAlert({ ...valid, status: 'hack', direction: 'inv' })).toMatchObject({ status: 'pending', direction: 'long' });
+    // An unknown status must not become an invented open alert.
+    expect(sanitizeRadarAlert({ ...valid, status: 'hack' })).toBeNull();
+    expect(sanitizeRadarAlert({ ...valid, direction: 'inv' })).toMatchObject({ status: 'pending', direction: 'long' });
+    expect(sanitizeRadarAlert({ ...valid, status: 'missed' })).toMatchObject({ status: 'missed' });
+    expect(radarStatusLabel('missed')).toBe('Entrada superada');
   });
 });
 
