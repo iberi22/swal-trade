@@ -1,0 +1,15 @@
+[Unit]
+Description=Swal Radar Service - deterministic pattern alerts and forward evaluation
+After=network.target
+
+[Service]
+Type=simple
+# @REPO_DIR@ and @ENV_FILE@ are filled in by scripts/install-linux-services.sh
+WorkingDirectory=@REPO_DIR@
+EnvironmentFile=-@ENV_FILE@
+ExecStart=/usr/bin/env python3 -I radar
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
