@@ -15,7 +15,7 @@ import { handleBackupRequest } from './backup.js';
  * @param {unknown} raw - Unsanitized incoming snapshot object.
  * @returns {object} Strictly sanitized snapshot conforming to synapse.public.snapshot/v1.
  */
-export function sanitizeSnapshot(raw) {
+export function sanitizeSnapshot(raw, env = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('Invalid snapshot: expected JSON object');
   }
@@ -65,9 +65,7 @@ export function sanitizeSnapshot(raw) {
     max_drawdown_pct: typeof rawAccount.max_drawdown_pct === 'number' && Number.isFinite(rawAccount.max_drawdown_pct)
       ? rawAccount.max_drawdown_pct
       : null,
-    open_positions: typeof rawAccount.open_positions === 'number' && Number.isFinite(rawAccount.open_positions)
-      ? rawAccount.open_positions
-      : null,
+    open_positions: null, // Will be updated after filtering
     total_trades: typeof rawAccount.total_trades === 'number' && Number.isFinite(rawAccount.total_trades)
       ? rawAccount.total_trades
       : null,
@@ -92,7 +90,6 @@ export function sanitizeSnapshot(raw) {
         ? b.allocation_pct
         : null,
       fidelity: typeof b.fidelity === 'string' ? b.fidelity : null,
-      research_verdict: typeof b.research_verdict === 'string' ? b.research_verdict : null,
       points: typeof b.points === 'number' && Number.isFinite(b.points)
         ? Math.round(b.points)
         : 0,
@@ -117,10 +114,32 @@ export function sanitizeSnapshot(raw) {
     };
   }).filter(Boolean);
 
+  // Age filter for open positions
+  let minAgeMin = 15;
+  if (env && env.PUBLIC_POSITIONS_MIN_AGE_MIN !== undefined) {
+    const parsed = Number(env.PUBLIC_POSITIONS_MIN_AGE_MIN);
+    if (Number.isFinite(parsed)) {
+      minAgeMin = Math.max(0, Math.min(240, parsed));
+    }
+  }
+  const minAgeMs = minAgeMin * 60 * 1000;
+
+  let generatedAtMs = Date.parse(raw.generated_at);
+  if (isNaN(generatedAtMs)) generatedAtMs = Date.now();
+
   // Open positions array (capped at 100)
   const rawPositions = Array.isArray(raw.open_positions) ? raw.open_positions : [];
   const open_positions = rawPositions.slice(0, 100).map((p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+
+    const openedAtStr = typeof p.opened_at === 'string' ? p.opened_at : null;
+    if (!openedAtStr) return null;
+
+    const openedAtMs = Date.parse(openedAtStr);
+    if (isNaN(openedAtMs)) return null;
+
+    if (generatedAtMs - openedAtMs < minAgeMs) return null;
+
     return {
       bot: String(p.bot || ''),
       symbol: String(p.symbol || ''),
@@ -131,11 +150,13 @@ export function sanitizeSnapshot(raw) {
       upnl_pct: typeof p.upnl_pct === 'number' && Number.isFinite(p.upnl_pct)
         ? p.upnl_pct
         : null,
-      opened_at: (typeof p.opened_at === 'string' && !isNaN(Date.parse(p.opened_at)))
-        ? p.opened_at
-        : null
+      opened_at: openedAtStr
     };
   }).filter(Boolean);
+
+  account.open_positions = typeof rawAccount.open_positions === 'number' && Number.isFinite(rawAccount.open_positions)
+    ? open_positions.length
+    : null;
 
   // Recent trades array (capped at 50)
   const rawTrades = Array.isArray(raw.recent_trades) ? raw.recent_trades : [];
@@ -634,7 +655,7 @@ export default {
       // Sanitize snapshot
       let sanitized;
       try {
-        sanitized = sanitizeSnapshot(rawJson);
+        sanitized = sanitizeSnapshot(rawJson, env);
       } catch (err) {
         return withSecurityHeaders(new Response(JSON.stringify({ error: err.message || 'invalid_snapshot' }), {
           status: 400,
