@@ -33,6 +33,23 @@ jobs:
           node --check apps/key-spike/app.js
           node --check apps/key-spike/signing.js
 
+  radar:
+    name: radar (tests, Python + núcleo JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Tests del radar
+        run: python3 -I -m unittest discover -s radar/tests -t .
+      - name: Comprobar sintaxis
+        run: |
+          python3 -m compileall -q radar
+          node --check radar/detect.mjs
+
   synapse-core:
     name: synapse-core (Rust + WASM)
     runs-on: ubuntu-latest
