@@ -1,0 +1,54 @@
+[
+  {
+    "file": "apps/README.md",
+    "ref": "apps/pwa"
+  },
+  {
+    "file": "apps/extension/README.md",
+    "ref": "apps/extension/.output/chrome-mv3"
+  },
+  {
+    "file": "apps/extension/README.md",
+    "ref": "apps/extension/.output/firefox-mv3/manifest.json"
+  },
+  {
+    "file": "docs/ARCHITECTURE_ANALYSIS_EXTENSION_MCP.md",
+    "ref": "docs/SWAL/"
+  },
+  {
+    "file": "docs/ARCHITECTURE_ANALYSIS_EXTENSION_MCP.md",
+    "ref": "packages/analysis-core"
+  },
+  {
+    "file": "docs/OPEN_VS_PRIVATE.md",
+    "ref": "workers/public-site/src/explain{,-prompt}.js"
+  },
+  {
+    "file": "docs/RADAR.md",
+    "ref": "scripts/install-linux-services.sh"
+  },
+  {
+    "file": "docs/STORE_LISTING.md",
+    "ref": "apps/extension/.output/"
+  },
+  {
+    "file": "docs/STORE_LISTING.md",
+    "ref": "apps/extension/vendor/"
+  },
+  {
+    "file": "e2e/README.md",
+    "ref": "apps/extension/.output/chrome-mv3"
+  },
+  {
+    "file": "scripts/guardian/README.md",
+    "ref": "scripts/risk_guardian.py"
+  },
+  {
+    "file": "scripts/guardian/README.md",
+    "ref": "scripts/systemd/risk-guardian.service"
+  },
+  {
+    "file": "workers/public-site/README.md",
+    "ref": "docs/SWAL/GOAL.md"
+  }
+]
