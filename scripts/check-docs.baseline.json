@@ -24,8 +24,8 @@
     "ref": "workers/public-site/src/explain{,-prompt}.js"
   },
   {
-    "file": "docs/RADAR.md",
-    "ref": "scripts/install-linux-services.sh"
+    "file": "docs/SECURITY_MODEL.md",
+    "ref": "docs/SECURITY.md"
   },
   {
     "file": "docs/STORE_LISTING.md",
