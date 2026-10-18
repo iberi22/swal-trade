@@ -22,6 +22,7 @@ from radar.evaluate import evaluate_alert_on_candles
 from radar.api import create_api_server
 from radar import heartbeat
 from radar.retention import prune_alerts
+from radar.notify import Notifier
 
 DEFAULT_SYMBOLS = ['BTCUSDC', 'ETHUSDC']
 DEFAULT_TFS = ['15m', '1h']
@@ -32,12 +33,13 @@ def backoff_seconds(consecutive_failures: int) -> int:
     return min(60, 2 ** consecutive_failures)
 
 
-def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count):
+def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier=None):
     now_ts = time.time()
     state['last_scan'] = format_ts(now_ts)
 
     # 1. Detection on closed candle
     fed = False
+    new_alerts = []
     for sym in symbols:
         for tf in tfs:
             try:
@@ -51,10 +53,20 @@ def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_time
                     last_closed_times[key] = last_candle_time
                     findings = core_source.scan(sym, tf, candles)
                     for alert in findings:
-                        store.create_alert(alert)
+                        aid = store.create_alert(alert)
+                        if aid:
+                            alert_copy = dict(alert)
+                            alert_copy['id'] = aid
+                            new_alerts.append(alert_copy)
             except Exception as e:
                 print(f'radar: detection failed for {sym}: {e.__class__.__name__}')
                 state['errors'] = state.get('errors', 0) + 1
+
+    if notifier:
+        try:
+            notifier.notify_new(new_alerts)
+        except Exception as e:
+            print(f'radar: notify_new failed: {e.__class__.__name__}')
 
     # 2. Evaluation on 1m klines
     active = store.get_active_alerts()
@@ -140,6 +152,7 @@ def run_radar():
     token = get_or_create_token()
     binance_client = BinanceClient()
     core_source = CoreSource(core_path=args.core_path)
+    notifier = Notifier.from_env(os.environ)
 
     state: Dict[str, Any] = {
         'version': '1.0.0',
@@ -233,7 +246,7 @@ def run_radar():
     consecutive_failures = 0
     while not stop_event.is_set():
         try:
-            run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count)
+            run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier)
             consecutive_failures = 0
             loop_count += 1
             stop_event.wait(60)
