@@ -127,7 +127,7 @@ test('sanitizeSnapshot: caps arrays (bots 100, open_positions 100, recent_trades
     engine: {},
     account: {},
     bots: Array.from({ length: 150 }, (_, i) => ({ id: `bot_${i}`, points: i })),
-    open_positions: Array.from({ length: 150 }, (_, i) => ({ bot: `bot_${i}`, symbol: 'SOLUSDT', side: 'long' })),
+    open_positions: Array.from({ length: 150 }, (_, i) => ({ bot: `bot_${i}`, symbol: 'SOLUSDT', side: 'long', opened_at: '2026-09-29T11:00:00Z' })),
     recent_trades: Array.from({ length: 80 }, (_, i) => ({ bot: `bot_${i}`, symbol: 'ETHUSDT' })),
     equity_curve: Array.from({ length: 600 }, (_, i) => ({ t: '2026-09-29T12:00:00Z', equity_pct: i * 0.1 }))
   };
