@@ -121,7 +121,9 @@ Lista de alertas según su estado:
       "mae_r": 0.0,
       "taken_by_user": false,
       "user_entry": null,
-      "user_pnl": null
+      "user_pnl": null,
+      "cell_grade": "no_evidence",
+      "cell_n": 15
     }
   ]
 }
@@ -139,11 +141,24 @@ Estadísticas agregadas globales, por patrón y de alertas tomadas por el usuari
     "win_rate_2r": 0.20,
     "ci_2r": {"rate": 0.20, "low": 0.0704, "high": 0.4518},
     "avg_net_r": -0.12,
-    "label": "sin evidencia (n<30)"
+    "label": "sin evidencia (n<30)",
+    "grade": "no_evidence",
+    "reasons": ["n_below_30"],
+    "wilson_low": 0.1982,
+    "wilson_high": 0.6425,
+    "breakeven": 0.5004,
+    "mean_net_r_ci": null
   },
   "by_kind": [],
   "taken": {},
-  "note": "Un alerta es un experimento, nunca una promesa; nuestro backtest no halló evidencia de superar el azar (sin evidencia). Estadísticas muestran intervalos Wilson 95%."
+  "grade_policy": {
+    "min_n_validated": 100,
+    "min_n_promising": 30,
+    "breakeven_margin": 0.02,
+    "rr": 1.0,
+    "cost_r": 0.0008
+  },
+  "note": "Un alerta es un experimento, nunca una promesa; nuestro backtest no halló evidencia de superar el azar (sin evidencia). Estadísticas muestran intervalos Wilson 95%. Una calificación es una medición de alertas pasadas, no una recomendación. Para la etiqueta 'validated' se requiere n >= 100."
 }
 ```
 

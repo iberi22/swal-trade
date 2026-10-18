@@ -5,6 +5,8 @@ import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional, Dict, Any
 from radar.store import RadarStore, get_or_create_token
+from radar.grading import MIN_N_VALIDATED, MIN_N_PROMISING, BREAKEVEN_MARGIN, RR, COST_R
+
 
 class RadarApiHandler(BaseHTTPRequestHandler):
     store: RadarStore
@@ -43,16 +45,25 @@ class RadarApiHandler(BaseHTTPRequestHandler):
 
         if path == '/v1/alerts':
             status = query.get('status', ['all'])[0]
+            min_grade = query.get('min_grade', [''])[0] or None
+            sort_param = query.get('sort', [''])[0] or None
             try:
                 limit = int(query.get('limit', ['50'])[0])
             except ValueError:
                 limit = 50
-            alerts = self.store.list_alerts(status=status, limit=limit)
+            alerts = self.store.list_alerts(status=status, limit=limit, min_grade=min_grade, sort=sort_param)
             self._send_json(200, {'alerts': alerts})
             return
 
         if path == '/v1/stats':
             stats = self.store.get_stats()
+            stats['grade_policy'] = {
+                'min_n_validated': MIN_N_VALIDATED,
+                'min_n_promising': MIN_N_PROMISING,
+                'breakeven_margin': BREAKEVEN_MARGIN,
+                'rr': RR,
+                'cost_r': COST_R
+            }
             self._send_json(200, stats)
             return
 
