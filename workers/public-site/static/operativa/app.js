@@ -220,7 +220,7 @@
       els.botsTableBody.textContent = '';
       const tr = document.createElement('tr');
       const td = document.createElement('td');
-      td.colSpan = 11;
+      td.colSpan = 10;
       td.className = 'text-center text-muted';
       td.textContent = 'Sin datos publicados';
       tr.appendChild(td);
@@ -625,7 +625,7 @@
     if (rawBots.length === 0) {
       const tr = document.createElement('tr');
       const td = document.createElement('td');
-      td.colSpan = 11;
+      td.colSpan = 10;
       td.className = 'text-center text-muted';
       td.textContent = 'Sin datos publicados';
       tr.appendChild(td);
@@ -655,9 +655,6 @@
       // Fidelidad del simulador badge
       const fid = bot.fidelity || 'unmeasured';
       tr.appendChild(createTagCell(fid, fid));
-
-      // Veredicto de investigación
-      tr.appendChild(createCell(bot.research_verdict || '—', 'text-muted'));
 
       // Puntos (+ / - color, signed)
       const pointsCell = createCell(formatPoints(bot.points), `text-right text-mono ${colorClassForValue(bot.points)}`);
@@ -814,6 +811,14 @@
       }
     }
   }
+
+  // Remove "Veredicto Investigación" table header to maintain alignment, as we do not touch index.html
+  const tableHeaders = document.querySelectorAll('th');
+  tableHeaders.forEach((th) => {
+    if (th.textContent === 'Veredicto Investigación') {
+      th.remove();
+    }
+  });
 
   // Initial fetch and 30-second interval
   fetchSnapshot();
