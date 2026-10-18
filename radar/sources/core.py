@@ -4,6 +4,21 @@ import subprocess
 from typing import List, Dict, Any
 from radar.sources.base import BaseSource
 
+# Pattern+direction cells whose net R was negative in BOTH halves of a 90-day BTC/ETH replay (n>=100 each,
+# 95% interval below zero; docs/research/AUDIT_PATRONES_2026-10-18.md). Defined on the first 60% of the
+# time they stay at -0.31R in the last 40%. They are not hidden because they "lose": they are muted
+# because a costed measurement says they only add noise. RADAR_EXCLUDE_CELLS= (empty) turns it off.
+ROBUST_NEGATIVE_CELLS = (
+    'ascending_triangle:long,bear_flag:short,candle_engulfing_bearish:short,candle_engulfing_bullish:long,'
+    'candle_evening_star:short,candle_hammer:long,candle_morning_star:long,candle_shooting_star:short,'
+    'descending_triangle:short,double_top:short,fvg_bearish:short,fvg_bullish:long,'
+    'liquidity_sweep_bearish:short,liquidity_sweep_bullish:long,order_block_bearish:short,'
+    'order_block_bullish:long,rising_wedge:short'
+)
+# A stop tighter than this (as a fraction of price) is eaten by the 0.08% round-trip cost: the replay
+# measured -0.78R under 0.15% and -0.30R under 0.30%.
+DEFAULT_MIN_RISK_PCT = 0.003
+
 TF_SECONDS = {'1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400}
 
 
@@ -87,6 +102,11 @@ class CoreSource(BaseSource):
         max_age = int(os.environ.get('RADAR_MAX_AGE_BARS', '3'))
         min_strength = float(os.environ.get('RADAR_MIN_STRENGTH', '0.6'))
         excluded = {k.strip() for k in os.environ.get('RADAR_EXCLUDE_KINDS', 'sr_zone,volume_profile,shock').split(',') if k.strip()}
+        excluded_cells = {k.strip() for k in os.environ.get('RADAR_EXCLUDE_CELLS', ROBUST_NEGATIVE_CELLS).split(',') if k.strip()}
+        try:
+            min_risk_pct = float(os.environ.get('RADAR_MIN_RISK_PCT', DEFAULT_MIN_RISK_PCT))
+        except ValueError:
+            min_risk_pct = DEFAULT_MIN_RISK_PCT
         last_time = candles[-1].get('time') if candles and isinstance(candles[-1], dict) else None
         tf_secs = TF_SECONDS.get(timeframe)
 
@@ -117,6 +137,10 @@ class CoreSource(BaseSource):
             stop = float(invalidate)
             risk = abs(entry - stop)
             if risk <= 0:
+                continue
+            if f"{f.get('kind', '')}:{direction}" in excluded_cells:
+                continue
+            if entry > 0 and risk / entry < min_risk_pct:
                 continue
 
             if direction == 'long' and not (entry > stop):

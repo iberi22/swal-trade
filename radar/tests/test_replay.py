@@ -139,5 +139,25 @@ class TestReplay(unittest.TestCase):
         self.assertIn('--out', res.stdout)
         self.assertIn('--db', res.stdout)
 
+    def test_evaluator_sees_only_candles_after_the_alert(self):
+        candles_detect = [{'time': i * 900, 'open': 1, 'high': 1, 'low': 1, 'close': 1} for i in range(301)]
+        candles_1m = [{'time': i * 60, 'open': 1, 'high': 1, 'low': 1, 'close': 1} for i in range(30000)]
+        seen = []
+
+        def fake_scan(sym, tf, window_candles):
+            return [{'symbol': sym, 'tf': tf, 'kind': 'test', 'direction': 'long', 'entry': 1, 'stop': 0.9,
+                     'target_1r': 1.1, 'target_2r': 1.2, 'status': 'pending'}]
+
+        def fake_eval(a, c):
+            seen.append((a['created_at'], c[0]['time'], c[-1]['time']))
+            return a
+
+        replay(candles_detect, candles_1m, fake_scan, fake_eval, window=300)
+        created, first, last = seen[0]
+        self.assertEqual(created, candles_detect[299]['time'] + 900)
+        self.assertEqual(first, created)
+        self.assertLessEqual(last, created + 900 * 100)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -175,6 +175,19 @@ Permite al usuario o a Claude marcar manualmente una alerta como tomada o regist
 
 ---
 
+## Filtros de ruido (medidos)
+
+La auditoria de [docs/research/AUDIT_PATRONES_2026-10-18.md](research/AUDIT_PATRONES_2026-10-18.md) midio cada patron con costes sobre 90 dias. El radar descarta por defecto lo que solo aporta ruido:
+
+| variable | por defecto | efecto |
+|---|---|---|
+| `RADAR_EXCLUDE_CELLS` | 17 combinaciones `patron:direccion` negativas en las dos mitades del tiempo | silencia esas celdas; vacia (`RADAR_EXCLUDE_CELLS=`) para medirlas todas |
+| `RADAR_MIN_RISK_PCT` | `0.003` | descarta alertas cuyo stop es menor al 0,3 % del precio: el coste de 0,08 % se come el resultado |
+| `RADAR_EXCLUDE_KINDS` | `sr_zone,volume_profile,shock` | zonas de contexto, no entradas |
+| `RADAR_MIN_STRENGTH` / `RADAR_MAX_AGE_BARS` | `0.6` / `3` | solo setups fuertes y recientes |
+
+Silenciar una celda no la convierte en una senal de la contraria. Las celdas que quedan siguen sin evidencia de ventaja.
+
 ## Cómo ejecutar
 
 ### Modo de prueba rápida (`--once`)

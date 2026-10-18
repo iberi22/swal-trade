@@ -4,9 +4,11 @@ import argparse
 import sqlite3
 import time
 import subprocess
+import bisect
 from typing import List, Dict, Any, Callable, Optional
 
 from radar.klines_cache import load_klines
+from radar.evaluate import tf_to_seconds
 
 BANNER = "REPLAY - in-sample, not forward evidence"
 
@@ -65,6 +67,8 @@ def _compute_trend_aligned(candles_detect: List[Dict[str, Any]], alert_time: flo
 
 def replay(candles_detect: List[Any], candles_1m: List[Any], scan: Callable, evaluate: Callable, window: int = 300, tf: str = '15m', symbol: str = 'BTCUSDC') -> List[Dict[str, Any]]:
     alerts = []
+    tf_secs = tf_to_seconds(tf)
+    times_1m = [c['time'] for c in candles_1m]
 
     for i in range(window, len(candles_detect) + 1):
         window_candles = candles_detect[i - window:i]
@@ -83,7 +87,14 @@ def replay(candles_detect: List[Any], candles_1m: List[Any], scan: Callable, eva
                 'trend_1h_aligned': trend_1h_aligned
             }
 
-            resolved_alert = evaluate(alert, candles_1m)
+            # The evaluator must see only the candles AFTER the alert exists (the detection candle
+            # has to close first), within the window it would use live; without created_at it
+            # starts at the first candle of the whole range and the outcome is meaningless.
+            created_at = alert_time + tf_secs
+            alert['created_at'] = created_at
+            lo = bisect.bisect_left(times_1m, created_at)
+            hi = bisect.bisect_right(times_1m, created_at + tf_secs * 100)
+            resolved_alert = evaluate(alert, candles_1m[lo:hi])
             alerts.append(resolved_alert)
 
     return alerts
