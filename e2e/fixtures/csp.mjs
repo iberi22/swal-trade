@@ -38,6 +38,7 @@ export const PAGES = [
   '/contact/',
   '/apoyar/',
   '/extension/',
+  '/evidencia/',
 ];
 
 // Misma regla que workers/public-site/test/site-pages.test.mjs.
