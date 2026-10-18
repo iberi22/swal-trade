@@ -612,7 +612,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "radar_alerts",
     {
       title: "Radar alerts",
-      description: `Fetch entry alerts from the local radar service. Validated, compact list. ${RADAR_TOOL_NOTE} This tool is read-only.`,
+      description: `Fetch entry alerts from the local radar service. Validated, compact list. ${RADAR_TOOL_NOTE} Grades are measurements of past alerts, validated is rare and requires n >= 100 and a result above the random baseline, no_evidence is the normal state. This tool is read-only.`,
       inputSchema: {
         status: z
           .enum(["active", "resolved", "all"])
@@ -628,6 +628,10 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           .optional()
           .default(20)
           .describe("Maximum number of alerts to return (1..100). Default 20."),
+        min_grade: z
+          .enum(["validated", "no_evidence"])
+          .optional()
+          .describe("Optional minimum grade filter (validated, no_evidence)."),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
@@ -639,6 +643,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         status: args.status,
         symbol: args.symbol,
         limit: args.limit,
+        minGrade: args.min_grade,
         fetchFn,
       });
       if (!res.ok) return fail(res.error);
@@ -650,7 +655,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "radar_stats",
     {
       title: "Radar stats",
-      description: `Statistical summary of radar alerts forward-testing: overall, by pattern kind, and user-taken alerts with Wilson 95% intervals and honesty note. ${RADAR_TOOL_NOTE} This tool is read-only.`,
+      description: `Statistical summary of radar alerts forward-testing: overall, by pattern kind, and user-taken alerts with Wilson 95% intervals and honesty note. ${RADAR_TOOL_NOTE} Grades are measurements of past alerts, validated is rare and requires n >= 100 and a result above the random baseline, no_evidence is the normal state. This tool is read-only.`,
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
