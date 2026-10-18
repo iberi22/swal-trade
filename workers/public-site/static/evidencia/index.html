@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>Evidencia - SWAL Trade</title>
+  <meta name="description" content="Evidencia estadística sobre los patrones gráficos en SWAL Trade. Conoce nuestro estudio sobre la efectividad de las figuras en el trading de futuros.">
+  <link rel="canonical" href="https://trade.swal.network/evidencia/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SWAL Trade">
+  <meta property="og:title" content="Evidencia">
+  <meta property="og:description" content="Evidencia estadística sobre los patrones gráficos en SWAL Trade. Conoce nuestro estudio sobre la efectividad de las figuras en el trading de futuros.">
+  <meta property="og:url" content="https://trade.swal.network/evidencia/">
+  <meta property="og:locale" content="es_CO">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/site.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f8f6f1">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <script src="/pwa-register.js" defer></script>
+  <script src="app.js" type="module" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="site-brand" href="/">SWAL Trade</a>
+    <nav class="site-nav" aria-label="Principal">
+      <a href="/">Inicio</a>
+      <a href="/pricing/">Precios</a>
+      <a href="/operativa/">Operativa</a>
+      <a href="/analisis/">Análisis</a>
+      <a href="/guardian/">Guardián</a>
+      <a href="/extension/">Extensión</a>
+      <a href="/apoyar/">Apoya</a>
+      <a href="/terms/">Términos</a>
+      <a href="/privacy/">Privacidad</a>
+      <a href="/risk/">Riesgo</a>
+      <a href="/contact/">Contacto</a>
+    </nav>
+  </header>
+  <main class="site-main">
+    <h1>Evidencia</h1>
+
+    <h2>Qué medimos y cómo</h2>
+    <p>Medimos la efectividad de los patrones gráficos clásicos en los mercados de BTC y ETH. Utilizamos temporalidades de 1m, 15m, 1h y 4h. Se evaluaron todas las familias de patrones: SMC, head and shoulders, wedges, flags, double tops/bottoms, y candlesticks.</p>
+    <p>Las reglas del backtest fueron estrictas: se asume entrada solo después de un cierre de vela más allá del nivel de confirmación, el stop se ubica en el nivel de invalidación de la figura, y los objetivos se definen en 1R y 2R (con una relación de recompensa a riesgo mayor o igual a 1). Se incorporó un costo de ida y vuelta del 0.08% por cada operación.</p>
+    <p>El desempeño se comparó contra una línea base aleatoria (misma geometría de operaciones, aplicadas al azar). Se definieron 92 celdas de retención (holdout). Para controlar los descubrimientos falsos debido a pruebas múltiples, aplicamos las correcciones de Holm y Benjamini-Hochberg.</p>
+    <p>Resultado: de las 92 celdas evaluadas, 0 de 92 sobrevivieron al ajuste por comparaciones múltiples. Nota: Una versión anterior del estudio que sugería un acierto cercano al 78% en candlesticks fue rechazada luego de una auditoría, ya que la línea base utilizada entonces era incorrecta.</p>
+
+    <h2>Qué encontramos</h2>
+    <p>La conclusión de la investigación es clara: <strong>ninguna familia de patrones superó al azar tras corrección</strong>; por eso el radar etiqueta todo como sin evidencia.</p>
+
+    <h2>Tabla en vivo</h2>
+    <div style="overflow-x: auto;">
+      <table>
+        <caption>Resultados empíricos de hit rates por patrón y temporalidad (mediciones de celdas).</caption>
+        <thead>
+          <tr>
+            <th scope="col">Patrón</th>
+            <th scope="col">TF</th>
+            <th scope="col">Símbolo</th>
+            <th scope="col">Dirección</th>
+            <th scope="col">n</th>
+            <th scope="col">Tasa 1R</th>
+            <th scope="col">Intervalo</th>
+            <th scope="col">Pto. de equilibrio</th>
+            <th scope="col">Línea base</th>
+            <th scope="col">Grado</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- Populated via app.js -->
+        </tbody>
+      </table>
+    </div>
+    <p id="table-state" class="muted" role="status">Cargando...</p>
+
+    <h2>Cómo leer esto</h2>
+    <p>La fuerza o "strength" que mostramos en la plataforma <strong>no es una probabilidad</strong> matemática de acierto futuro, ni una garantía de éxito. Un grado (grade) es simplemente una métrica sobre el comportamiento histórico de alertas pasadas. Para considerar que un patrón tiene efectividad "validada", requiere n >= 100 muestras y haber superado la línea base aleatoria con significancia estadística. Ningún patrón actual cuenta con esto.</p>
+  </main>
+  <footer class="site-footer">
+    <p id="disclaimer" class="disclaimer">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Ninguna estrategia del bot público tiene todavía una ventaja estadística validada. <a href="/risk/">Aviso de riesgo</a></p>
+    <nav aria-label="Pie"><a href="/">Inicio</a> · <a href="/pricing/">Precios</a> · <a href="/operativa/">Operativa</a> · <a href="/analisis/">Análisis</a> · <a href="/guardian/">Guardián</a> · <a href="/extension/">Extensión</a> · <a href="/apoyar/">Apoya</a> · <a href="/terms/">Términos</a> · <a href="/privacy/">Privacidad</a> · <a href="/risk/">Riesgo</a> · <a href="/contact/">Contacto</a></nav>
+    <p class="muted">SWAL — Laboratorio de sistemas · Código abierto bajo AGPL-3.0 · <a href="https://github.com/iberi22/swal-trade" rel="noopener">github.com/iberi22/swal-trade</a></p>
+  </footer>
+</body>
+</html>
