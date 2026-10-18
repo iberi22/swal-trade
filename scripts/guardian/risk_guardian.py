@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guardian de riesgo para Binance USD-M Futures (trading manual). Solo stdlib.
 Avisa por Telegram del limite de perdida diaria y de posiciones SIN STOP (solo aviso, nunca crea ordenes);
-GUARDIAN_ENFORCE=true cierra a mercado al limite diario. --once: solo imprime."""
+GUARDIAN_ENFORCE=true cierra a mercado al limite diario. --once: solo imprime. --explain-enforce: explica que cerraria."""
 import hashlib, hmac, json, os, re, sys, time, urllib.parse, urllib.request
 
 USD = {"USDT", "USDC", "FDUSD", "BUSD"}
@@ -201,14 +201,20 @@ def snapshot(cfg, start):
     pnl = real + sum(p["unrealized"] for p in pos)
     return pos, lev, real, pnl, breaches(pnl, pos, lev, cfg)
 
-def enforce(cfg, pos):
+def plan_enforce(pos):
     hedge = any(p["positionSide"] != "BOTH" for p in pos)
-    for sym in {p["symbol"] for p in pos}:
+    cancels = sorted(list({p["symbol"] for p in pos}))
+    closes = close_orders(pos, hedge)
+    return cancels, closes, hedge
+
+def enforce(cfg, pos):
+    cancels, closes, _ = plan_enforce(pos)
+    for sym in cancels:
         try:
             call(cfg, "DELETE", "/fapi/v1/allOpenOrders", {"symbol": sym})
         except RuntimeError:
             pass  # si falla, igual se intenta cerrar
-    for o in close_orders(pos, hedge):
+    for o in closes:
         try:
             call(cfg, "POST", "/fapi/v1/order", o)
             send(cfg, f"GUARDIAN: cerrada {o['symbol']} {o['side']} {o['quantity']} a mercado.")
@@ -221,6 +227,16 @@ def main():
     if "--once" in sys.argv:
         pos, lev, real, pnl, br = snapshot(cfg, day_start_ms(int(time.time() * 1000), cfg["tz"]))
         print(json.dumps(dict(day_pnl=pnl, realized=real, unrealized=pnl - real, positions=pos, leverages=lev, breaches=br), indent=1))
+        return
+    if "--explain-enforce" in sys.argv:
+        pos, _, _, _, _ = snapshot(cfg, day_start_ms(int(time.time() * 1000), cfg["tz"]))
+        cancels, closes, hedge = plan_enforce(pos)
+        print(json.dumps({
+            "would_cancel_open_orders_for": cancels,
+            "would_close": closes,
+            "hedge_mode": hedge,
+            "note": f"nothing was sent; ENFORCE is currently {'ON' if cfg['enforce'] else 'OFF'}"
+        }, indent=1))
         return
     send(cfg, f"GUARDIAN activo. Limite -{cfg['limit']:.2f} USD (aviso {cfg['warn']:.0%}), nocional max {cfg['max_notional']}, "
               f"apalancamiento max {cfg['max_lev']}, ENFORCE {'ON' if cfg['enforce'] else 'OFF'}.")
