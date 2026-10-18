@@ -21,10 +21,84 @@ from radar.sources.core import CoreSource
 from radar.evaluate import evaluate_alert_on_candles
 from radar.api import create_api_server
 from radar import heartbeat
+from radar.retention import prune_alerts
 
 DEFAULT_SYMBOLS = ['BTCUSDC', 'ETHUSDC']
 DEFAULT_TFS = ['15m', '1h']
 DEFAULT_PORT = 47322
+
+
+def backoff_seconds(consecutive_failures: int) -> int:
+    return min(60, 2 ** consecutive_failures)
+
+
+def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count):
+    now_ts = time.time()
+    state['last_scan'] = format_ts(now_ts)
+
+    # 1. Detection on closed candle
+    fed = False
+    for sym in symbols:
+        for tf in tfs:
+            try:
+                candles = binance_client.fetch_klines(sym, tf, 300)
+                if not candles:
+                    continue
+                fed = True
+                last_candle_time = candles[-1]['time']
+                key = (sym, tf)
+                if last_closed_times.get(key) != last_candle_time:
+                    last_closed_times[key] = last_candle_time
+                    findings = core_source.scan(sym, tf, candles)
+                    for alert in findings:
+                        store.create_alert(alert)
+            except Exception as e:
+                print(f'radar: detection failed for {sym}: {e.__class__.__name__}')
+                state['errors'] = state.get('errors', 0) + 1
+
+    # 2. Evaluation on 1m klines
+    active = store.get_active_alerts()
+    m1_cache = {}
+    for sym in set(a['symbol'] for a in active):
+        try:
+            m1_cache[sym] = binance_client.fetch_klines(sym, '1m', 150)
+        except Exception:
+            m1_cache[sym] = []
+
+    for alert in active:
+        try:
+            sym = alert['symbol']
+            m1_candles = m1_cache.get(sym) or []
+            if m1_candles:
+                upd = evaluate_alert_on_candles(alert, m1_candles)
+                if upd.get('status') != alert.get('status'):
+                    store.update_alert(alert['id'], upd)
+        except Exception as e:
+            print(f'radar: evaluation failed for {alert["id"]}: {e.__class__.__name__}')
+            state['errors'] = state.get('errors', 0) + 1
+
+    # 3. User trades sync every 2 minutes (every 2 loops)
+    if loop_count % 2 == 0:
+        try:
+            sync_user_trades(binance_client, store, symbols)
+        except Exception:
+            pass
+
+    # 4. Latido al dead-man del Worker
+    if fed:
+        heartbeat.ping()
+
+    # 5. Retention
+    if loop_count % 60 == 0:
+        retention_days = os.environ.get('RADAR_RETENTION_DAYS')
+        if retention_days:
+            try:
+                days = int(retention_days)
+                if days > 0:
+                    prune_alerts(store, days)
+            except ValueError:
+                pass
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Swal Radar — Always-on pattern alerts and forward evaluation')
@@ -72,6 +146,7 @@ def run_radar():
         'symbols': symbols,
         'tfs': tfs,
         'last_scan': None,
+        'errors': 0,
     }
 
     if args.once:
@@ -83,33 +158,47 @@ def run_radar():
         # 1. Detection
         for sym in symbols:
             for tf in tfs:
-                candles = binance_client.fetch_klines(sym, tf, 300)
-                if not candles:
-                    print(f'[{sym} {tf}] No closed klines fetched from Binance')
-                    continue
-                findings = core_source.scan(sym, tf, candles)
-                print(f'[{sym} {tf}] Core detected {len(findings)} measurable findings')
-                for alert in findings:
-                    aid = store.create_alert(alert)
-                    if aid:
-                        created_count += 1
-                        print(f'  -> Alert #{aid} created: {alert["title"]} ({alert["direction"]}) @ {alert["entry"]} stop {alert["stop"]}')
+                try:
+                    candles = binance_client.fetch_klines(sym, tf, 300)
+                    if not candles:
+                        print(f'[{sym} {tf}] No closed klines fetched from Binance')
+                        continue
+                    findings = core_source.scan(sym, tf, candles)
+                    print(f'[{sym} {tf}] Core detected {len(findings)} measurable findings')
+                    for alert in findings:
+                        aid = store.create_alert(alert)
+                        if aid:
+                            created_count += 1
+                            print(f'  -> Alert #{aid} created: {alert["title"]} ({alert["direction"]}) @ {alert["entry"]} stop {alert["stop"]}')
+                except Exception as e:
+                    print(f'radar: detection failed for {sym}: {e.__class__.__name__}')
+                    state['errors'] = state.get('errors', 0) + 1
 
         # 2. Evaluation on 1m klines
         active = store.get_active_alerts()
         print(f'Active alerts before 1m evaluation: {len(active)}')
         resolved_count = 0
-        m1_cache = {sym: binance_client.fetch_klines(sym, '1m', 150) for sym in set(a['symbol'] for a in active)}
+        m1_cache = {}
+        for sym in set(a['symbol'] for a in active):
+            try:
+                m1_cache[sym] = binance_client.fetch_klines(sym, '1m', 150)
+            except Exception:
+                m1_cache[sym] = []
+
         for alert in active:
-            sym = alert['symbol']
-            m1_candles = m1_cache.get(sym) or []
-            if m1_candles:
-                upd = evaluate_alert_on_candles(alert, m1_candles)
-                if upd.get('status') != alert.get('status'):
-                    store.update_alert(alert['id'], upd)
-                    if upd.get('status') in ('win_1r', 'win_2r', 'loss', 'expired'):
-                        resolved_count += 1
-                        print(f'  -> Alert #{alert["id"]} resolved: {upd["status"]} (outcome: {upd.get("outcome_r")} R)')
+            try:
+                sym = alert['symbol']
+                m1_candles = m1_cache.get(sym) or []
+                if m1_candles:
+                    upd = evaluate_alert_on_candles(alert, m1_candles)
+                    if upd.get('status') != alert.get('status'):
+                        store.update_alert(alert['id'], upd)
+                        if upd.get('status') in ('win_1r', 'win_2r', 'loss', 'expired'):
+                            resolved_count += 1
+                            print(f'  -> Alert #{alert["id"]} resolved: {upd["status"]} (outcome: {upd.get("outcome_r")} R)')
+            except Exception as e:
+                print(f'radar: evaluation failed for {alert["id"]}: {e.__class__.__name__}')
+                state['errors'] = state.get('errors', 0) + 1
 
         # 3. User trades sync
         sync_user_trades(binance_client, store, symbols)
@@ -141,47 +230,17 @@ def run_radar():
     last_closed_times: Dict[tuple, int] = {}
     loop_count = 0
 
+    consecutive_failures = 0
     while not stop_event.is_set():
-        now_ts = time.time()
-        state['last_scan'] = format_ts(now_ts)
-
-        # 1. Detection on closed candle
-        fed = False
-        for sym in symbols:
-            for tf in tfs:
-                candles = binance_client.fetch_klines(sym, tf, 300)
-                if not candles:
-                    continue
-                fed = True
-                last_candle_time = candles[-1]['time']
-                key = (sym, tf)
-                if last_closed_times.get(key) != last_candle_time:
-                    last_closed_times[key] = last_candle_time
-                    findings = core_source.scan(sym, tf, candles)
-                    for alert in findings:
-                        store.create_alert(alert)
-
-        # 2. Evaluation on 1m klines
-        active = store.get_active_alerts()
-        m1_cache = {sym: binance_client.fetch_klines(sym, '1m', 150) for sym in set(a['symbol'] for a in active)}
-        for alert in active:
-            sym = alert['symbol']
-            m1_candles = m1_cache.get(sym) or []
-            if m1_candles:
-                upd = evaluate_alert_on_candles(alert, m1_candles)
-                if upd.get('status') != alert.get('status'):
-                    store.update_alert(alert['id'], upd)
-
-        # 3. User trades sync every 2 minutes (every 2 loops)
-        if loop_count % 2 == 0:
-            sync_user_trades(binance_client, store, symbols)
-
-        # 4. Latido al dead-man del Worker solo si el ciclo leyó velas (radar vivo y con datos).
-        if fed:
-            heartbeat.ping()
-
-        loop_count += 1
-        stop_event.wait(60)
+        try:
+            run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count)
+            consecutive_failures = 0
+            loop_count += 1
+            stop_event.wait(60)
+        except Exception as e:
+            print(f'radar: run_cycle failed: {e.__class__.__name__}')
+            consecutive_failures += 1
+            stop_event.wait(backoff_seconds(consecutive_failures))
 
     print('Swal Radar stopped cleanly.')
 
