@@ -58,7 +58,6 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
       "status": "active",                     // "active" | "gated" | "disabled"
       "allocation_pct": 100.0,                // % del capital asignado por el gating; null si no aplica
       "fidelity": "diverges",                 // de simulator_fidelity: "verified" | "diverges" | "unmeasured"
-      "research_verdict": "sin ventaja estadística validada", // texto corto o null
       "points": -123,                         // round(sum(pnl_pct_neto) * 100)
       "trades": 10,
       "wins": 4,
@@ -83,6 +82,7 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
 }
 ```
 
+El campo `research_verdict` intencionalmente no se publica por privacidad.
 `bots` ordenado por `points` descendente. Tamaño objetivo < 200 KB.
 
 ## Estado honesto

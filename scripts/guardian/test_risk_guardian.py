@@ -140,6 +140,119 @@ class RecvWindow(unittest.TestCase):
 
 
 
+class TestExplainEnforce(unittest.TestCase):
+    def test_explain_enforce_no_non_get_requests(self):
+        import sys, json
+        base = {"BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s", "GUARDIAN_DAILY_LOSS_USD": "10", "GUARDIAN_ENFORCE": "true"}
+
+        def fake_call(cfg, method, path, params=None, _retry=True):
+            if method != "GET":
+                raise RuntimeError(f"Unexpected method {method}")
+            if path == "/fapi/v3/account":
+                return {"positions": [
+                    {"symbol": "BTCUSDT", "positionAmt": "0.1", "notional": "5000", "unrealizedProfit": "-10", "positionSide": "BOTH"}
+                ]}
+            if path == "/fapi/v2/positionRisk":
+                return [{"symbol": "BTCUSDT", "positionAmt": "0.1", "leverage": "10"}]
+            if path == "/fapi/v1/income":
+                return []
+            return []
+
+        with mock.patch.dict(os.environ, base, clear=True), \
+             mock.patch.object(sys, "argv", ["risk_guardian.py", "--explain-enforce"]), \
+             mock.patch.object(rg, "call", side_effect=fake_call), \
+             mock.patch("builtins.print") as pr:
+            rg.main()
+
+        out = json.loads(pr.call_args[0][0])
+        self.assertEqual(out["would_cancel_open_orders_for"], ["BTCUSDT"])
+        self.assertEqual(len(out["would_close"]), 1)
+        self.assertEqual(out["would_close"][0]["symbol"], "BTCUSDT")
+        self.assertEqual(out["would_close"][0]["side"], "SELL")
+        self.assertEqual(out["would_close"][0]["quantity"], "0.1")
+        self.assertEqual(out["would_close"][0]["reduceOnly"], "true")
+        self.assertFalse(out["hedge_mode"])
+        self.assertIn("ON", out["note"])
+
+    def test_explain_enforce_long_short_one_way(self):
+        p1 = pos("BTCUSDT", "1.5", "BOTH")
+        p2 = pos("ETHUSDT", "-10", "BOTH")
+        cancels, closes, hedge = rg.plan_enforce([p1, p2])
+        self.assertEqual(cancels, ["BTCUSDT", "ETHUSDT"])
+        self.assertFalse(hedge)
+        self.assertEqual(closes, rg.close_orders([p1, p2], hedge=False))
+
+    def test_explain_enforce_hedge_mode(self):
+        p1 = pos("BTCUSDT", "1.5", "LONG")
+        cancels, closes, hedge = rg.plan_enforce([p1])
+        self.assertEqual(cancels, ["BTCUSDT"])
+        self.assertTrue(hedge)
+        self.assertEqual(closes, rg.close_orders([p1], hedge=True))
+        self.assertEqual(closes[0]["positionSide"], "LONG")
+        self.assertNotIn("reduceOnly", closes[0])
+
+    def test_explain_enforce_no_open_positions(self):
+        import sys, json
+        base = {"BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s", "GUARDIAN_DAILY_LOSS_USD": "10"}
+
+        def fake_call(cfg, method, path, params=None, _retry=True):
+            if path == "/fapi/v3/account":
+                return {"positions": []}
+            if path == "/fapi/v2/positionRisk":
+                return []
+            if path == "/fapi/v1/income":
+                return []
+            return []
+
+        with mock.patch.dict(os.environ, base, clear=True), \
+             mock.patch.object(sys, "argv", ["risk_guardian.py", "--explain-enforce"]), \
+             mock.patch.object(rg, "call", side_effect=fake_call), \
+             mock.patch("builtins.print") as pr:
+            rg.main()
+
+        out = json.loads(pr.call_args[0][0])
+        self.assertEqual(out["would_cancel_open_orders_for"], [])
+        self.assertEqual(out["would_close"], [])
+        self.assertFalse(out["hedge_mode"])
+        self.assertIn("OFF", out["note"])
+
+    def test_explain_enforce_returns_zero_exit_code(self):
+        import sys
+        base = {"BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s", "GUARDIAN_DAILY_LOSS_USD": "10"}
+        def fake_call(cfg, method, path, params=None, _retry=True):
+            if path == "/fapi/v3/account":
+                return {"positions": []}
+            if path == "/fapi/v2/positionRisk":
+                return []
+            if path == "/fapi/v1/income":
+                return []
+            return []
+
+        with mock.patch.dict(os.environ, base, clear=True), \
+             mock.patch.object(sys, "argv", ["risk_guardian.py", "--explain-enforce"]), \
+             mock.patch.object(rg, "call", side_effect=fake_call), \
+             mock.patch("builtins.print"):
+            self.assertIsNone(rg.main())
+
+    def test_explain_enforce_returns_zero_exit_code_positions(self):
+        import sys
+        base = {"BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s", "GUARDIAN_DAILY_LOSS_USD": "10"}
+        def fake_call(cfg, method, path, params=None, _retry=True):
+            if path == "/fapi/v3/account":
+                return {"positions": [{"symbol": "BTCUSDT", "positionAmt": "0.1", "notional": "5000", "unrealizedProfit": "-10", "positionSide": "BOTH"}]}
+            if path == "/fapi/v2/positionRisk":
+                return [{"symbol": "BTCUSDT", "positionAmt": "0.1", "leverage": "10"}]
+            if path == "/fapi/v1/income":
+                return []
+            return []
+
+        with mock.patch.dict(os.environ, base, clear=True), \
+             mock.patch.object(sys, "argv", ["risk_guardian.py", "--explain-enforce"]), \
+             mock.patch.object(rg, "call", side_effect=fake_call), \
+             mock.patch("builtins.print"):
+            self.assertIsNone(rg.main())
+
+
 class UnreadAlerts(unittest.TestCase):
     def test_no_alert_before_threshold(self):
         st = {"last_ok": 1000}
