@@ -48,6 +48,7 @@ y no es fatal.
 ## Probar
 ```
 python3 scripts/risk_guardian.py --once   # una lectura, imprime y NO envia nada
+python3 scripts/risk_guardian.py --explain-enforce # explica que cerraria ENFORCE en este momento sin enviar nada
 python3 scripts/risk_guardian.py          # bucle
 ```
 
