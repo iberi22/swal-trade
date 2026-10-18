@@ -76,6 +76,9 @@ test("compactAlert maps missing or unknown cell_grade to no_evidence", () => {
   const validated = compactAlert({ id: 1, cell_grade: "validated" });
   assert.equal(validated.grade, "validated");
 
+  assert.equal(compactAlert({ id: 1, cell_grade: "negative" }).grade, "negative");
+  assert.equal(compactAlert({ id: 1, cell_grade: "promising" }).grade, "promising");
+
   const explicitNoEvidence = compactAlert({ id: 1, cell_grade: "no_evidence" });
   assert.equal(explicitNoEvidence.grade, "no_evidence");
 });

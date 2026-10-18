@@ -63,7 +63,7 @@ export function compactAlert(raw: unknown): CompactAlert {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const o = (r.outcomes && typeof r.outcomes === "object" ? r.outcomes : null) as Record<string, unknown> | null;
   const gradeStr = String(r.cell_grade ?? "");
-  const grade = gradeStr === "validated" ? "validated" : "no_evidence";
+  const grade = ["validated", "promising", "negative"].includes(gradeStr) ? gradeStr : "no_evidence";
   return {
     id: typeof r.id === "number" ? r.id : Number(r.id) || 0,
     symbol: String(r.symbol ?? ""),

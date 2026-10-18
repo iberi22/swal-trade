@@ -629,9 +629,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           .default(20)
           .describe("Maximum number of alerts to return (1..100). Default 20."),
         min_grade: z
-          .enum(["validated", "no_evidence"])
+          .enum(["validated", "promising", "negative", "no_evidence"])
           .optional()
-          .describe("Optional minimum grade filter (validated, no_evidence)."),
+          .describe("Optional minimum grade filter (validated, promising, negative, no_evidence)."),
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
