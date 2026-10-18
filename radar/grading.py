@@ -12,6 +12,12 @@ import math
 import random
 from typing import List, Tuple, Dict, Any, Optional
 
+MIN_N_VALIDATED = 100
+MIN_N_PROMISING = 30
+BREAKEVEN_MARGIN = 0.02
+RR = 1.0
+COST_R = 0.0008
+
 def breakeven_win_rate(rr: float, cost_r: float) -> float:
     """
     Returns the breakeven win rate for a given risk-reward ratio and cost in R.

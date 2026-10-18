@@ -207,7 +207,7 @@ class RadarStore:
             cur = conn.execute(sql, args)
             return [dict(r) for r in cur.fetchall()]
 
-    def list_alerts(self, status: str = 'all', limit: int = 50) -> List[Dict[str, Any]]:
+    def list_alerts(self, status: str = 'all', limit: int = 50, min_grade: Optional[str] = None, sort: Optional[str] = None) -> List[Dict[str, Any]]:
         sql = 'SELECT * FROM alerts'
         args = []
         status = (status or 'all').lower()
@@ -216,9 +216,7 @@ class RadarStore:
         elif status == 'resolved':
             sql += " WHERE status IN ('win_1r', 'win_2r', 'loss', 'expired')"
 
-        sql += ' ORDER BY id DESC LIMIT ?;'
-        args.append(max(1, min(limit, 500)))
-
+        # Fetch all matching alerts first, no limit or order yet
         with self.get_connection() as conn:
             cur = conn.execute(sql, args)
             rows = [dict(r) for r in cur.fetchall()]
@@ -249,7 +247,33 @@ class RadarStore:
                 'user_entry': r['user_entry'],
                 'user_pnl': r['user_pnl'],
             })
-        return out
+
+        # Apply cell grading and map to results
+        stats = self.get_stats()
+        cell_map = {}
+        for row in stats.get('by_kind', []):
+            k = (row.get('source', 'core'), row.get('kind', ''), row.get('tf', ''), row.get('direction', ''))
+            cell_map[k] = {'grade': row.get('grade', 'no_evidence'), 'n': row.get('n_resolved', 0)}
+
+        for a in out:
+            k = (a.get('source', 'core'), a.get('kind', ''), a.get('tf', ''), a.get('direction', ''))
+            info = cell_map.get(k, {'grade': 'no_evidence', 'n': 0})
+            a['cell_grade'] = info['grade']
+            a['cell_n'] = info['n']
+
+        if min_grade:
+            weights = {'negative': 0, 'no_evidence': 1, 'promising': 2, 'validated': 3}
+            min_weight = weights.get(min_grade, -1)
+            out = [a for a in out if weights.get(a.get('cell_grade', 'no_evidence'), -1) >= min_weight]
+
+        if sort == 'grade':
+            weights = {'negative': 0, 'no_evidence': 1, 'promising': 2, 'validated': 3}
+            out.sort(key=lambda x: (weights.get(x.get('cell_grade', 'no_evidence'), -1), x.get('id', 0)), reverse=True)
+        else:
+            out.sort(key=lambda x: x.get('id', 0), reverse=True)
+
+        capped_limit = max(1, min(limit, 500))
+        return out[:capped_limit]
 
     def link_user_trade(self, trade: Dict[str, Any]) -> Optional[int]:
         trade_id = str(trade['id'])
@@ -310,6 +334,8 @@ class RadarStore:
             cur = conn.execute('SELECT * FROM alerts;')
             all_alerts = [dict(r) for r in cur.fetchall()]
 
+        from radar.grading import grade_cell
+
         def calc_group(group: List[Dict[str, Any]]) -> Dict[str, Any]:
             # Only real trades count: alerts that triggered and then resolved. An alert
             # that expired untriggered or whose entry was passed before it existed
@@ -335,6 +361,8 @@ class RadarStore:
 
             label = ('sin evidencia (n<30)' if n < 30 else
                      ('R neto medio positivo, falta validar' if avg_net_r > 0 else 'R neto medio negativo'))
+                     
+            g = grade_cell(n, hits_1r, net_rs)
 
             return {
                 'n_resolved': n,
@@ -345,6 +373,12 @@ class RadarStore:
                 'ci_2r': ci_2r,
                 'avg_net_r': avg_net_r,
                 'label': label,
+                'grade': g['grade'],
+                'reasons': g['reasons'],
+                'wilson_low': g['wilson_low'],
+                'wilson_high': g['wilson_high'],
+                'breakeven': g['breakeven'],
+                'mean_net_r_ci': g['mean_net_r_ci'],
             }
 
         overall = calc_group(all_alerts)
@@ -353,20 +387,21 @@ class RadarStore:
 
         kinds = {}
         for a in all_alerts:
-            key = (a.get('source', 'core'), a.get('kind', ''), a.get('tf', ''))
+            key = (a.get('source', 'core'), a.get('kind', ''), a.get('tf', ''), a.get('direction', ''))
             kinds.setdefault(key, []).append(a)
 
         by_kind = []
-        for (src, kind, tf), grp in sorted(kinds.items()):
+        for (src, kind, tf, direction), grp in sorted(kinds.items()):
             cg = calc_group(grp)
             by_kind.append({
                 'source': src,
                 'kind': kind,
                 'tf': tf,
+                'direction': direction,
                 **cg
             })
 
-        note = 'Un alerta es un experimento, nunca una promesa; nuestro backtest no halló evidencia de superar el azar (sin evidencia). Estadísticas muestran intervalos Wilson 95%.'
+        note = 'Un alerta es un experimento, nunca una promesa; nuestro backtest no halló evidencia de superar el azar (sin evidencia). Estadísticas muestran intervalos Wilson 95%. Una calificación es una medición de alertas pasadas, no una recomendación. Para la etiqueta \'validated\' se requiere n >= 100.'
         return {
             'overall': overall,
             'by_kind': by_kind,
