@@ -3,7 +3,7 @@
   import {
     fetchRadarSnapshot, formatPct, formatR, formatWilson,
     radarDirectionLabel, radarStatusLabel, shapesForRadarAlert,
-    type RadarAlert, type RadarSnapshot,
+    type RadarAlert, type RadarSnapshot, gradeView
   } from '../../lib/radar';
   import { formatPanelPrice } from '../../lib/price-format';
   import { sendPaintCommand } from '../../lib/tv-paint-send';
@@ -98,6 +98,7 @@
               <div class="row">
                 <span class="meta">{alert.symbol} · {alert.tf} · {radarDirectionLabel(alert.direction)}</span>
                 <span class="badge" data-status={alert.status}>{radarStatusLabel(alert.status)}</span>
+                <span class="badge grade {gradeView(alert.cellGrade, alert.cellN).tone}" title={gradeView(alert.cellGrade, alert.cellN).hint} aria-label={gradeView(alert.cellGrade, alert.cellN).hint}>{gradeView(alert.cellGrade, alert.cellN).label}</span>
                 {#if alert.taken_by_user}<span class="taken">tomada por ti</span>{/if}
               </div>
               <p class="title">{alert.title}</p>
@@ -156,6 +157,9 @@
         </div>
         <p class="note">{s.note}</p>
       {/if}
+      <div class="honesty-footer">
+        <p>La fuerza del patrón no es una probabilidad. Esto es una medición, no una recomendación.</p>
+      </div>
     </section>
   {/if}
 {/if}
@@ -182,6 +186,10 @@
   .row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
   .meta { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; }
   .badge { font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 3px; background: hsl(var(--surface-strong)); color: hsl(var(--foreground)); }
+  .badge.grade.muted { background: hsl(var(--surface-strong)); color: hsl(var(--subtle-foreground)); }
+  .badge.grade.warn { background: hsl(var(--surface-strong)); color: hsl(var(--foreground)); outline: 1px solid hsl(var(--subtle-foreground)); }
+  .badge.grade.info { background: hsl(var(--surface-strong)); color: hsl(var(--foreground)); font-weight: 500; }
+  .badge.grade.ok { background: hsl(var(--surface-strong)); color: hsl(var(--foreground)); outline: 1px solid hsl(var(--foreground)); }
   .taken { font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 3px; background: hsl(var(--primary) / 0.15); color: hsl(var(--primary)); }
   .title { margin: 0; font-size: 0.75rem; color: hsl(var(--foreground)); }
   .levels { display: flex; gap: 0.5rem; font-family: var(--font-mono); font-size: 0.68rem; color: hsl(var(--muted-foreground)); flex-wrap: wrap; }
@@ -193,4 +201,6 @@
   .kind-row { display: flex; justify-content: space-between; font-size: 0.67rem; color: hsl(var(--muted-foreground)); padding: 0.1rem 0; }
   .kind-name { font-weight: 500; color: hsl(var(--foreground)); }
   .note { margin: 0; font-size: 0.68rem; line-height: 1.35; color: hsl(var(--muted-foreground)); }
+  .honesty-footer { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid hsl(var(--surface-strong)); }
+  .honesty-footer p { margin: 0; font-size: 0.65rem; color: hsl(var(--subtle-foreground)); line-height: 1.3; text-align: center; }
 </style>
