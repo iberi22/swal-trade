@@ -8,32 +8,85 @@ Licencia: GNU AGPL-3.0 (ver `LICENSE` en la raíz del repositorio). Herramienta 
 
 El servidor habla MCP por stdio: cualquier CLI o editor con soporte MCP lo arranca como un proceso hijo en tu máquina. Tus claves de Binance solo viven en tu entorno local; nada de esto pasa por servidores de SWAL (salvo el explicador y las noticias opcionales, que no llevan claves).
 
-**Hoy, desde un clon del repositorio** (el paquete aún no está publicado en npm):
+### Safety defaults
+- Read-only by default: herramientas de escritura (place, close, grid) solo se exponen con `SWAL_MCP_TRADING=enabled`.
+- Operaciones en **testnet** a menos que mainnet esté explícitamente confirmado.
+- Las keys **no deben tener permiso de retiro** (withdraw); para solo lectura, basta la key de lectura.
+- Ninguna key abandona la máquina: envueltas localmente.
+- No hay beneficios garantizados, la rentabilidad no está guaranteed (sin evidencia de ventaja probabilística).
 
+**Configuraciones de cliente** (sustituye `npx -y @swal-trade/mcp` por la ruta a tu script si compilas localmente o si inyectas `BINANCE_API_KEY`, etc. via script bash):
+
+### Claude Code
+Por CLI, registra el servidor.
+<!-- client: claude-code -->
 ```bash
-git clone https://github.com/iberi22/swal-trade && cd swal-trade/packages/mcp
-npm ci && npm run build
+claude mcp add swal-trade -- npx -y @swal-trade/mcp
 ```
 
-Después, registra `node /ruta/absoluta/swal-trade/packages/mcp/dist/index.js` en tu herramienta:
-
-| Herramienta | Comando |
-|---|---|
-| Claude Code | `claude mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
-| Codex CLI | `codex mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
-| opencode | `opencode mcp add swal-trade -- node /ruta/packages/mcp/dist/index.js` |
-| Gemini CLI, Cursor, otros | Añade un servidor `stdio` con `command: node` y `args: ["/ruta/packages/mcp/dist/index.js"]` en su fichero de configuración MCP (en Gemini CLI, `mcpServers` de `~/.gemini/settings.json`). No probado en esta máquina. |
-
-Cuando el paquete esté publicado en npm, sustituye `node /ruta/...` por `npx -y @swal-trade/mcp`. Antes de publicar, ejecuta `npm run build` (compila y copia el núcleo y la licencia al paquete; no depende de ganchos de npm, que muchos entornos desactivan con `ignore-scripts`) y después `node scripts/verify-pack.mjs`, que empaqueta, instala en un directorio vacío y llama a `analyze_chart` desde el paquete instalado (el tarball lleva su propia copia del núcleo de análisis en `core/`).
-
-**Claves.** No las pongas en la configuración de la herramienta (los ficheros de configuración suelen acabar en copias de seguridad y repositorios). Usa un script que lea un fichero `chmod 600` y exporte solo lo necesario, y una clave de Binance **sin permiso de retiro**; para solo lectura basta con la de lectura.
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-set -a; . "$HOME/.config/swal-trade/mcp.env"; set +a   # BINANCE_API_KEY, BINANCE_API_SECRET, SWAL_*
-exec node /ruta/packages/mcp/dist/index.js
+### Claude Desktop
+En el fichero `claude_desktop_config.json`, en `mcpServers`.
+<!-- client: claude-desktop -->
+```json
+{
+  "mcpServers": {
+    "swal-trade": {
+      "command": "npx",
+      "args": ["-y", "@swal-trade/mcp"],
+      "env": {
+        "SWAL_MCP_TRADING": "enabled"
+      }
+    }
+  }
+}
 ```
+
+### Codex CLI
+En `~/.codex/config.toml`.
+<!-- client: codex-cli -->
+```toml
+[mcp_servers.swal-trade]
+command = "swal-trade-mcp"
+args = []
+env = { SWAL_MCP_TRADING = "enabled" }
+```
+
+### Gemini CLI
+En `~/.gemini/settings.json`, en `mcpServers`.
+<!-- client: gemini-cli -->
+```json
+{
+  "mcpServers": {
+    "swal-trade": {
+      "command": "swal-trade-mcp",
+      "args": [],
+      "env": {
+        "SWAL_MCP_TRADING": "enabled"
+      }
+    }
+  }
+}
+```
+
+### OpenCode
+En `opencode.json`, en `mcp`.
+<!-- client: opencode -->
+```json
+{
+  "mcp": {
+    "swal-trade": {
+      "command": "swal-trade-mcp",
+      "args": [],
+      "env": {
+        "SWAL_MCP_TRADING": "enabled"
+      }
+    }
+  }
+}
+```
+
+Cuando el paquete esté publicado en npm, usarás `npx -y @swal-trade/mcp` que resuelve al binario `swal-trade-mcp`. Si lo instalas de manera global (`npm i -g @swal-trade/mcp`), puedes usar simplemente el comando `swal-trade-mcp`. Muchas herramientas MCP te permitirán llamar a `swal-trade-mcp` directamente una vez lo tengas en tu PATH, en lugar de `npx`. Las opciones para arrancar el servidor principal son usar `npx -y @swal-trade/mcp`, llamar al binario global `swal-trade-mcp`, o apuntar a la ruta absoluta de `swal-trade-mcp`.
+Antes de publicar, si clonas el repo, ejecuta `npm ci && npm run build` y después registra `node /ruta/absoluta/swal-trade/packages/mcp/dist/index.js`.
 
 **Gráfico de Binance.** Hace falta el demonio `swal-bridge` y la extensión; está explicado en la sección *Claude en tu gráfico* más abajo.
 
