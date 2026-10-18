@@ -85,6 +85,51 @@ Nada entra a la máquina local desde internet: el backend solo **empuja** hacia 
 El campo `research_verdict` intencionalmente no se publica por privacidad.
 `bots` ordenado por `points` descendente. Tamaño objetivo < 200 KB.
 
+## Hit rates
+
+El radar envía datos agregados de rendimiento (hit rates) de patrones. Los datos se envían a `POST /ingest/hit-rates` y se sirven en `GET /api/hit-rates`.
+
+Reglas de validación estrictas:
+- Tamaño de cuerpo máximo de 64 KB.
+- `schema`: debe ser exactamente `"swal.hit-rates.v1"`.
+- `method`: debe ser exactamente `"forward"`.
+- `cells`: arreglo con máximo 200 elementos.
+- Los campos numéricos deben cumplir `n >= wins_1r >= 0`, y `rate_1r`, `ci_low`, `ci_high`, `breakeven` deben estar en el rango `[0, 1]`.
+- Se requiere que `ci_low <= rate_1r <= ci_high`.
+- `grade`: debe ser uno de `"no_evidence"`, `"promising"`, `"validated"`, `"negative"`.
+- Se rechazan claves desconocidas en `cells` o en la raíz para prevenir almacenamiento de datos per-trade.
+
+Esquema de hit-rates:
+
+```jsonc
+{
+  "schema": "swal.hit-rates.v1",
+  "generated_at": "2026-09-29T17:00:00Z", // Timestamp inyectado en el Worker
+  "period": { "from": "2024-01-01", "to": "2024-12-31" },
+  "market": "crypto",
+  "method": "forward",
+  "cost_round_trip": 0.0008,
+  "cells": [
+    {
+      "kind": "divergence",
+      "tf": "1h",
+      "symbol": "BTCUSDT",
+      "direction": "long",
+      "n": 50,
+      "wins_1r": 28,
+      "rate_1r": 0.56,
+      "ci_low": 0.45,
+      "ci_high": 0.67,
+      "breakeven": 0.52,
+      "baseline_rate": 0.5,
+      "mean_net_r": 0.1,
+      "grade": "promising"
+    }
+  ],
+  "note": "Nota opcional sobre los datos."
+}
+```
+
 ## Estado honesto
 
 La página muestra siempre `mode` y el aviso: *"Operativa en paper trading. Ninguna estrategia

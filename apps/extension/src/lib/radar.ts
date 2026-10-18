@@ -28,6 +28,8 @@ export interface RadarAlert {
   taken_by_user: boolean;
   user_entry: number | null;
   user_pnl: number | null;
+  cellGrade: string;
+  cellN: number;
 }
 
 export interface WilsonInterval { rate: number | null; low: number | null; high: number | null }
@@ -42,6 +44,25 @@ export interface RadarSnapshot { reachable: boolean; version?: string; alerts: R
 export const RADAR_STATUS_LABELS: Record<RadarAlertStatus, string> = {
   pending: 'Pendiente', triggered: 'Activada', win_1r: 'Ganó 1R', win_2r: 'Ganó 2R', loss: 'Perdió', expired: 'Caducó', missed: 'Entrada superada',
 };
+
+/**
+ * Maps a grade and sample size n to a user-facing view object.
+ * Applies the honesty rule: any unknown/missing grade falls back to 'no_evidence'.
+ */
+export function gradeView(grade: string | undefined | null, n: number | undefined | null): { label: string; tone: string; hint: string } {
+  const safeN = Number.isFinite(n) && n != null ? Math.max(0, n) : 0;
+  switch (grade) {
+    case 'negative':
+      return { label: `Resultado negativo (n=${safeN})`, tone: 'warn', hint: 'No operar' };
+    case 'promising':
+      return { label: `Prometedora, falta validar (n=${safeN})`, tone: 'info', hint: 'Precaución' };
+    case 'validated':
+      return { label: `Validada (n=${safeN})`, tone: 'ok', hint: 'Ventaja probada' };
+    case 'no_evidence':
+    default:
+      return { label: safeN > 0 ? `Sin evidencia (n=${safeN})` : 'Sin evidencia', tone: 'muted', hint: 'Sin datos suficientes' };
+  }
+}
 export const RADAR_DIRECTION_LABELS: Record<RadarDirection, string> = { long: 'Largo', short: 'Corto' };
 export const radarStatusLabel = (s: string) => RADAR_STATUS_LABELS[s as RadarAlertStatus] ?? s;
 export const radarDirectionLabel = (d: string) => RADAR_DIRECTION_LABELS[d as RadarDirection] ?? d;
@@ -85,6 +106,7 @@ export function sanitizeRadarAlert(raw: unknown): RadarAlert | null {
     resolved_at: typeof r.resolved_at === 'string' ? txt(r.resolved_at, 40) : null,
     outcome_r: num(r.outcome_r), mfe_r: num(r.mfe_r), mae_r: num(r.mae_r),
     taken_by_user: r.taken_by_user === true, user_entry: num(r.user_entry), user_pnl: num(r.user_pnl),
+    cellGrade: txt(r.cell_grade, 20, 'no_evidence'), cellN: num(r.cell_n, 0) ?? 0,
   };
 }
 
