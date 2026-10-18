@@ -214,6 +214,150 @@ export function sanitizeSnapshot(raw, env = {}) {
 }
 
 /**
+ * Valida de forma estricta un payload de hit-rates.
+ * @param {any} body
+ * @returns {{ok: boolean, value?: any, error?: string}}
+ */
+export function validateHitRates(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'Expected JSON object' };
+  }
+  if (body.schema !== 'swal.hit-rates.v1') {
+    return { ok: false, error: 'Invalid schema' };
+  }
+  if (body.method !== 'forward') {
+    return { ok: false, error: 'Invalid method' };
+  }
+
+  const strRegex = /^[A-Za-z0-9_ .:-]+$/;
+  function checkStr(s, maxLen) {
+    if (typeof s !== 'string') return false;
+    if (s.length > maxLen) return false;
+    return strRegex.test(s);
+  }
+
+  const res = {
+    schema: 'swal.hit-rates.v1',
+    method: 'forward',
+  };
+
+  if (body.period && typeof body.period === 'object' && !Array.isArray(body.period)) {
+    if (!checkStr(body.period.from, 64) || !checkStr(body.period.to, 64)) {
+       return { ok: false, error: 'Invalid period fields' };
+    }
+    res.period = { from: body.period.from, to: body.period.to };
+  } else {
+    return { ok: false, error: 'Invalid period' };
+  }
+
+  if (!checkStr(body.market, 64)) {
+    return { ok: false, error: 'Invalid market' };
+  }
+  res.market = body.market;
+
+  if (typeof body.cost_round_trip !== 'number' || !Number.isFinite(body.cost_round_trip)) {
+    return { ok: false, error: 'Invalid cost_round_trip' };
+  }
+  res.cost_round_trip = body.cost_round_trip;
+
+  if (!Array.isArray(body.cells)) {
+    return { ok: false, error: 'cells must be an array' };
+  }
+  if (body.cells.length > 200) {
+    return { ok: false, error: 'cells array too large' };
+  }
+
+  const allowedKeys = new Set(['kind', 'tf', 'symbol', 'direction', 'n', 'wins_1r', 'rate_1r', 'ci_low', 'ci_high', 'breakeven', 'baseline_rate', 'mean_net_r', 'grade']);
+  res.cells = [];
+
+  for (const cell of body.cells) {
+    if (!cell || typeof cell !== 'object' || Array.isArray(cell)) {
+      return { ok: false, error: 'Invalid cell' };
+    }
+
+    const keys = Object.keys(cell);
+    if (keys.length !== allowedKeys.size) {
+      return { ok: false, error: 'Invalid cell keys' };
+    }
+    for (const key of keys) {
+      if (!allowedKeys.has(key)) {
+        return { ok: false, error: 'Invalid cell keys' };
+      }
+    }
+
+    if (!checkStr(cell.kind, 64) || !checkStr(cell.tf, 64) || !checkStr(cell.symbol, 64)) {
+      return { ok: false, error: 'Invalid cell string fields' };
+    }
+
+    if (cell.direction !== 'long' && cell.direction !== 'short') {
+      return { ok: false, error: 'Invalid direction' };
+    }
+
+    const n = cell.n;
+    const w = cell.wins_1r;
+    if (typeof n !== 'number' || typeof w !== 'number' || !Number.isInteger(n) || !Number.isInteger(w) || w < 0 || n < w) {
+      return { ok: false, error: 'Invalid n or wins_1r' };
+    }
+
+    const r = cell.rate_1r;
+    const l = cell.ci_low;
+    const h = cell.ci_high;
+    const b = cell.breakeven;
+    if (typeof r !== 'number' || typeof l !== 'number' || typeof h !== 'number' || typeof b !== 'number' ||
+        !Number.isFinite(r) || !Number.isFinite(l) || !Number.isFinite(h) || !Number.isFinite(b)) {
+      return { ok: false, error: 'Invalid rates (not finite numbers)' };
+    }
+
+    if (r < 0 || r > 1 || l < 0 || l > 1 || h < 0 || h > 1 || b < 0 || b > 1) {
+      return { ok: false, error: 'Invalid rates (out of bounds)' };
+    }
+
+    if (l > r || r > h) {
+      return { ok: false, error: 'Invalid confidence interval' };
+    }
+
+    const br = cell.baseline_rate;
+    if (br !== null && (typeof br !== 'number' || !Number.isFinite(br) || br < 0 || br > 1)) {
+       return { ok: false, error: 'Invalid baseline_rate' };
+    }
+
+    const m = cell.mean_net_r;
+    if (typeof m !== 'number' || !Number.isFinite(m)) {
+       return { ok: false, error: 'Invalid mean_net_r' };
+    }
+
+    if (!['no_evidence', 'promising', 'validated', 'negative'].includes(cell.grade)) {
+      return { ok: false, error: 'Invalid grade' };
+    }
+
+    res.cells.push({
+      kind: cell.kind,
+      tf: cell.tf,
+      symbol: cell.symbol,
+      direction: cell.direction,
+      n: n,
+      wins_1r: w,
+      rate_1r: r,
+      ci_low: l,
+      ci_high: h,
+      breakeven: b,
+      baseline_rate: br,
+      mean_net_r: m,
+      grade: cell.grade
+    });
+  }
+
+  if (body.note !== undefined && body.note !== null) {
+    if (typeof body.note !== 'string' || body.note.length > 300) {
+      return { ok: false, error: 'Invalid note' };
+    }
+    res.note = body.note;
+  }
+
+  return { ok: true, value: res };
+}
+
+/**
  * Constant-time comparison between two strings via SHA-256 digests.
  *
  * @param {string} a
@@ -680,6 +824,103 @@ export default {
       }
 
       return withSecurityHeaders(new Response(null, { status: 204 }));
+    }
+
+    // POST /ingest/hit-rates endpoint
+    if (url.pathname === '/ingest/hit-rates') {
+      if (request.method !== 'POST') {
+        return withSecurityHeaders(new Response(null, {
+          status: 405,
+          headers: { 'Allow': 'POST' }
+        }));
+      }
+
+      // Authorization check (constant-time token comparison)
+      const authHeader = request.headers.get('Authorization') || '';
+      const expectedToken = (env && env.PUBLIC_INGEST_TOKEN) ? String(env.PUBLIC_INGEST_TOKEN) : '';
+
+      if (!expectedToken || !authHeader.startsWith('Bearer ')) {
+        return withSecurityHeaders(new Response(null, { status: 401 }));
+      }
+
+      const providedToken = authHeader.slice(7);
+      const isTokenValid = await timingSafeEqualString(providedToken, expectedToken);
+      if (!isTokenValid) {
+        return withSecurityHeaders(new Response(null, { status: 401 }));
+      }
+
+      // Payload size check (> 64 KB rejected with 413)
+      const MAX_BODY_BYTES = 64 * 1024;
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+        return withSecurityHeaders(new Response(null, { status: 413 }));
+      }
+
+      const bodyText = await request.text();
+      const bodyBytes = new TextEncoder().encode(bodyText).length;
+      if (bodyBytes > MAX_BODY_BYTES) {
+        return withSecurityHeaders(new Response(null, { status: 413 }));
+      }
+
+      // Parse JSON
+      let rawJson;
+      try {
+        rawJson = JSON.parse(bodyText);
+      } catch (_) {
+        return withSecurityHeaders(new Response(JSON.stringify({ error: 'invalid_json' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+
+      const validation = validateHitRates(rawJson);
+      if (!validation.ok) {
+        return withSecurityHeaders(new Response(JSON.stringify({ error: validation.error }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+
+      validation.value.generated_at = new Date().toISOString();
+
+      const store = snapshotStore(env);
+      if (store) {
+        await store.put('hit-rates', JSON.stringify(validation.value));
+      }
+
+      return withSecurityHeaders(new Response(null, { status: 204 }));
+    }
+
+    // GET /api/hit-rates endpoint
+    if (url.pathname === '/api/hit-rates') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return withSecurityHeaders(new Response(null, {
+          status: 405,
+          headers: { 'Allow': 'GET, HEAD' }
+        }));
+      }
+
+      const store = snapshotStore(env);
+      let hitRatesData = null;
+      if (store) {
+        hitRatesData = await store.get('hit-rates');
+      }
+
+      if (!hitRatesData) {
+        hitRatesData = JSON.stringify({
+          schema: "swal.hit-rates.v1",
+          cells: [],
+          note: "Aun no hay datos publicados."
+        });
+      }
+
+      return withSecurityHeaders(new Response(hitRatesData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'public, max-age=300'
+        }
+      }));
     }
 
     // 3. GET /api/news?symbol=BTC|ETH&limit=20 — misma origen, sin secretos.
