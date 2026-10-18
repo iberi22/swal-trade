@@ -148,7 +148,9 @@ def cli_main(args=None, fetch_klines_func: Optional[Callable] = None):
             baseline_by_cell[cell_key] = None
             continue
 
-        rate = random_baseline_rate(candles_1m, risks, rr=1.0, cost_r=0.0008, samples=2000, seed=11)
+        # Gross on purpose: the cell's win rate counts a 1R touch before costs, so the random control must be
+        # defined the same way. A cost-adjusted baseline is lower (about 30-45%) and flatters every pattern.
+        rate = random_baseline_rate(candles_1m, risks, rr=1.0, cost_r=0.0, samples=2000, seed=11)
         baseline_by_cell[cell_key] = rate
 
     result = build_public_table(

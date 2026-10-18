@@ -55,7 +55,7 @@ class TestAlertFilters(unittest.TestCase):
         with mock.patch('radar.sources.core.subprocess.run', return_value=done):
             return CoreSource().scan('BTCUSDC', '15m', candles)
 
-    def finding(self, kind='double_top', strength=0.8, bars_ago=0, direction='down'):
+    def finding(self, kind='range_breakout', strength=0.8, bars_ago=0, direction='down'):
         last = 1700000000 + 29 * 900
         return {'kind': kind, 'direction': direction, 'strength': strength, 'to': last - bars_ago * 900,
                 'levels': [{'role': 'neck', 'price': 100, 'confirm': 99.0, 'invalidate': 101.0}]}
