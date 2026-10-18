@@ -4,7 +4,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { parseRadarUrl, readRadarToken, compactAlert, RADAR_DOWN_ERROR } from "../dist/radar.js";
+import { parseRadarUrl, readRadarToken, compactAlert, compactStats, RADAR_DOWN_ERROR } from "../dist/radar.js";
 import { callOrCatch, errorText, textOf, withClient } from "./helpers.mjs";
 
 test("radar URL parser refuses non-local URLs and malformed strings", () => {
@@ -66,6 +66,76 @@ test("compactAlert sanitizes hostile or incomplete alert payloads safely", () =>
   assert.deepEqual(empty.outcomes, { outcome_r: null, mfe_r: null, mae_r: null });
 });
 
+test("compactAlert maps missing or unknown cell_grade to no_evidence", () => {
+  const missing = compactAlert({ id: 1 });
+  assert.equal(missing.grade, "no_evidence");
+
+  const unknown = compactAlert({ id: 1, cell_grade: "gold" });
+  assert.equal(unknown.grade, "no_evidence");
+
+  const validated = compactAlert({ id: 1, cell_grade: "validated" });
+  assert.equal(validated.grade, "validated");
+
+  assert.equal(compactAlert({ id: 1, cell_grade: "negative" }).grade, "negative");
+  assert.equal(compactAlert({ id: 1, cell_grade: "promising" }).grade, "promising");
+
+  const explicitNoEvidence = compactAlert({ id: 1, cell_grade: "no_evidence" });
+  assert.equal(explicitNoEvidence.grade, "no_evidence");
+});
+
+test("compactStats keeps grade_policy, note, and limits by_kind to top 20 ordered by n", () => {
+  const by_kind_raw = Array.from({ length: 30 }, (_, i) => ({ n_resolved: i, source: `src${i}` }));
+  const rawStats = {
+    overall: { n_resolved: 100 },
+    by_kind: by_kind_raw,
+    taken: { n_resolved: 5 },
+    grade_policy: "strict_v1",
+    note: "custom note text",
+  };
+
+  const compacted = compactStats(rawStats);
+
+  assert.equal(compacted.grade_policy, "strict_v1");
+  assert.equal(compacted.note, "custom note text");
+  assert.equal(compacted.by_kind.length, 20);
+
+  // They should be sorted by n_resolved descending
+  assert.equal(compacted.by_kind[0].n_resolved, 29);
+  assert.equal(compacted.by_kind[19].n_resolved, 10);
+});
+
+test("compactAlert preserves all previously existing keys", () => {
+  const hostile = {
+    id: "42",
+    symbol: "BTCUSDC",
+    tf: "1h",
+    entry: "82000.5",
+    stop: "80000.0",
+    target_1r: "84000.0",
+    target_2r: "86000.0",
+    strength: "0.85",
+    status: "triggered",
+    outcome_r: "2.0",
+    mfe_r: "2.5",
+    mae_r: "0.1",
+    taken_by_user: 1,
+    direction: "long",
+    title: "Test",
+    resolved_at: "2026-01-01",
+  };
+  const safe = compactAlert(hostile);
+
+  const expectedKeys = new Set([
+    "id", "symbol", "tf", "direction", "title", "entry", "stop",
+    "target_1r", "target_2r", "strength", "status", "outcomes",
+    "taken_by_user", "grade", "cell_n"
+  ]);
+
+  const actualKeys = new Set(Object.keys(safe));
+  assert.deepEqual(actualKeys, expectedKeys);
+  assert.deepEqual(Object.keys(safe.outcomes).sort(), ["outcome_r", "mfe_r", "mae_r", "resolved_at"].sort());
+});
+
 test("radar tools refuse non-local URLs before attempting connection", async () => {
   const env = { SWAL_RADAR_URL: "http://evil.com:47322" };
   await withClient({ env }, async (client) => {
@@ -97,10 +167,12 @@ test("radar tools against fake local radar fixture", async () => {
 
   let lastHeaders = null;
   let lastBody = null;
+  let lastQuery = null;
 
   const fakeServer = http.createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && url.pathname === "/v1/alerts") {
+      lastQuery = url.search;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ alerts: fakeAlerts }));
       return;
@@ -147,6 +219,10 @@ test("radar tools against fake local radar fixture", async () => {
       assert.equal(btc.length, 1);
       assert.equal(btc[0].symbol, "BTCUSDC");
 
+      // radar_alerts forwards min_grade to query string
+      await client.callTool({ name: "radar_alerts", arguments: { min_grade: "validated" } });
+      assert.match(lastQuery, /min_grade=validated/);
+
       // 3. radar_stats contains honesty note and "sin evidencia (n<30)"
       const stats = textOf(await client.callTool({ name: "radar_stats", arguments: {} }));
       assert.match(stats, /sin evidencia \(n<30\)/);
@@ -160,6 +236,9 @@ test("radar tools against fake local radar fixture", async () => {
 
       // 5. radar_mark_taken rejects note > 200 chars
       assert.equal((await callOrCatch(client, "radar_mark_taken", { alert_id: 19, taken: true, note: "a".repeat(201) })).isError, true);
+
+      // 6. radar_alerts rejects invalid min_grade enum values
+      assert.equal((await callOrCatch(client, "radar_alerts", { min_grade: "x;y" })).isError, true);
     });
   } finally {
     await new Promise((resolve) => fakeServer.close(resolve));

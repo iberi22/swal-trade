@@ -22,6 +22,8 @@ export interface CompactAlert {
   status: string;
   outcomes: { outcome_r: number | null; mfe_r: number | null; mae_r: number | null; resolved_at?: string | null };
   taken_by_user: boolean;
+  grade: string;
+  cell_n: number;
 }
 
 export function parseRadarUrl(rawUrl?: string): { ok: true; url: string } | { ok: false; error: string } {
@@ -60,6 +62,8 @@ function parseNum(val: unknown): number | null {
 export function compactAlert(raw: unknown): CompactAlert {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const o = (r.outcomes && typeof r.outcomes === "object" ? r.outcomes : null) as Record<string, unknown> | null;
+  const gradeStr = String(r.cell_grade ?? "");
+  const grade = ["validated", "promising", "negative"].includes(gradeStr) ? gradeStr : "no_evidence";
   return {
     id: typeof r.id === "number" ? r.id : Number(r.id) || 0,
     symbol: String(r.symbol ?? ""),
@@ -79,6 +83,8 @@ export function compactAlert(raw: unknown): CompactAlert {
       ...(r.resolved_at ? { resolved_at: String(r.resolved_at) } : {}),
     },
     taken_by_user: Boolean(r.taken_by_user),
+    grade,
+    cell_n: parseNum(r.cell_n) ?? 0,
   };
 }
 
@@ -94,10 +100,13 @@ async function safeFetchJson(url: string, init: RequestInit, fetchFn: FetchLike)
   }
 }
 
-export async function fetchRadarAlerts(opts: { baseUrl: string; status?: "active" | "resolved" | "all"; symbol?: string; limit?: number; fetchFn: FetchLike }): Promise<{ ok: true; alerts: CompactAlert[] } | { ok: false; error: string }> {
+export async function fetchRadarAlerts(opts: { baseUrl: string; status?: "active" | "resolved" | "all"; symbol?: string; limit?: number; minGrade?: string; fetchFn: FetchLike }): Promise<{ ok: true; alerts: CompactAlert[] } | { ok: false; error: string }> {
   const statusParam = opts.status ?? "active";
   const limit = opts.limit ?? 20;
-  const url = `${opts.baseUrl}/v1/alerts?status=${encodeURIComponent(statusParam)}&limit=${opts.symbol ? 100 : limit}`;
+  let url = `${opts.baseUrl}/v1/alerts?status=${encodeURIComponent(statusParam)}&limit=${opts.symbol ? 100 : limit}`;
+  if (opts.minGrade) {
+    url += `&min_grade=${encodeURIComponent(opts.minGrade)}`;
+  }
   const res = await safeFetchJson(url, { method: "GET" }, opts.fetchFn);
   if (!res.ok) return res;
   const rawList = Array.isArray(res.data?.alerts) ? res.data.alerts : [];
@@ -109,20 +118,30 @@ export async function fetchRadarAlerts(opts: { baseUrl: string; status?: "active
   return { ok: true, alerts: list.slice(0, limit) };
 }
 
+export function compactStats(raw: unknown): Record<string, unknown> {
+  const data = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
+  const overall = data.overall && typeof data.overall === "object" ? { ...data.overall } : {};
+  if ((typeof overall.n_resolved === "number" ? overall.n_resolved : 0) < 30) overall.label = "sin evidencia (n<30)";
+
+  let by_kind = Array.isArray(data.by_kind) ? [...data.by_kind] : [];
+  by_kind.sort((a, b) => (parseNum(b?.n_resolved) ?? 0) - (parseNum(a?.n_resolved) ?? 0));
+  by_kind = by_kind.slice(0, 20);
+
+  return {
+    overall,
+    by_kind,
+    taken: data.taken && typeof data.taken === "object" ? data.taken : {},
+    grade_policy: typeof data.grade_policy === "string" ? data.grade_policy : "",
+    note: typeof data.note === "string" ? data.note : "Un alerta es un experimento, nunca una promesa (sin evidencia).",
+  };
+}
+
 export async function fetchRadarStats(opts: { baseUrl: string; fetchFn: FetchLike }): Promise<{ ok: true; stats: Record<string, unknown> } | { ok: false; error: string }> {
   const res = await safeFetchJson(`${opts.baseUrl}/v1/stats`, { method: "GET" }, opts.fetchFn);
   if (!res.ok) return res;
-  const data = (res.data && typeof res.data === "object" ? res.data : {}) as Record<string, any>;
-  const overall = data.overall && typeof data.overall === "object" ? { ...data.overall } : {};
-  if ((typeof overall.n_resolved === "number" ? overall.n_resolved : 0) < 30) overall.label = "sin evidencia (n<30)";
   return {
     ok: true,
-    stats: {
-      overall,
-      by_kind: Array.isArray(data.by_kind) ? data.by_kind : [],
-      taken: data.taken && typeof data.taken === "object" ? data.taken : {},
-      note: typeof data.note === "string" ? data.note : "Un alerta es un experimento, nunca una promesa (sin evidencia).",
-    },
+    stats: compactStats(res.data),
   };
 }
 
