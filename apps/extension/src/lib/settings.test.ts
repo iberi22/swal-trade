@@ -82,6 +82,7 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
@@ -112,6 +113,7 @@ describe('normalizeSettings', () => {
       symbols: ["BTC", "ETH"],
       autoSync: false,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
       hotkeysEnabled: false,
       hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
@@ -136,6 +138,7 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
@@ -164,6 +167,15 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ paintOnChart: 'true' }).paintOnChart).toBe(false);
     expect(normalizeSettings({ paintOnChart: 1 }).paintOnChart).toBe(false);
     expect(DEFAULT_SETTINGS.paintOnChart).toBe(false);
+  });
+
+  it('leer los dibujos de posición solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: true }).readDrawings).toBe(true);
+    expect(normalizeSettings({ readDrawings: 'true' }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: 1 }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: null }).readDrawings).toBe(false);
+    expect(DEFAULT_SETTINGS.readDrawings).toBe(false);
   });
 
   it('las explicaciones con IA solo se encienden con true explícito', () => {
@@ -222,6 +234,7 @@ describe('normalizeSettings', () => {
       'paintOnChart',
       'radarEnabled',
       'radarPort',
+      'readDrawings',
       'rules',
       'symbols',
     ]);
@@ -247,6 +260,7 @@ describe('settingsFromStorage', () => {
       symbols: ["ETH"],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
@@ -269,6 +283,7 @@ describe('settingsFromStorage', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,

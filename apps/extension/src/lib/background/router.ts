@@ -23,10 +23,12 @@ import {
   type SealedSecret,
   type Vault,
 } from '../account/vault';
-import { buildUserMessage, parseAiAnswer, SYSTEM_PROMPT } from '../ai/prompt';
+import { buildUserMessage, parseAiAnswer } from '../ai/prompt';
+import { buildSystemPrompt, normalizePromptConfig, PROMPT_CONFIG_KEY } from '../ai/prompt-config';
 import { serializeForLlm, type AiHistoryPayload, type AiPositionPayload } from '../ai/payload';
 import { parseModels, type ChatRequest, type ChatResult } from '../ai/llm-client';
 import { getProvider, PROVIDERS } from '../ai/providers';
+import { resolveLocale } from '../i18n/locales';
 import type { ExtensionSettings } from '../settings';
 
 export type Reply = Record<string, unknown>;
@@ -54,10 +56,12 @@ export interface RouterDeps {
   makeClient: (signer: Signer) => SignedClient;
   chat: (request: ChatRequest) => Promise<ChatResult>;
   loadSettings: () => Promise<ExtensionSettings>;
-  /** Cache de modelos (storage.local). */
+  /** storage.local: cache de modelos y prompt configurado. */
   cache: KeyValueStore;
   /** Claves de IA solo de sesion (storage.session o memoria). */
   session: KeyValueStore;
+  /** Idiomas del navegador, para resolver el idioma del panel cuando es 'auto'. */
+  uiLanguages?: () => readonly string[];
 }
 
 export const SNAPSHOT_TTL_MS = 5_000;
@@ -391,7 +395,9 @@ export function createRouter(deps: RouterDeps) {
     const provider = getProvider(m.provider);
     if (!provider) return { view: null, reason: 'bad_response' };
     const schema = m.payload.schema;
-    if (schema !== 'swal.position.v1' && schema !== 'swal.history.v1') {
+    // Tres formas relativas conocidas: posición abierta, historial y dibujo
+    // Long/Short Position. Cualquier otra se rechaza antes de tocar la red.
+    if (schema !== 'swal.position.v1' && schema !== 'swal.history.v1' && schema !== 'swal.drawing.v1') {
       return { view: null, reason: 'bad_payload' };
     }
     let settings: ExtensionSettings;
@@ -411,10 +417,19 @@ export function createRouter(deps: RouterDeps) {
       return { view: null, reason: 'bad_payload' };
     }
     const apiKey = await aiKey(provider.id);
+    // El prompt editable vive en storage.local; el marco de seguridad lo pone
+    // siempre `buildSystemPrompt` al final, no el contenido guardado.
+    let config = normalizePromptConfig(undefined);
+    try {
+      config = normalizePromptConfig(await deps.cache.get(PROMPT_CONFIG_KEY));
+    } catch {
+      // Sin lectura, prompt por defecto.
+    }
+    const uiLocale = resolveLocale(settings.locale, deps.uiLanguages?.() ?? []);
     const result = await deps.chat({
       provider: provider.id,
       model: m.model,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(config, uiLocale),
       user: buildUserMessage(serialized),
       apiKey,
     });

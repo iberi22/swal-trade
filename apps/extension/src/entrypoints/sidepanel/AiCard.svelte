@@ -18,7 +18,9 @@
     type AiPositionPayload,
   } from '../../lib/ai/payload';
   import type { AiView } from '../../lib/ai/prompt';
+  import { buildSystemPrompt, loadPromptConfig } from '../../lib/ai/prompt-config';
   import { FREE_MODEL_WARNING, getProvider, isFreeModel } from '../../lib/ai/providers';
+  import { i18n } from '../../lib/i18n/i18n.svelte';
   import type { ExtensionSettings } from '../../lib/settings';
   import type { PanelState } from '../../lib/account/panel-controller';
   import type { Finding } from '../../lib/types';
@@ -59,6 +61,17 @@
   let pending = $state<Kind | null>(null);
   let view = $state<AiView | null>(null);
   let errorText = $state<string | null>(null);
+  /** Prompt ensamblado tal cual lo envía el background (reglas fijas al final). */
+  let systemPrompt = $state<string | null>(null);
+
+  async function refreshSystemPrompt() {
+    const config = await loadPromptConfig();
+    systemPrompt = buildSystemPrompt(config, i18n.locale);
+  }
+
+  $effect(() => {
+    void refreshSystemPrompt();
+  });
 
   const provider = $derived(getProvider(settings.ai.provider));
   const model = $derived(settings.ai.model);
@@ -220,8 +233,19 @@
     </div>
   {/if}
 
-  <details data-testid="ai-preview">
+  <details
+    data-testid="ai-preview"
+    ontoggle={(event) => {
+      if ((event.currentTarget as HTMLDetailsElement).open) void refreshSystemPrompt();
+    }}
+  >
     <summary class="an-note">Ver lo que se envía</summary>
+    <p class="an-note">Prompt del sistema (las reglas fijas van siempre al final):</p>
+    {#if systemPrompt}
+      <pre class="an-pre" data-testid="ai-preview-system">{systemPrompt}</pre>
+    {:else}
+      <p class="an-note">Cargando el prompt…</p>
+    {/if}
     {#if positionBuilt}
       <p class="an-note">Posición ({settings.ai.redaction === 'relative' ? 'relativo' : 'con precios'}):</p>
       <pre class="an-pre" data-testid="ai-preview-position">{positionBuilt.text}</pre>

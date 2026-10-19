@@ -52,6 +52,12 @@ export interface ExtensionSettings {
    */
   paintOnChart: boolean;
   /**
+   * Lee (solo lectura) las herramientas Long/Short Position que el usuario
+   * dibuja en la pestaña Trading View. Arranca apagado: leer el gráfico ajeno
+   * es una acción sobre la página y necesita un `true` explícito.
+   */
+  readDrawings: boolean;
+  /**
    * Explicaciones con IA: manda el símbolo, la temporalidad y los patrones a
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
@@ -82,6 +88,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   symbols: [],
   autoSync: true,
   paintOnChart: false,
+  readDrawings: false,
   explainWithAi: false,
   hotkeysEnabled: true,
   hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
@@ -224,6 +231,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     autoSync: record.autoSync === false ? false : DEFAULT_SETTINGS.autoSync,
     // Pintar en el gráfico necesita un `true` explícito: se sale del panel.
     paintOnChart: record.paintOnChart === true,
+    // Leer los dibujos del usuario también: solo con un `true` explícito.
+    readDrawings: record.readDrawings === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.

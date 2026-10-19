@@ -1,6 +1,7 @@
 import {
   SWAL_DRAW,
   SWAL_SET_RESOLUTION,
+  SWAL_SET_READ,
   SWAL_RESOLUTION_ACK,
   SWAL_MESSAGE_VERSION,
   parseBridgeMessage,
@@ -16,6 +17,7 @@ export function createBridgeMessageHandler(
     stop: () => void;
     apply: (msg: BridgeMessage) => void;
     setResolution?: (res: BridgeResolution) => BridgeResolutionAckMessage;
+    setRead?: (enabled: boolean) => void;
   },
   rate: DrawRateLimit,
   onAck?: (ack: BridgeResolutionAckMessage) => void,
@@ -36,6 +38,11 @@ export function createBridgeMessageHandler(
 
   return (data: unknown) => {
     const raw = data as { type?: unknown; shapes?: unknown } | undefined;
+    if (raw && raw.type === SWAL_SET_READ) {
+      const message = parseBridgeMessage(data);
+      if (message && message.type === SWAL_SET_READ) session.setRead?.(message.enabled);
+      return;
+    }
     if (raw && raw.type === SWAL_SET_RESOLUTION) {
       const message = parseBridgeMessage(data);
       if (message && message.type === SWAL_SET_RESOLUTION) {

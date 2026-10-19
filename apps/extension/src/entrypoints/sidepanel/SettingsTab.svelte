@@ -8,6 +8,7 @@
   import { t } from '../../lib/i18n/i18n.svelte';
   import CredentialsAi from './CredentialsAi.svelte';
   import CredentialsBinance from './CredentialsBinance.svelte';
+  import PromptSettings from './PromptSettings.svelte';
   import RulesSettings from './RulesSettings.svelte';
 
   let {
@@ -35,8 +36,8 @@
   } = $props();
 </script>
 
-<!-- El interruptor de pintar vive aquí pero fuera de .settings: es una acción
-     sobre la página, no una preferencia más. -->
+<!-- Los interruptores de la página viven aquí pero fuera de .settings: son
+     acciones sobre la página, no una preferencia más. -->
 <div class="paint-block">
   <label class="field check paint-toggle">
     <input
@@ -70,6 +71,29 @@
         >Volver a Original</button>
       {/if}
     {/if}
+  {/if}
+
+  <!-- Solo lectura del dibujo del usuario: no crea, mueve ni borra nada. -->
+  <label class="field check paint-toggle">
+    <input
+      type="checkbox"
+      disabled={!settingsLoaded}
+      checked={settings.readDrawings}
+      data-testid="settings-read-drawings"
+      onchange={(event) => {
+        applySettings({
+          ...settings,
+          readDrawings: (event.currentTarget as HTMLInputElement).checked,
+        });
+      }}
+    />
+    <span>Leer mis dibujos de posición (TradingView)</span>
+  </label>
+  {#if settings.readDrawings}
+    <p class="hint" data-testid="read-drawings-hint">
+      Cada 1,5 s se miran las herramientas Long/Short Position de la pestaña Trading View y la
+      tarjeta «Tu dibujo» de Operación enseña su análisis. No se crea ni se mueve ningún dibujo.
+    </p>
   {/if}
 </div>
 
@@ -244,5 +268,6 @@
     <CredentialsBinance {settings} {applySettings} />
     <RulesSettings {settings} {settingsLoaded} {applySettings} />
     <CredentialsAi {settings} {settingsLoaded} {applySettings} />
+    <PromptSettings />
   </div>
 </section>

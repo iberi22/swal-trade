@@ -14,6 +14,8 @@ import { createIdbVault } from '../lib/account/idb-vault';
 import { chat } from '../lib/ai/llm-client';
 import { ALARM_NAME, createBackgroundScanner, desiredAlarm } from '../lib/scanner/background-runner';
 import { loadScannerSettings, SCANNER_SETTINGS_KEY } from '../lib/scanner/settings';
+import { mergePositionToolsStore, POSITION_TOOLS_STORAGE_KEY } from '../lib/tv-bridge/relay';
+import type { BridgePositionToolsMessage } from '../lib/tv-bridge/schema';
 
 function storageStore(area: 'local' | 'session'): KeyValueStore {
   const api = () => browser.storage[area];
@@ -28,6 +30,19 @@ function storageStore(area: 'local' | 'session'): KeyValueStore {
       await api()?.remove(key);
     },
   };
+}
+
+/** Idiomas del navegador: el panel resuelve 'auto' con la misma lista. */
+function uiLanguages(): string[] {
+  const out: string[] = [];
+  try {
+    const ui = browser.i18n?.getUILanguage?.();
+    if (ui) out.push(ui);
+  } catch {
+    // sin API de i18n
+  }
+  if (typeof navigator !== 'undefined' && Array.isArray(navigator.languages)) out.push(...navigator.languages);
+  return out;
 }
 
 const STORAGE_KEY = 'marketContext';
@@ -62,6 +77,23 @@ async function remember(context: MarketContext): Promise<void> {
     await browser.storage.session?.set({ [STORAGE_KEY]: context });
   } catch {
     // storage.session puede faltar; el panel pregunta la copia en memoria.
+  }
+}
+
+/**
+ * Último dibujo de posición leído del gráfico, por símbolo (storage.session).
+ * El background no lo interpreta: solo lo guarda para que el panel lo lea al
+ * abrirse. Nada sale del navegador y no se toca la cuenta.
+ */
+async function rememberPositionTools(tools: BridgePositionToolsMessage): Promise<void> {
+  try {
+    const session = browser.storage.session;
+    if (!session) return;
+    const stored = await session.get(POSITION_TOOLS_STORAGE_KEY);
+    const merged = mergePositionToolsStore(stored?.[POSITION_TOOLS_STORAGE_KEY], tools);
+    if (merged.changed) await session.set({ [POSITION_TOOLS_STORAGE_KEY]: merged.store });
+  } catch {
+    // Sin storage.session no hay dibujos en el panel; no es un error de la página.
   }
 }
 
@@ -228,6 +260,7 @@ export default defineBackground(() => {
     loadSettings: () => loadSettings(),
     cache: storageStore('local'),
     session: storageStore('session'),
+    uiLanguages: () => uiLanguages(),
   });
 
   setupScannerAlarm();
@@ -252,6 +285,10 @@ export default defineBackground(() => {
     if (parsed.type === 'tv-state') {
       tvState = parsed.state;
       tvChart = parsed.chart ?? null;
+      return;
+    }
+    if (parsed.type === 'tv-position-tools') {
+      void rememberPositionTools(parsed.tools);
       return;
     }
     if (parsed.type === 'get-tv-state') {

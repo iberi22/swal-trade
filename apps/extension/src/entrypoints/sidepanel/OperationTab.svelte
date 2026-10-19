@@ -31,6 +31,7 @@
   import type { ExtensionSettings } from '../../lib/settings';
   import type { AnalysisResult, Candle, Finding, Timeframe } from '../../lib/types';
   import ContextBar from './ContextBar.svelte';
+  import DrawingCard from './DrawingCard.svelte';
   import ExplainCard from './ExplainCard.svelte';
   import LevelsCard from './LevelsCard.svelte';
   import ManualPosition from './ManualPosition.svelte';
@@ -274,6 +275,18 @@
 {:else if sections.sizing}
   <SizingCard {lastPrice} finding={selectedFinding} compact />
 {/if}
+
+<DrawingCard
+  {symbol}
+  {lastPrice}
+  snapshot={contextSnapshot}
+  {findingsLevels}
+  rules={settings.rules}
+  {settings}
+  {settingsLoaded}
+  {applySettings}
+  canLoad={sections.sizing}
+/>
 
 <TradeCards {symbol} {lastPrice} snapshot={contextSnapshot} {findingsLevels} rules={settings.rules} canLoad={sections.sizing} />
 
