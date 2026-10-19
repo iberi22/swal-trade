@@ -32,6 +32,7 @@
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import { browserLanguages, initI18n } from '../../lib/i18n/i18n.svelte';
   import AnalysisTab from './AnalysisTab.svelte';
+  import MyTradesTab from './MyTradesTab.svelte';
   import OperationTab from './OperationTab.svelte';
   import ScannerTab from './ScannerTab.svelte';
   import SettingsTab from './SettingsTab.svelte';
@@ -528,6 +529,15 @@
     {/snippet}
     {#snippet escaner()}
       <ScannerTab active={activeTab === 'escaner'} />
+    {/snippet}
+    {#snippet mistrades()}
+      <MyTradesTab
+        active={activeTab === 'mistrades'}
+        {settings}
+        {settingsLoaded}
+        {applySettings}
+        nowMs={nowMs}
+      />
     {/snippet}
   </Tabs>
 

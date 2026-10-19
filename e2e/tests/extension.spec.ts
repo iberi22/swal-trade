@@ -25,6 +25,17 @@ interface SidePanel {
  * red interceptadas: velas de Binance y titulares de trade.swal.network.
  * `klines` permite mockear otra ventana (por ejemplo con volumen taker).
  */
+/** Simula una pestaña activa de Binance Futures (id 7): el panel solo muestra dibujos de la pestaña activa. */
+const FUTURES_TAB_FAKE = `(() => {
+  const tabs = globalThis.chrome && globalThis.chrome.tabs;
+  if (!tabs) return;
+  const fake = [{ id: 7, active: true, url: 'https://www.binance.com/en/futures/BTCUSDT' }];
+  tabs.query = (_q, cb) => {
+    if (typeof cb === 'function') { cb(fake); return; }
+    return Promise.resolve(fake);
+  };
+})();`;
+
 async function openSidePanel(
   fetchImpl?: () => Promise<unknown>,
   klines: unknown = toBinanceKlines(),
@@ -594,12 +605,18 @@ test('context band and levels map show references, never buy or sell wording', a
   }
 });
 
-test('panel has four tabs, keyboard navigation and sections collapsed by default', async () => {
+test('panel tabs exist, keyboard navigation and sections collapsed by default', async () => {
   const panel = await openSidePanel();
   try {
     const { page } = panel;
     const tablist = page.getByRole('tablist');
-    await expect(tablist.getByRole('tab')).toHaveText(['Operación', 'Análisis', 'Ajustes', 'Escáner']);
+    // Por nombre, no por número: otras pestañas pueden añadirse.
+    for (const name of ['Operación', 'Análisis', 'Ajustes', 'Escáner', 'Mis trades']) {
+      await expect(tablist.getByRole('tab', { name })).toHaveCount(1);
+    }
+    const tabs = tablist.getByRole('tab');
+    const tabCount = await tabs.count();
+    expect(tabCount).toBeGreaterThanOrEqual(5);
     await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
 
     // Sin posición conocida y sin clave: modo unknown, con el aviso y el dimensionador.
@@ -623,12 +640,16 @@ test('panel has four tabs, keyboard navigation and sections collapsed by default
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('history-card')).toBeVisible();
+    // Inicio y Fin van a la primera y a la última pestaña, sean cuantas sean.
     await page.keyboard.press('End');
-    await expect(page.getByRole('tab', { name: 'Escáner' })).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(tabCount - 1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Home');
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('End');
     await page.keyboard.press('ArrowLeft');
-    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(tabCount - 2)).toHaveAttribute('aria-selected', 'true');
     await page.reload();
-    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(tabCount - 2)).toHaveAttribute('aria-selected', 'true');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
@@ -1216,7 +1237,7 @@ test('tarjetas de operación: ticket con stop, línea honesta y sin lenguaje de 
 });
 
 test('tu dibujo: lee la posición dibujada en Trading View y la cuenta en largo/corto', async () => {
-  const panel = await openSidePanel();
+  const panel = await openSidePanel(undefined, undefined, FUTURES_TAB_FAKE);
   try {
     const { page } = panel;
     const card = page.getByTestId('drawing-card');
@@ -1236,7 +1257,7 @@ test('tu dibujo: lee la posición dibujada en Trading View y la cuenta en largo/
           api.storage.session.set(
             {
               positionTools: {
-                BTCUSDT: {
+                '7:BTCUSDT': {
                   type: 'swal:position-tools',
                   version: 2,
                   symbol: 'BTCUSDT',
@@ -1275,6 +1296,136 @@ test('tu dibujo: lee la posición dibujada en Trading View y la cuenta en largo/
     expect(text).not.toContain('comprar');
     expect(text).not.toContain('vender');
     expect(text).not.toMatch(/tasa de acierto|probabilidad/);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operación: sin clave usa la posición leída de la página y la marca como tal', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                positions: [
+                  {
+                    symbol: 'BTCUSDT',
+                    contract: 'perp',
+                    leverage: 30,
+                    marginMode: 'cross',
+                    side: 'long',
+                    sizeQuote: null,
+                    sizeBase: 0.004,
+                    uPnl: 2.1,
+                    roiPct: 19,
+                    entry: 82644.1,
+                    breakEven: 82300,
+                    mark: 82500,
+                    liq: 70000,
+                  },
+                ],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    // Sin clave de API, el modo deja de ser «no sé»: la página dice que hay posición.
+    const card = page.getByTestId('position-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('LARGO · 0.004 BTCUSDT · 30x · cruzado');
+    await expect(card).toContainText('página de Binance');
+    await expect(page.getByTestId('sizing-card')).toHaveCount(0);
+    await expect(page.getByTestId('mode-notice')).toHaveCount(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('mis trades: lee la posición de la página y avisa de que no hay evidencia', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // Lo que el content script dejó en storage.session (sin clave de API).
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                positions: [
+                  {
+                    symbol: 'BTCUSDC',
+                    contract: 'perp',
+                    leverage: 30,
+                    marginMode: 'cross',
+                    side: 'long',
+                    sizeQuote: null,
+                    sizeBase: 0.004,
+                    uPnl: 2.1,
+                    roiPct: 19,
+                    entry: 82644.1,
+                    breakEven: 82300,
+                    mark: 82500,
+                    liq: 70000,
+                  },
+                ],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    const tab = page.getByTestId('mytrades-tab');
+    await expect(tab).toBeVisible();
+    const positions = page.getByTestId('mytrades-positions');
+    await expect(positions).toBeVisible();
+    await expect(positions).toContainText('BTCUSDC');
+    await expect(positions).toContainText('largo');
+    await expect(positions).toContainText('uPnL +2.1 (+19 %)');
+    // Sin historial leído: lo dice y no inventa métricas.
+    await expect(page.getByTestId('mytrades-history-hint')).toContainText('Historial de posiciones');
+    await expect(page.getByTestId('mytrades-metrics')).toContainText('Todavía no hay operaciones');
+    await expect(page.getByTestId('mytrades-no-evidence')).toContainText(/sin evidencia/i);
+    await expect(page.getByTestId('mytrades-export')).toBeVisible();
+    await expect(page.getByTestId('mytrades-diagnose')).toBeVisible();
+    await expect(page.getByTestId('mytrades-clear')).toBeVisible();
+    // El botón de IA está, pero apagado: sin proveedor/modelo no se envía nada.
+    await expect(page.getByTestId('mytrades-ai')).toBeDisabled();
+    // Nada de lenguaje de compra/venta en esta pestaña.
+    const text = (await tab.innerText()).toLowerCase();
+    expect(text).not.toContain('comprar');
+    expect(text).not.toContain('vender');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();

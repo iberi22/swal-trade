@@ -8,6 +8,8 @@
     nowMs,
     stale = false,
     manual = false,
+    sourceLabel = null,
+    staleNote = null,
     onRemoveManual,
   }: {
     position: PositionView | null;
@@ -15,10 +17,16 @@
     nowMs: number;
     stale?: boolean;
     manual?: boolean;
+    /** De dónde salió el dato: 'página de Binance' cuando se leyó del DOM. */
+    sourceLabel?: string | null;
+    /** Aviso de antigüedad del dato leído de la página. */
+    staleNote?: string | null;
     onRemoveManual?: () => void;
   } = $props();
 
-  const view = $derived(position ? positionCardView(position, snapshot, nowMs, { stale, manual }) : null);
+  const view = $derived(
+    position ? positionCardView(position, snapshot, nowMs, { stale, manual, sourceLabel, staleNote }) : null,
+  );
 </script>
 
 <section class="position" data-testid="position-card" data-stale={stale} aria-label="Posición abierta">

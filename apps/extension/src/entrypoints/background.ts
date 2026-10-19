@@ -16,6 +16,22 @@ import { ALARM_NAME, createBackgroundScanner, desiredAlarm } from '../lib/scanne
 import { loadScannerSettings, SCANNER_SETTINGS_KEY } from '../lib/scanner/settings';
 import { dropTab, mergePositionToolsStore, POSITION_TOOLS_STORAGE_KEY } from '../lib/tv-bridge/relay';
 import type { BridgePositionToolsMessage } from '../lib/tv-bridge/schema';
+import { createIdbPageHistory } from '../lib/page-account/idb-page-history';
+import { historyMetrics } from '../lib/page-account/metrics';
+import {
+  PAGE_ACCOUNT_CLEAR,
+  PAGE_ACCOUNT_DIAGNOSE,
+  PAGE_ACCOUNT_DIAGNOSE_REQUEST,
+  PAGE_ACCOUNT_DIAGNOSE_RESULT,
+  PAGE_ACCOUNT_GET,
+  PAGE_ACCOUNT_RESULT,
+  PAGE_ACCOUNT_SESSION_KEY,
+  PAGE_ACCOUNT_UPDATE,
+  parsePageAccountDiagnoseResult,
+  parsePageAccountMessage,
+  parseStoredPagePositions,
+  type PageAccountUpdate,
+} from '../lib/page-account/messages';
 
 function storageStore(area: 'local' | 'session'): KeyValueStore {
   const api = () => browser.storage[area];
@@ -128,6 +144,72 @@ function setupPositionToolsCleanup(): void {
     });
   } catch {
     // Sin eventos de pestañas: el panel acota por pestaña y símbolo de todos modos.
+  }
+}
+
+// --- Posiciones e historial leídos de la página de Binance ----------------
+// Local y opt-in: el content script solo manda lo que ya se ve. Las posiciones
+// abiertas viven en `storage.session` (se pierden al cerrar el navegador); el
+// historial se acumula en IndexedDB hasta 2000 filas y el usuario lo puede
+// borrar desde el panel.
+const pageHistory = createIdbPageHistory();
+
+/** Guarda el aviso del content script. Nunca lanza hacia el remitente. */
+async function storePageAccountUpdate(update: PageAccountUpdate): Promise<void> {
+  try {
+    await browser.storage.session?.set({
+      [PAGE_ACCOUNT_SESSION_KEY]: {
+        positions: update.positions,
+        capturedAt: update.capturedAt,
+        tzOffsetMinutes: update.tzOffsetMinutes,
+      },
+    });
+  } catch {
+    // Sin storage.session las posiciones no llegan al panel; no es un error de la página.
+  }
+  await pageHistory.merge(update.history);
+}
+
+async function readPageAccountState(): Promise<Record<string, unknown>> {
+  let stored: unknown;
+  try {
+    stored = (await browser.storage.session?.get(PAGE_ACCOUNT_SESSION_KEY))?.[PAGE_ACCOUNT_SESSION_KEY];
+  } catch {
+    stored = undefined;
+  }
+  const session = parseStoredPagePositions(stored);
+  const history = await pageHistory.load();
+  return {
+    type: PAGE_ACCOUNT_RESULT,
+    positions: session?.positions ?? [],
+    capturedAt: session?.capturedAt ?? null,
+    tzOffsetMinutes: session?.tzOffsetMinutes ?? 0,
+    history,
+    metrics: historyMetrics(history),
+  };
+}
+
+async function clearPageAccount(): Promise<Record<string, unknown>> {
+  try {
+    await browser.storage.session?.remove(PAGE_ACCOUNT_SESSION_KEY);
+  } catch {
+    // nada que borrar
+  }
+  await pageHistory.clear();
+  return { ok: true };
+}
+
+/** Pide al content script la pestaña de futuros el esquema ya anonimizado. */
+async function requestPageDiagnose(): Promise<Record<string, unknown>> {
+  const empty = { type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '' };
+  try {
+    const tabs = await browser.tabs.query({ url: 'https://www.binance.com/*/futures/*' }).catch(() => []);
+    const tab = tabs.find((candidate) => candidate.active) ?? tabs[0];
+    if (tab?.id == null) return empty;
+    const reply = await browser.tabs.sendMessage(tab.id, { type: PAGE_ACCOUNT_DIAGNOSE_REQUEST });
+    return { type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: parsePageAccountDiagnoseResult(reply) ?? '' };
+  } catch {
+    return empty;
   }
 }
 
@@ -304,6 +386,41 @@ export default defineBackground(() => {
     if (!isPrivilegedType((message as { type?: unknown } | null)?.type)) return;
     void router.handle(message, sender).then((reply) => sendResponse(reply));
     return true;
+  });
+
+  // Lectura de la página: el aviso lo manda un content script; las consultas y
+  // el borrado, solo el panel de la propia extensión.
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const parsed = parsePageAccountMessage(message);
+    if (!parsed) return;
+    const extUrl = browser.runtime.getURL('/');
+    const fromExtensionPage = Boolean(
+      sender &&
+        sender.id === browser.runtime.id &&
+        typeof sender.url === 'string' &&
+        sender.url.startsWith(extUrl),
+    );
+    if (parsed.type === PAGE_ACCOUNT_UPDATE) {
+      // Solo desde un content script de la página, nunca desde el panel. Ojo:
+      // un side panel viaja con `sender.tab` puesto, así que la pestaña no basta
+      // para distinguirlos; la URL sí.
+      if (!sender?.tab || fromExtensionPage) return;
+      void storePageAccountUpdate(parsed.update);
+      return;
+    }
+    if (!fromExtensionPage) return;
+    if (parsed.type === PAGE_ACCOUNT_GET) {
+      void readPageAccountState().then(sendResponse);
+      return true;
+    }
+    if (parsed.type === PAGE_ACCOUNT_CLEAR) {
+      void clearPageAccount().then(sendResponse);
+      return true;
+    }
+    if (parsed.type === PAGE_ACCOUNT_DIAGNOSE) {
+      void requestPageDiagnose().then(sendResponse);
+      return true;
+    }
   });
 
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
