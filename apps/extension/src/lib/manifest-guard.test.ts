@@ -16,13 +16,18 @@ const EXPECTED_HOSTS = [
   'https://fapi.binance.com/fapi/v1/userTrades*',
   'https://fapi.binance.com/fapi/v1/income*',
   'https://fapi.binance.com/fapi/v1/premiumIndex*',
+  'https://fapi.binance.com/fapi/v1/ticker/24hr*',
+  'https://fapi.binance.com/fapi/v1/exchangeInfo*',
   'https://api.alternative.me/fng/*',
   'wss://fstream.binance.com/*',
   'https://trade.swal.network/api/news*',
   'https://trade.swal.network/api/explain*',
+  'https://trade.swal.network/api/movers-stats*',
   'ws://127.0.0.1/*',
   'http://127.0.0.1/*',
 ];
+
+const EXPECTED_OPTIONAL_PERMISSIONS = ['notifications'];
 
 const EXPECTED_OPTIONAL = [
   'https://api.binance.com/sapi/v1/account/apiRestrictions*',
@@ -46,6 +51,8 @@ const EXPECTED_CSP =
     'https://fapi.binance.com/fapi/v1/userTrades',
     'https://fapi.binance.com/fapi/v1/income',
     'https://fapi.binance.com/fapi/v1/premiumIndex',
+    'https://fapi.binance.com/fapi/v1/ticker/24hr',
+    'https://fapi.binance.com/fapi/v1/exchangeInfo',
     'wss://fstream.binance.com',
     'https://api.alternative.me/fng/',
     'https://trade.swal.network/api/',
@@ -76,6 +83,7 @@ function checkHosts(hosts: string[]) {
     'wss://fstream.binance.com/',
     'https://trade.swal.network/api/news',
     'https://trade.swal.network/api/explain',
+    'https://trade.swal.network/api/movers-stats',
     'ws://127.0.0.1/',
     'http://127.0.0.1/'
   ];
@@ -85,7 +93,7 @@ function checkHosts(hosts: string[]) {
        throw new Error(`Broad host permission found: ${host}`);
     }
 
-    if (host.includes('trade.swal.network') && !host.includes('/api/news') && !host.includes('/api/explain')) {
+    if (host.includes('trade.swal.network') && !host.includes('/api/news') && !host.includes('/api/explain') && !host.includes('/api/movers-stats')) {
       throw new Error(`trade.swal.network host permission too broad: ${host}`);
     }
 
@@ -119,16 +127,15 @@ describe('Manifest Guard', () => {
     it('should have minimal permissions for chrome', async () => {
       const manifest = await getManifest('chrome');
       const permissions = manifest.permissions || [];
-      const allowed = ['storage', 'sidePanel'];
-      permissions.forEach((p: string) => expect(allowed).toContain(p));
-      expect(permissions.every((p: string) => allowed.includes(p))).toBe(true);
+      expect(permissions).toEqual(['storage', 'sidePanel', 'alarms']);
+      expect(manifest.optional_permissions).toEqual(EXPECTED_OPTIONAL_PERMISSIONS);
     });
 
     it('should not contain forbidden permissions for chrome', async () => {
       const manifest = await getManifest('chrome');
       const permissions = manifest.permissions || [];
-      const forbidden = ['tabs', 'cookies', 'webRequest', 'webRequestBlocking', 'history', 'bookmarks', 'downloads', 'management', 'scripting', 'declarativeNetRequest', 'activeTab'];
-      permissions.forEach((p: string) => expect(forbidden).not.toContain(p));
+      const forbidden = ['tabs', 'cookies', 'webRequest', 'webRequestBlocking', 'history', 'bookmarks', 'downloads', 'management', 'scripting', 'declarativeNetRequest', 'activeTab', 'offscreen'];
+      for (const p of [...permissions, ...(manifest.optional_permissions || [])]) expect(forbidden).not.toContain(p);
     });
 
     it('should lock content security policy', async () => {
@@ -178,16 +185,15 @@ describe('Manifest Guard', () => {
     it('should have minimal permissions for firefox', async () => {
       const manifest = await getManifest('firefox');
       const permissions = manifest.permissions || [];
-      const allowed = ['storage'];
-      permissions.forEach((p: string) => expect(allowed).toContain(p));
-      expect(permissions.every((p: string) => allowed.includes(p))).toBe(true);
+      expect(permissions).toEqual(['storage', 'alarms']);
+      expect(manifest.optional_permissions).toEqual(EXPECTED_OPTIONAL_PERMISSIONS);
     });
 
     it('should not contain forbidden permissions for firefox', async () => {
       const manifest = await getManifest('firefox');
       const permissions = manifest.permissions || [];
-      const forbidden = ['tabs', 'cookies', 'webRequest', 'webRequestBlocking', 'history', 'bookmarks', 'downloads', 'management', 'scripting', 'declarativeNetRequest', 'activeTab'];
-      permissions.forEach((p: string) => expect(forbidden).not.toContain(p));
+      const forbidden = ['tabs', 'cookies', 'webRequest', 'webRequestBlocking', 'history', 'bookmarks', 'downloads', 'management', 'scripting', 'declarativeNetRequest', 'activeTab', 'offscreen'];
+      for (const p of [...permissions, ...(manifest.optional_permissions || [])]) expect(forbidden).not.toContain(p);
     });
 
     it('should lock content security policy', async () => {

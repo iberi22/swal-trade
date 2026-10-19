@@ -18,6 +18,20 @@ for f in $(find workers/public-site/static -name '*.js' ! -path '*/vendor/*'); d
 done
 bash -n scripts/publish-public-snapshot.sh || fail=1
 
+step "Tests de la extensión"
+if [ -d apps/extension/node_modules ]; then
+  (cd apps/extension && npx --no-install vitest run) || fail=1
+else
+  echo "apps/extension/node_modules no existe: se omite vitest (ejecuta npm install en apps/extension)"
+fi
+
+step "Tests del Radar"
+python3 -I -m unittest discover -s radar/tests -t . || fail=1
+
+step "Documentación"
+node scripts/check-docs.mjs || fail=1
+node scripts/check-security-claims.mjs || fail=1
+
 step "gitleaks"
 if command -v gitleaks >/dev/null 2>&1; then
   gitleaks detect --no-git -s . --redact || fail=1

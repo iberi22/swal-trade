@@ -27,6 +27,9 @@ Este documento complementa el [resumen de amenazas y vulnerabilidades](./SECURIT
 | La CSP limita `connect-src` a una lista exacta de destinos | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should keep connect-src to the exact list |
 | El manifest no pide permisos prohibidos (`downloads`, `tabs`, `scripting`, `cookies`, `<all_urls>`) | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should not contain forbidden permissions for chrome |
 | Ninguna respuesta del background lleva la clave de API, el secreto ni la clave de la IA | `apps/extension/src/lib/background/router.ts` | apps/extension/src/lib/background/router.test.ts::never replies with the key or the secret |
+| El escáner solo lee datos públicos y nunca importa la cuenta ni la IA ni usa el enrutador `acct:`/`ai:` | `apps/extension/src/lib/scanner/scanner-privacy.test.ts` | apps/extension/src/lib/scanner/scanner-privacy.test.ts::scanner modules never import account or ai and never use the acct:/ai: router |
+| El permiso `notifications` es opcional y `alarms` es el único permiso nuevo obligatorio; el manifest sigue sin `tabs`, `scripting` ni `offscreen` | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should have minimal permissions for chrome |
+| El manifest cubre las rutas del escáner con una lista exacta (`ticker/24hr`, `exchangeInfo`, `movers-stats`) | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should have exact set of host_permissions (snapshot-style) |
 
 ## Qué NO está garantizado
 
@@ -40,3 +43,4 @@ Este modelo de seguridad es una mitigación estructurada, pero **no garantiza** 
 * **Malware con acceso al perfil del navegador:** la bóveda sella las claves de IA con AES-GCM solo para frenar una lectura casual. Un programa malicioso con acceso a tu perfil puede leer lo que la extensión puede leer.
 * **Modelos gratuitos:** los modelos `*-free` pueden usar lo que envías para entrenar. El panel lo avisa, pero no puede impedirlo.
 * **Una clave con futuros habilitados puede operar en Binance:** la extensión solo tiene rutas de lectura y rechaza claves con retiros, pero si la clave que pegaste tiene trading de futuros habilitado, cualquier otro programa que la tenga puede abrir y cerrar órdenes en Binance. Usa una clave de solo lectura con IP restringida.
+* **Datos públicos de Binance:** el escáner usa datos públicos que pueden venir erróneos o con retraso, y los límites de peticiones (rate limits) pueden pausar el escaneo.
