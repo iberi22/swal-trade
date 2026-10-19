@@ -122,11 +122,22 @@ describe('serializeForLlm con el payload de un dibujo', () => {
     symbol: 'BTCUSDT',
     side: 'long' as const,
     entry_mode: 'mercado' as const,
+    entry_distance_pct: 0,
     risk_pct: 2,
+    reward_pct: 6,
     rr: 3,
     rr_neto: 2.81,
-    niveles: [{ label: 'PDH', distance_pct: 2, distance_atr: 1 }],
-    checks: [{ code: 'tiny_stop', sev: 'warn' as const, text: 'stop menor a 0,3 %' }],
+    stop_atr1h: 1,
+    target_atr1h: 3,
+    target_atr4h: 1.5,
+    target_atr_d: null,
+    fee_share_of_risk: 5,
+    funding_cost_pct_risk_8h: 0.5,
+    funding_side_pays: true,
+    smallest_horizon: '24h' as const,
+    // Solo códigos: ni etiquetas de nivel ni textos de check.
+    niveles: [{ kind: 'pivot', kinds: ['pivot'], distance_pct: 2, distance_atr: 1 }],
+    checks: [{ code: 'tiny_stop', sev: 'warn' as const }],
     honest_line: 'Lectura de geometría y costes, no una predicción.',
   };
 
@@ -139,8 +150,8 @@ describe('serializeForLlm con el payload de un dibujo', () => {
   it('tira niveles y checks antes que pasarse del tope', () => {
     const heavy = {
       ...drawing,
-      niveles: Array.from({ length: 200 }, () => ({ label: 'x'.repeat(40), distance_pct: 1, distance_atr: 1 })),
-      checks: Array.from({ length: 200 }, (_v, i) => ({ code: `c${i}`, sev: 'info' as const, text: 'y'.repeat(40) })),
+      niveles: Array.from({ length: 200 }, () => ({ kind: 'pivot', kinds: ['pivot'], distance_pct: 1, distance_atr: 1 })),
+      checks: Array.from({ length: 200 }, (_v, i) => ({ code: `c${i}`, sev: 'info' as const })),
     };
     const s = serializeForLlm(heavy);
     expect(s.length).toBeLessThanOrEqual(PAYLOAD_MAX_CHARS);

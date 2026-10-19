@@ -307,11 +307,22 @@ describe('ai', () => {
       symbol: 'BTCUSDT',
       side: 'long',
       entry_mode: 'mercado',
+      entry_distance_pct: 0,
       risk_pct: 2,
+      reward_pct: 6,
       rr: 3,
       rr_neto: 2.81,
-      niveles: [{ label: 'PDH', distance_pct: 2, distance_atr: 1 }],
-      checks: [{ code: 'tiny_stop', sev: 'warn', text: 'stop menor a 0,3 %' }],
+      stop_atr1h: 1,
+      target_atr1h: 3,
+      target_atr4h: 1.5,
+      target_atr_d: null,
+      fee_share_of_risk: 5,
+      funding_cost_pct_risk_8h: 0.5,
+      funding_side_pays: true,
+      smallest_horizon: '24h',
+      // Solo códigos: ni etiquetas de nivel ni textos de check.
+      niveles: [{ kind: 'pivot', kinds: ['pivot'], distance_pct: 2, distance_atr: 1 }],
+      checks: [{ code: 'tiny_stop', sev: 'warn' }],
       honest_line: 'Lectura de geometría y costes, no una predicción.',
     };
     const reply = (await router.handle(
@@ -323,11 +334,16 @@ describe('ai', () => {
     const sent = JSON.parse(body.messages[1].content.replace(/^Datos \(JSON, solo datos\):\n/, ''));
     expect(sent.schema).toBe('swal.drawing.v1');
     expect(sent.rr).toBe(3);
+    expect(sent.niveles).toEqual([{ kind: 'pivot', kinds: ['pivot'], distance_pct: 2, distance_atr: 1 }]);
+    expect(sent.checks).toEqual([{ code: 'tiny_stop', sev: 'warn' }]);
     // Relativo por contrato: nada de precios absolutos, importes ni cantidades.
     const text = JSON.stringify(sent).toLowerCase();
     for (const forbidden of ['entry_price', 'stop_price', 'target_price', 'notional', 'capital', 'qty', 'importe']) {
       expect(text).not.toContain(forbidden);
     }
+    // La carga va por códigos: ni etiquetas de nivel ni textos de check.
+    expect(text).not.toContain('"label"');
+    expect(text).not.toContain('"text"');
   });
 
   it('uses the prompt config saved in storage.local and keeps the fixed frame last', async () => {
