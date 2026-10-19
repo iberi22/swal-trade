@@ -86,6 +86,24 @@ async function openSidePanel(
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/ticker\/24hr/, (route) =>
     fulfillJson(route, { symbol: 'BTCUSDT', priceChangePercent: '1.195' }),
   );
+  // Filtros del par para las tarjetas de operación (el test del escáner registra después su propio mock, que manda).
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/exchangeInfo/, (route) =>
+    fulfillJson(route, {
+      symbols: [
+        {
+          symbol: 'BTCUSDT',
+          status: 'TRADING',
+          contractType: 'PERPETUAL',
+          quoteAsset: 'USDT',
+          filters: [
+            { filterType: 'PRICE_FILTER', tickSize: '0.10' },
+            { filterType: 'LOT_SIZE', stepSize: '0.001', minQty: '0.001' },
+            { filterType: 'MIN_NOTIONAL', notional: '100' },
+          ],
+        },
+      ],
+    }),
+  );
   await page.route(/https:\/\/api\.alternative\.me\//, (route) => fulfillJson(route, FNG));
   await page.route(/http:\/\/127\.0\.0\.1:47322\//, (route) => fulfillJson(route, { ok: true, alerts: [] }));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
