@@ -93,6 +93,20 @@ def evaluate(entry_i, d, h, l, c, o, risk, entry):
     return net_r, win, rets
 
 
+HOLD_BARS = 12  # 1 h
+DISASTER_STOP = 0.08
+
+
+def hold_eval(entry_i, d, h, l, c, o, entry):
+    """Time exit after 1 h with a wide disaster stop (8%). Returns the net return of the trade."""
+    stop = entry * (1 - d * DISASTER_STOP)
+    last = min(entry_i + HOLD_BARS, len(c) - 1)
+    for j in range(entry_i, last + 1):
+        if (d == 1 and l[j] <= stop) or (d == -1 and h[j] >= stop):
+            return -DISASTER_STOP - COST
+    return d * (c[last] / entry - 1) - COST
+
+
 def collect(data, universe):
     vol24 = universe['volume24h']
     btc = data.get('BTCUSDT')
@@ -138,9 +152,11 @@ def collect(data, universe):
                         bmove = (btc_c[bj] / btc_c[bj - W] - 1) * 100
                     for mode, d in (('follow', mdir), ('fade', -mdir)):
                         net_r, win, rets = evaluate(i + 1, d, h, l, c, o, risk, entry)
+                        hold_ret = hold_eval(i + 1, d, h, l, c, o, entry)
                         events.append({'sym': sym, 't': t[i], 'w': wname, 'T': T, 'mdir': mdir, 'mode': mode,
                                        'tier': tier, 'net_r': net_r, 'win': win, 'r6': rets[6], 'r12': rets[12],
-                                       'r48': rets[48], 'spike': spike, 'bmove': bmove, 'risk_pct': risk / entry})
+                                       'r48': rets[48], 'spike': spike, 'bmove': bmove, 'risk_pct': risk / entry,
+                                       'hold': hold_ret, 'dir': d})
     return events
 
 
@@ -191,6 +207,75 @@ def grade(s):
     return 'no_evidence'
 
 
+def tier3(q24):
+    return 'hi' if q24 >= 100_000_000 else ('mid' if q24 >= 20_000_000 else 'lo')
+
+
+def contract_cells(events, universe, spec_version='2026-10-19.1'):
+    """Cells for the swal.movers-stats.v1 contract. Two exit styles share the contract: 'move30' scores the
+    first 1R touch (ATR stop) and 'move30_hold1h' a 1 h time exit under an 8% disaster stop."""
+    vol24 = universe['volume24h']
+    out = []
+    groups = defaultdict(list)
+    for e in events:
+        if e['w'] != '30m' or e['T'] not in (3.0, 5.0, 7.0):
+            continue
+        tier = tier3(vol24.get(e['sym'], 0))
+        ctx = 'idio' if (e['bmove'] is not None and abs(e['bmove']) < e['T'] / 3) else (
+            'market_wide' if e['bmove'] is not None else None)
+        for style in ('move30', 'move30_hold1h'):
+            for c in {'all', ctx} - {None}:
+                for t in ({tier, 'hi', 'mid', 'lo'} if False else {tier}):
+                    groups[(style, e['mode'], 'long' if e['dir'] == 1 else 'short', int(e['T']), t, c)].append(e)
+    for (style, mode, direction, T, tier, ctx), evs in sorted(groups.items()):
+        n = len(evs)
+        if n < 30:
+            continue
+        key = 'net_r' if style == 'move30' else 'hold'
+        if style == 'move30':
+            vals = [e['net_r'] for e in evs]
+            wins = sum(e['win'] for e in evs)
+            median_stop = sorted(e['risk_pct'] for e in evs)[n // 2]
+            breakeven = min(1.0, max(0.0, (1 + COST / median_stop) / 2))
+            scale = 1.0
+        else:
+            vals = [e['hold'] for e in evs]
+            wins = sum(1 for v in vals if v > 0)
+            median_stop = DISASTER_STOP
+            pos = [v for v in vals if v > 0]
+            neg = [-v for v in vals if v <= 0]
+            breakeven = (sum(neg) / len(neg)) / ((sum(pos) / len(pos)) + (sum(neg) / len(neg))) if pos and neg else 0.5
+            scale = 1 / DISASTER_STOP  # R relative to the disaster stop
+        clusters = len({e['t'] // 1_800_000 for e in evs})
+        n_eff = max(1, min(n, clusters))
+        lo, hi = wilson(round(wins / n * n_eff), n_eff)
+        wr = wins / n
+        lo, hi = min(lo, wr), max(hi, wr)
+        by_day = defaultdict(list)
+        for e, v in zip(evs, vals):
+            by_day[e['t'] // 86_400_000].append(v * scale)
+        ci = cluster_ci(by_day)
+        mean = sum(vals) / n * scale
+        ordered = sorted(zip((e['t'] for e in evs), (v * scale for v in vals)))
+        half = len(ordered) // 2
+        m1 = sum(v for _, v in ordered[:half]) / max(1, half)
+        m2 = sum(v for _, v in ordered[half:]) / max(1, len(ordered) - half)
+        ci_lo, ci_hi = (ci if ci else (mean, mean))
+        ci_lo, ci_hi = min(ci_lo, mean), max(ci_hi, mean)
+        if clusters >= 30 and ci_hi < 0:
+            g = 'negative'
+        elif clusters >= 30 and ci_lo > 0 and m1 > 0 and m2 > 0:
+            g = 'promising'
+        else:
+            g = 'no_evidence'
+        out.append({'signal': style, 'mode': mode, 'direction': direction, 'threshold': T, 'vol_tier': tier,
+                    'context': ctx, 'n': n, 'n_clusters': clusters, 'wins_1r': wins, 'win_rate': wr,
+                    'ci_low': lo, 'ci_high': hi, 'breakeven': breakeven, 'mean_net_r': mean,
+                    'net_r_ci_low': ci_lo, 'net_r_ci_high': ci_hi, 'median_stop_pct': median_stop,
+                    'events_per_day': n / 90.0, 'grade': g, 'r_first_half': m1, 'r_second_half': m2})
+    return out
+
+
 def main():
     klines_dir, uni, out_md, out_json = sys.argv[1:5]
     universe = json.load(open(uni))
@@ -238,8 +323,26 @@ def main():
                 continue
             ci = f"{s['r_ci'][0]:+.2f}..{s['r_ci'][1]:+.2f}" if s['r_ci'] else 'n/d'
             L.append(f"| {mode} | {name} | {s['n']} | {s['win_rate']:.0%} | {s['mean_net_r']:+.2f} | {ci} |")
+    cc = contract_cells(events, universe)
+    L += ['', '## Por direccion de la operacion (contrato swal.movers-stats.v1)\n',
+          'Salida `move30`: primer toque de 1R con stop de 1,5 ATR. Salida `move30_hold1h`: 1 h con stop de desastre del 8 %; el R es relativo a ese stop. '
+          'Contexto `all`. Intervalos: bootstrap por dia; n_clusters = franjas de 30 min distintas.\n',
+          '| salida | modo | direccion | umbral | volumen | n | n_clusters | acierto | R neto | IC95 R | 1a/2a mitad | grado |',
+          '|---|---|---|---|---|---|---|---|---|---|---|---|']
+    for c in cc:
+        if c['context'] != 'all' or c['vol_tier'] not in ('mid', 'hi', 'lo'):
+            continue
+        L.append(f"| {c['signal']} | {c['mode']} | {c['direction']} | {c['threshold']}% | {c['vol_tier']} | {c['n']} | {c['n_clusters']} | "
+                 f"{c['win_rate']:.0%} | {c['mean_net_r']:+.3f} | {c['net_r_ci_low']:+.3f}..{c['net_r_ci_high']:+.3f} | "
+                 f"{c['r_first_half']:+.3f} / {c['r_second_half']:+.3f} | {c['grade']} |")
     open(out_md, 'w').write('\n'.join(L) + '\n')
-    json.dump({'schema': 'swal.movers-stats.v1', 'method': 'replay_in_sample', 'cells': cells}, open(out_json, 'w'))
+    doc = {'schema': 'swal.movers-stats.v1', 'method': 'study', 'spec_version': '2026-10-19.1',
+           'period': {'from': '2026-07-20', 'to': '2026-10-18'},
+           'universe': {'quote': 'USDT', 'top_n': len(data), 'rank_rule': 'volume24h_today'},
+           'bar': '5m', 'cost_round_trip': COST, 'evaluator': 'radar.movers_study',
+           'cells': [{k: v for k, v in c.items() if k not in ('r_first_half', 'r_second_half')} for c in cc][:500],
+           'note': 'Replay en muestra de 90 dias, no evidencia hacia adelante. Sesgo de supervivencia.'}
+    json.dump(doc, open(out_json, 'w'))
     print('\n'.join(L))
 
 
