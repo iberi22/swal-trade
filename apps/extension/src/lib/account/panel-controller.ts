@@ -7,11 +7,12 @@ export const SNAPSHOT_POLL_MS = 10_000;
 /** Paso del reloj interno: reevalúa el modo (p. ej. fin de `loading`) sin red. */
 export const CLOCK_MS = 1_000;
 
-export type PanelTab = 'operacion' | 'analisis' | 'ajustes';
+export type PanelTab = 'operacion' | 'analisis' | 'ajustes' | 'escaner';
 export const PANEL_TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'operacion', label: 'Operación' },
   { id: 'analisis', label: 'Análisis' },
   { id: 'ajustes', label: 'Ajustes' },
+  { id: 'escaner', label: 'Escáner' },
 ];
 export const PANEL_TAB_KEY = 'panelTab';
 

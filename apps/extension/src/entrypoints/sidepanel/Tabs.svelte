@@ -7,10 +7,22 @@
     operacion,
     analisis,
     ajustes,
-  }: { operacion: Snippet; analisis: Snippet; ajustes: Snippet } = $props();
+    escaner,
+    onTabChange,
+  }: {
+    operacion: Snippet;
+    analisis: Snippet;
+    ajustes: Snippet;
+    escaner: Snippet;
+    /** Avisa de la pestaña elegida (incluida la restaurada al abrir). */
+    onTabChange?: (tab: PanelTab) => void;
+  } = $props();
 
   let selected = $state<PanelTab>('operacion');
   let touched = false;
+  $effect(() => {
+    onTabChange?.(selected);
+  });
   const buttons: Record<string, HTMLButtonElement | undefined> = {};
 
   onMount(() => {
@@ -55,7 +67,7 @@
     {/each}
   </div>
 
-  <!-- Los tres paneles siguen montados: cambiar de pestaña no reinicia la IA ni el radar. -->
+  <!-- Los cuatro paneles siguen montados: cambiar de pestaña no reinicia la IA ni el radar. -->
   <div role="tabpanel" id="tabpanel-operacion" aria-labelledby="tab-operacion" hidden={selected !== 'operacion'}>
     {@render operacion()}
   </div>
@@ -64,6 +76,9 @@
   </div>
   <div role="tabpanel" id="tabpanel-ajustes" aria-labelledby="tab-ajustes" hidden={selected !== 'ajustes'}>
     {@render ajustes()}
+  </div>
+  <div role="tabpanel" id="tabpanel-escaner" aria-labelledby="tab-escaner" hidden={selected !== 'escaner'}>
+    {@render escaner()}
   </div>
 </div>
 
@@ -84,7 +99,7 @@
   }
   .tablist {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.25rem;
     background: hsl(var(--surface));
     border-radius: var(--radius);
@@ -95,7 +110,7 @@
     border: 0;
     border-radius: calc(var(--radius) - 0.2rem);
     padding: 0.4rem 0.3rem;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: hsl(var(--muted-foreground));
     cursor: pointer;
   }
