@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -133,6 +134,10 @@ class RadarStore:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_user_trades_symbol ON user_trades (symbol);')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_user_trades_alert ON user_trades (alert_id);')
 
+            cols = [r['name'] for r in conn.execute('PRAGMA table_info(alerts);').fetchall()]
+            if 'meta' not in cols:
+                conn.execute('ALTER TABLE alerts ADD COLUMN meta TEXT;')
+
             cur = conn.execute('SELECT version FROM schema_version;')
             row = cur.fetchone()
             if not row:
@@ -156,8 +161,8 @@ class RadarStore:
                 INSERT INTO alerts (
                     source, symbol, tf, kind, title, direction,
                     entry, stop, target_1r, target_2r, strength,
-                    status, created_at, mfe_r, mae_r, dedupe_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0.0, ?);
+                    status, created_at, mfe_r, mae_r, dedupe_key, meta
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 0.0, ?, ?);
             """, (
                 alert.get('source', 'core'),
                 alert['symbol'],
@@ -172,7 +177,8 @@ class RadarStore:
                 float(alert.get('strength', 0.5)),
                 alert.get('status', 'pending'),
                 float(now),
-                dedupe_key
+                dedupe_key,
+                json.dumps(alert['meta'], separators=(',', ':'), sort_keys=True) if alert.get('meta') else None
             ))
             return cur.lastrowid
 
@@ -180,7 +186,16 @@ class RadarStore:
         with self.get_connection() as conn:
             cur = conn.execute('SELECT * FROM alerts WHERE id = ?;', (alert_id,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            d = dict(row)
+            raw = d.pop('meta', None)
+            if raw:
+                try:
+                    d['meta'] = json.loads(raw)
+                except ValueError:
+                    pass
+            return d
 
     def update_alert(self, alert_id: int, updates: Dict[str, Any]) -> bool:
         if not updates:
@@ -247,6 +262,11 @@ class RadarStore:
                 'user_entry': r['user_entry'],
                 'user_pnl': r['user_pnl'],
             })
+            if r.get('meta'):
+                try:
+                    out[-1]['meta'] = json.loads(r['meta'])
+                except ValueError:
+                    pass
 
         # Apply cell grading and map to results
         stats = self.get_stats()

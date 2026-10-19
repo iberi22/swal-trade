@@ -23,6 +23,7 @@ from radar.api import create_api_server
 from radar import heartbeat
 from radar.retention import prune_alerts
 from radar.notify import Notifier
+from radar.movers_source import MoversSource, movers_enabled
 
 DEFAULT_SYMBOLS = ['BTCUSDC', 'ETHUSDC']
 DEFAULT_TFS = ['15m', '1h']
@@ -33,7 +34,7 @@ def backoff_seconds(consecutive_failures: int) -> int:
     return min(60, 2 ** consecutive_failures)
 
 
-def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier=None):
+def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier=None, movers_source=None):
     now_ts = time.time()
     state['last_scan'] = format_ts(now_ts)
 
@@ -67,6 +68,19 @@ def run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_time
             notifier.notify_new(new_alerts)
         except Exception as e:
             print(f'radar: notify_new failed: {e.__class__.__name__}')
+
+    # 1b. Movers scanner (opt-in, RADAR_MOVERS=1). A failure here never stops the BTC/ETH radar.
+    if movers_source is not None:
+        try:
+            r = movers_source.run(store, binance_client)
+            if r.get('status') == 'ok':
+                print(f"radar: movers symbols={r.get('symbols')} failed={r.get('failed')} events={r.get('events')} "
+                      f"alerts={len(r.get('alerts', []))} created={r.get('created')} market={len(r.get('market', []))}")
+            elif r.get('status') == 'aborted':
+                print(f"radar: movers cycle aborted failed={r.get('failed')}/{r.get('symbols')}")
+        except Exception as e:
+            print(f'radar: movers failed: {e.__class__.__name__}')
+            state['errors'] = state.get('errors', 0) + 1
 
     # 2. Evaluation on 1m klines
     active = store.get_active_alerts()
@@ -153,6 +167,7 @@ def run_radar():
     binance_client = BinanceClient()
     core_source = CoreSource(core_path=args.core_path)
     notifier = Notifier.from_env(os.environ)
+    movers_source = MoversSource() if movers_enabled() else None
 
     state: Dict[str, Any] = {
         'version': '1.0.0',
@@ -246,7 +261,7 @@ def run_radar():
     consecutive_failures = 0
     while not stop_event.is_set():
         try:
-            run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier)
+            run_cycle(store, binance_client, core_source, symbols, tfs, last_closed_times, state, loop_count, notifier, movers_source)
             consecutive_failures = 0
             loop_count += 1
             stop_event.wait(60)
