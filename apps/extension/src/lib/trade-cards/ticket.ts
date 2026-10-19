@@ -1,7 +1,7 @@
 import type { LevelRow } from '../context/levels';
 import type { RulesSettings } from '../settings';
 import {
-  calculatePositionSize,
+  calculatePositionSizeWithFees,
   defaultScaleEntries,
   floorToStep,
   planScaleIn,
@@ -28,6 +28,8 @@ export const FEES_NOTE = 'estimación: límite en reposo 0,02 % maker; stop y me
 const MIN_STOP_PCT = 0.15;
 const FAR_ENTRY_ATR = 3;
 const MAX_TPS = 4;
+/** Una entrada solo reposa (maker) si está a más de este % del precio, del lado correcto. */
+const RESTING_ENTRY_PCT = 0.05;
 
 export interface SymbolFilters {
   tickSize: number;
@@ -144,7 +146,12 @@ function build(input: BuildTicketInput): TicketResult {
 
   /* Tamaño */
   const marketOnly = preset.entry.kind === 'market' && !preset.scaleIn;
-  const entryFeeRate = marketOnly ? TAKER_FEE_RATE : MAKER_FEE_RATE;
+  // Maker solo si la entrada reposa del lado correcto del precio (> 0,05 %).
+  // Si el redondeo la deja en el otro lado, al enviarla cruzaría: taker (stop).
+  const entryDistancePct = price > 0 ? ((entry1 - price) / price) * 100 : 0;
+  const entryRests = long ? entryDistancePct < -RESTING_ENTRY_PCT : entryDistancePct > RESTING_ENTRY_PCT;
+  const entryIsTaker = marketOnly || !entryRests;
+  const entryFeeRate = entryIsTaker ? TAKER_FEE_RATE : MAKER_FEE_RATE;
   const feeRate = entryFeeRate + TAKER_FEE_RATE;
   const budgetRule = capital * (rules.maxRiskPct / 100);
   const direction = side;
@@ -155,7 +162,6 @@ function build(input: BuildTicketInput): TicketResult {
   const warnings: TicketWarning[] = [];
 
   let entries: TicketEntry[] = [];
-  let lossIncludesFees = false;
   let leverage: number;
   let degradedNote = false;
 
@@ -179,7 +185,10 @@ function build(input: BuildTicketInput): TicketResult {
 
   if (preset.size.basis === 'risk') {
     if (!tranchesN) {
-      const sized = calculatePositionSize({ capital, riskPct: preset.size.pct, direction, entry: entry1, stop });
+      const sized = calculatePositionSizeWithFees({
+        capital, riskPct: preset.size.pct, direction, entry: entry1, stop,
+        entryFeeRate, exitFeeRate: TAKER_FEE_RATE,
+      });
       if (!sized.valid) return fail(sized.error);
       const qty = floorToStep(sized.quantity, filters?.stepSize);
       entries = [{ price: entry1, qty, weightPct: 100 }];
@@ -192,21 +201,23 @@ function build(input: BuildTicketInput): TicketResult {
       });
       if (!plan.valid) return fail(plan.error);
       degradedNote = plan.degraded;
-      lossIncludesFees = true;
       entries = plan.tranches.map((t, i) => ({ price: t.price, qty: t.qty, weightPct: Math.round((plan.weights[i] as number) * 100) }));
       leverage = preset.leverage === 'min' ? Math.min(plan.minLeverage, Math.max(1, Math.floor(rules.maxLeverage))) : preset.leverage;
     } else {
       const avg = prices.reduce((s, p, i) => s + (weights[i] as number) * p, 0);
       const riskMax = capital * (preset.size.pct / 100);
-      const qTotal = riskMax / (Math.abs(stop - avg) + feeRate * avg);
+      const qTotal = riskMax / (Math.abs(stop - avg) + avg * entryFeeRate + stop * TAKER_FEE_RATE);
       entries = prices.map((p, i) => ({ price: p, qty: floorToStep((weights[i] as number) * qTotal, filters?.stepSize), weightPct: Math.round((weights[i] as number) * 100) }));
-      lossIncludesFees = true;
       const notional = entries.reduce((s, e) => s + e.qty * e.price, 0);
       leverage = preset.leverage === 'min' ? Math.min(Math.max(1, Math.ceil(notional / capital)), Math.max(1, Math.floor(rules.maxLeverage))) : preset.leverage;
     }
   } else {
     const marginUsd = capital * (preset.size.pct / 100);
-    const lossPerNotional = prices.reduce((s, p, i) => s + (weights[i] as number) * (Math.abs(p - stop) / p), 0);
+    // Pérdida en el stop por unidad de nocional, comisiones incluidas.
+    const lossPerNotional = prices.reduce(
+      (s, p, i) => s + (weights[i] as number) * ((Math.abs(p - stop) + p * entryFeeRate + stop * TAKER_FEE_RATE) / p),
+      0,
+    );
     if (preset.leverage === 'min') {
       // Con margen fijo, 'min' = el mayor apalancamiento (hasta tu máximo) cuya pérdida en el stop cabe en tu regla.
       const fit = Math.floor(budgetRule / (marginUsd * lossPerNotional) + 1e-9);
@@ -227,8 +238,11 @@ function build(input: BuildTicketInput): TicketResult {
   const notionalRaw = entries.reduce((s, e) => s + e.qty * e.price, 0);
   const avgEntry = notionalRaw / totalQty;
   const priceLoss = entries.reduce((s, e) => s + e.qty * Math.abs(e.price - stop), 0);
-  const feeUsd = roundToDecimals(notionalRaw * feeRate, 2);
-  const lossAtStopUsd = roundToDecimals(lossIncludesFees ? priceLoss + notionalRaw * feeRate : priceLoss, 2);
+  const entryFeeUsd = entries.reduce((s, e) => s + e.qty * e.price * entryFeeRate, 0);
+  const exitFeeUsd = totalQty * stop * TAKER_FEE_RATE;
+  const feeUsd = roundToDecimals(entryFeeUsd + exitFeeUsd, 2);
+  const lossAtStopUsd = roundToDecimals(priceLoss + entryFeeUsd + exitFeeUsd, 2);
+  const lossIncludesFees = true;
   const lossPct = roundToDecimals((lossAtStopUsd / capital) * 100, 2);
   const notionalUsd = roundToDecimals(notionalRaw, 2);
   const marginUsd = roundToDecimals(notionalRaw / leverage, 2);
@@ -277,6 +291,16 @@ function build(input: BuildTicketInput): TicketResult {
     warnings.push(warn('entry_far', `entrada a ${fmt(Math.abs(entry1 - price) / atr, 1)} ATR(1h): el precio puede no llegar`));
   }
   if (degradedNote) warnings.push(warn('scale_degraded', 'tramos reducidos a 2 por el mínimo del par'));
+  if (preset.entry.kind === 'limit_level' && !entryRests) {
+    warnings.push(
+      warn(
+        'entry_stop',
+        long
+          ? 'la entrada redondeada queda por encima del precio: sería una orden stop (comisión taker)'
+          : 'la entrada redondeada queda por debajo del precio: sería una orden stop (comisión taker)',
+      ),
+    );
+  }
   if (!filters) {
     warnings.push(warn('no_filters', 'redondea a los pasos del par'));
   } else if (entries.some((e) => e.qty < filters.minQty || e.qty * e.price < filters.minNotional)) {
@@ -302,7 +326,13 @@ function build(input: BuildTicketInput): TicketResult {
     lossAtStopPctOfCapital: lossPct,
     highRisk: lossPct > 2,
     feeUsd,
-    fees: { makerRate: MAKER_FEE_RATE, takerRate: TAKER_FEE_RATE, note: FEES_NOTE },
+    fees: {
+      makerRate: MAKER_FEE_RATE,
+      takerRate: TAKER_FEE_RATE,
+      entryRate: entryFeeRate,
+      exitRate: TAKER_FEE_RATE,
+      note: FEES_NOTE,
+    },
     rrToFirstTp: tps[0]?.rMultiple ?? null,
     warnings,
     basis: { basis: preset.size.basis, pct: preset.size.pct },

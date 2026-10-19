@@ -9,12 +9,14 @@ import {
   buildDrawingCardModel,
   drawingTicketText,
   fundingText,
+  invalidDrawingText,
   levelLines,
   numberLines,
   reachText,
   toolFromAnalysis,
+  type DrawingCardEntry,
 } from './card-model';
-import type { DrawingAnalysis, PositionDrawing } from './types';
+import type { DrawingAnalysis, DrawingAnalysisResult, PositionDrawing } from './types';
 
 const rules: RulesSettings = { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 };
 
@@ -27,8 +29,8 @@ const level = (price: number, label: string): LevelRow => ({
   distanceAtr: null,
 });
 
-function analysis(over: Partial<PositionDrawing> = {}, price = 100): DrawingAnalysis {
-  const drawing: PositionDrawing = {
+function drawing(over: Partial<PositionDrawing> = {}): PositionDrawing {
+  return {
     id: 'tv-1',
     side: 'long',
     entry: 100,
@@ -37,8 +39,12 @@ function analysis(over: Partial<PositionDrawing> = {}, price = 100): DrawingAnal
     symbol: 'BTCUSDT',
     ...over,
   };
+}
+
+/** Mismos datos de mercado para todos los casos, para que las cifras sean comparables. */
+function run(d: PositionDrawing = drawing(), price = 100): DrawingAnalysisResult {
   return analyzeDrawing({
-    drawing,
+    drawing: d,
     price,
     levels: [level(102, 'PDH'), level(104, 'EMA 20')],
     atrs: { atr1h: 2, atr4h: 4, atrD: 8 },
@@ -49,47 +55,127 @@ function analysis(over: Partial<PositionDrawing> = {}, price = 100): DrawingAnal
   });
 }
 
+function unwrap(result: DrawingAnalysisResult): DrawingAnalysis {
+  if (!result.ok) throw new Error(result.reason);
+  return result.analysis;
+}
+
+function analysis(over: Partial<PositionDrawing> = {}, price = 100): DrawingAnalysis {
+  return unwrap(run(drawing(over), price));
+}
+
+function entry(over: Partial<PositionDrawing> = {}, price = 100): DrawingCardEntry {
+  const d = drawing(over);
+  return { symbol: d.symbol, id: d.id, result: run(d, price) };
+}
+
+const analysisItems = (model: ReturnType<typeof buildDrawingCardModel>) =>
+  model.state === 'ready' ? model.items.filter((item) => item.kind === 'analysis') : [];
+
 describe('buildDrawingCardModel', () => {
   it('con el ajuste apagado devuelve la línea de lectura y nada más', () => {
-    const model = buildDrawingCardModel({ enabled: false, symbol: 'BTCUSDT', analyses: [analysis()] });
+    const model = buildDrawingCardModel({ enabled: false, symbol: 'BTCUSDT', entries: [entry()] });
     expect(model).toEqual({ state: 'off', text: DRAWING_OFF_TEXT });
   });
 
   it('encendido y sin dibujos para el símbolo devuelve la pista de la pestaña', () => {
-    expect(buildDrawingCardModel({ enabled: true, symbol: 'BTCUSDT', analyses: [] })).toEqual({
+    expect(buildDrawingCardModel({ enabled: true, symbol: 'BTCUSDT', entries: [] })).toEqual({
       state: 'empty',
       hint: DRAWING_EMPTY_HINT,
     });
     const other = buildDrawingCardModel({
       enabled: true,
       symbol: 'ETHUSDT',
-      analyses: [analysis()],
+      entries: [entry()],
     });
     expect(other.state).toBe('empty');
   });
 
   it('enseña como mucho dos y empieza por la última dibujada', () => {
-    const analyses = [
-      analysis({ id: 'a' }),
-      analysis({ id: 'b' }),
-      analysis({ id: 'c', entry: 200, stop: 196, target: 212 }),
+    const entries = [
+      entry({ id: 'a' }),
+      entry({ id: 'b' }),
+      entry({ id: 'c', entry: 200, stop: 196, target: 212 }),
     ];
-    const model = buildDrawingCardModel({ enabled: true, symbol: 'btcusdt', analyses });
+    const model = buildDrawingCardModel({ enabled: true, symbol: 'btcusdt', entries });
     expect(model.state).toBe('ready');
     if (model.state !== 'ready') return;
-    expect(model.tools).toHaveLength(DRAWING_MAX_SHOWN);
-    expect(model.tools.map((t) => t.id)).toEqual(['c', 'b']);
+    expect(model.items).toHaveLength(DRAWING_MAX_SHOWN);
+    expect(analysisItems(model).map((item) => (item.kind === 'analysis' ? item.id : ''))).toEqual([
+      'c',
+      'b',
+    ]);
   });
 
   it('la pista depende del símbolo, no del resto del almacén', () => {
     const model = buildDrawingCardModel({
       enabled: true,
       symbol: 'ETHUSDT',
-      analyses: [analysis(), analysis({ id: 'eth', symbol: 'ETHUSDT' })],
+      entries: [entry(), entry({ id: 'eth', symbol: 'ETHUSDT' })],
     });
     expect(model.state).toBe('ready');
     if (model.state !== 'ready') return;
-    expect(model.tools.map((t) => t.id)).toEqual(['eth']);
+    expect(analysisItems(model).map((item) => (item.kind === 'analysis' ? item.id : ''))).toEqual(['eth']);
+  });
+
+  it('un dibujo inválido ocupa su sitio con el motivo y sin cifras', () => {
+    const model = buildDrawingCardModel({
+      enabled: true,
+      symbol: 'BTCUSDT',
+      entries: [entry({ id: 'bad', stop: 102 })],
+    });
+    expect(model.state).toBe('ready');
+    if (model.state !== 'ready') return;
+    expect(model.items).toEqual([
+      {
+        kind: 'invalid',
+        id: 'bad',
+        text: 'Dibujo no válido: el stop está del lado equivocado (o el objetivo no queda en el sentido de la posición).',
+      },
+    ]);
+    expect(analysisItems(model)).toHaveLength(0);
+  });
+
+  it('un dibujo inválido de otro símbolo no se cuela en la tarjeta', () => {
+    const model = buildDrawingCardModel({
+      enabled: true,
+      symbol: 'BTCUSDT',
+      entries: [entry({ id: 'eth-bad', symbol: 'ETHUSDT', stop: 102 })],
+    });
+    expect(model).toEqual({ state: 'empty', hint: DRAWING_EMPTY_HINT });
+  });
+
+  it('mezcla el motivo inválido y el análisis válido en orden de llegada', () => {
+    const model = buildDrawingCardModel({
+      enabled: true,
+      symbol: 'BTCUSDT',
+      entries: [entry({ id: 'ok' }), entry({ id: 'bad', stop: 102 })],
+    });
+    expect(model.state).toBe('ready');
+    if (model.state !== 'ready') return;
+    expect(model.items.map((item) => `${item.kind}:${item.id}`)).toEqual([
+      'invalid:bad',
+      'analysis:ok',
+    ]);
+  });
+});
+
+describe('invalidDrawingText', () => {
+  it('traduce los códigos de validación a castellano llano', () => {
+    expect(invalidDrawingText('wrong_order')).toContain('Dibujo no válido: el stop está del lado equivocado');
+    expect(invalidDrawingText('non_positive_numbers')).toBe(
+      'Dibujo no válido: los precios tienen que ser números positivos.',
+    );
+    expect(invalidDrawingText('invalid_side')).toBe(
+      'Dibujo no válido: la herramienta no dice si la posición es larga o corta.',
+    );
+    expect(invalidDrawingText('stop_too_far')).toBe(
+      'Dibujo no válido: el stop queda a más de la mitad del precio de entrada.',
+    );
+  });
+
+  it('nunca deja pasar un código desconocido', () => {
+    expect(invalidDrawingText('rm -rf /')).toBe('Dibujo no válido: no se pudo leer la herramienta.');
   });
 });
 
@@ -104,23 +190,38 @@ describe('numberLines', () => {
     expect(byLabel.get('Distancia del stop')).toBe('2,00 % = 1,00 ATR(1h)');
   });
 
+  it('la pérdida es la del stop con comisiones: 10,00 USD y 4,764 de cantidad, no 5 (la comisión baja la cantidad)', () => {
+    const rows = numberLines(analysis());
+    const byLabel = new Map(rows.map((row) => [row.label, row.value]));
+    expect(byLabel.get('Pérdida en el stop, con comisiones')).toBe('10,00 USD');
+    expect(byLabel.get('Cantidad')).toBe('4.764');
+    expect(byLabel.has('Pérdida a tu regla')).toBe(false);
+  });
+
   it('marca la entrada como límite cuando está lejos del precio', () => {
     const rows = numberLines(analysis({}, 120));
     expect(rows.find((row) => row.label === 'Entrada')?.value).toContain('límite');
   });
 
+  it('marca la entrada como stop (taker) cuando cruza el precio', () => {
+    const rows = numberLines(analysis({}, 95));
+    expect(rows.find((row) => row.label === 'Entrada')?.value).toBe('100,00 · stop (taker)');
+  });
+
   it('avisa cuando el mínimo del contrato no cabe en la regla', () => {
-    const tiny = analyzeDrawing({
-      drawing: { id: 'x', side: 'long', entry: 100, stop: 99.9, target: 101, symbol: 'BTCUSDT' },
-      price: 100,
-      levels: [],
-      atrs: { atr1h: null },
-      capital: 10,
-      rules,
-      filters: { tickSize: 0.01, stepSize: 0.001, minQty: 1, minNotional: 1000 },
-    });
+    const tiny = unwrap(
+      analyzeDrawing({
+        drawing: { id: 'x', side: 'long', entry: 100, stop: 99.9, target: 101, symbol: 'BTCUSDT' },
+        price: 100,
+        levels: [],
+        atrs: { atr1h: null },
+        capital: 10,
+        rules,
+        filters: { tickSize: 0.01, stepSize: 0.001, minQty: 1, minNotional: 1000 },
+      }),
+    );
     const rows = numberLines(tiny);
-    expect(rows.find((row) => row.label === 'Pérdida a tu regla')?.value).toBe(
+    expect(rows.find((row) => row.label === 'Pérdida en el stop')?.value).toBe(
       'el mínimo del contrato no cabe en tu regla',
     );
     expect(rows.find((row) => row.label === 'Cantidad')?.value).toBe('—');
@@ -140,14 +241,16 @@ describe('niveles, alcance y funding', () => {
     expect(reachText(analysis())).toBe('el objetivo cabe en el rango típico de 24 horas');
     const far = analysis({ target: 140 });
     expect(reachText(far)).toBe('el objetivo queda fuera de los rangos típicos de 1 h, 4 h y 24 h');
-    const noAtr = analyzeDrawing({
-      drawing: { id: 'n', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
-      price: 100,
-      levels: [],
-      atrs: { atr1h: null },
-      capital: 1000,
-      rules,
-    });
+    const noAtr = unwrap(
+      analyzeDrawing({
+        drawing: { id: 'n', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
+        price: 100,
+        levels: [],
+        atrs: { atr1h: null },
+        capital: 1000,
+        rules,
+      }),
+    );
     expect(reachText(noAtr)).toBe('sin datos de ATR para comparar el alcance del objetivo');
   });
 
@@ -155,14 +258,16 @@ describe('niveles, alcance y funding', () => {
     expect(fundingText(analysis())).toContain('lo paga tu lado');
     const short = analysis({ id: 's', side: 'short', stop: 102, target: 94 });
     expect(fundingText(short)).toContain('lo cobra tu lado');
-    const noRate = analyzeDrawing({
-      drawing: { id: 'n', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
-      price: 100,
-      levels: [],
-      atrs: { atr1h: 1 },
-      capital: 1000,
-      rules,
-    });
+    const noRate = unwrap(
+      analyzeDrawing({
+        drawing: { id: 'n', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
+        price: 100,
+        levels: [],
+        atrs: { atr1h: 1 },
+        capital: 1000,
+        rules,
+      }),
+    );
     expect(fundingText(noRate)).toBe('sin dato de funding');
   });
 });
@@ -176,8 +281,13 @@ describe('ticket y carga al dimensionador', () => {
     expect(text).toContain('Objetivo: 106');
     expect(text).toContain('R:R: 3');
     expect(text).toContain('Cantidad a tu regla:');
-    expect(text).toContain('Pérdida en el stop:');
+    expect(text).toContain('Pérdida en el stop, con comisiones:');
     expect(text).toContain(DRAWING_HONEST_LINE);
+  });
+
+  it('el ticket dice cuándo la entrada sería una orden stop (taker)', () => {
+    const text = drawingTicketText(analysis({}, 95));
+    expect(text).toContain('Entrada: 100 · stop (taker)');
   });
 
   it('carga dirección, entrada y stop en el dimensionador', () => {

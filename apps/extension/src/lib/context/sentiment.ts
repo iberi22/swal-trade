@@ -33,7 +33,7 @@ export interface Sentiment {
 }
 
 export const FUNDING_WARN_PCT = 0.05;
-/** Por debajo de esto (en %, cada 8 h) el funding se considera neutro. */
+/** Por debajo de esto (en %, por intervalo de funding) el funding se considera neutro. */
 export const FUNDING_NEUTRAL_PCT = 0.005;
 export const FEAR_WARN_LOW = 20;
 export const FEAR_WARN_HIGH = 80;
@@ -74,7 +74,7 @@ export function buildSentiment(input: SentimentInput): Sentiment {
     const pct = premium.lastFundingRate * 100;
     items.push({
       id: 'funding',
-      label: 'Funding 8h',
+      label: 'Funding',
       value: `${signed(pct, 3)} % · ${fundingText(pct)}`,
       tone: Math.abs(pct) >= FUNDING_WARN_PCT ? 'warn' : 'neutral',
     });
