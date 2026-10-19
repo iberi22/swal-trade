@@ -39,6 +39,7 @@
   import { relativeTime, type NewsItem } from '../../lib/news';
   import type { ExtensionSettings } from '../../lib/settings';
   import type { AnalysisResult, Candle, Finding, Timeframe } from '../../lib/types';
+  import AutoLink from './AutoLink.svelte';
   import ContextBar from './ContextBar.svelte';
   import DrawingCard from './DrawingCard.svelte';
   import ExplainCard from './ExplainCard.svelte';
@@ -287,7 +288,7 @@
       <summary
         title={findingSummary(rawById.get(item.id) ?? item)}
         onclick={() => onSelect(item.id)}
-      >{findingOneLiner(item.label, item.fuerzaPct)}</summary>
+      ><AutoLink text={findingOneLiner(item.label, item.fuerzaPct)} /></summary>
       <p class="explanation">{item.explanation}</p>
       <span class="fuerza">
         <span class="fuerza-name">fuerza</span>
@@ -364,7 +365,7 @@
         data-finding-id={row.findingId}
       >
         <span class="swatch" aria-hidden="true"></span>
-        <span class="legend-label">{row.label}</span>
+        <span class="legend-label"><AutoLink text={row.label} /></span>
         <span class="legend-prices">
           {#if row.confirm !== null}
             <span class="legend-level" data-kind="confirm">confirma {shortPrice(row.confirm)}</span>

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLOCK_MS,
+  PANEL_TABS,
   SNAPSHOT_POLL_MS,
   createPanelController,
-  PANEL_TABS,
   parsePanelTab,
   liqDistancePct,
   parseSnapshotReply,
@@ -211,16 +211,32 @@ describe('parseSnapshotReply', () => {
 describe('pestañas', () => {
   it('parsePanelTab cae a operacion', () => {
     expect(parsePanelTab('ajustes')).toBe('ajustes');
+    expect(parsePanelTab('aprender')).toBe('aprender');
     expect(parsePanelTab('escaner')).toBe('escaner');
     expect(parsePanelTab('nada')).toBe('operacion');
     expect(parsePanelTab(undefined)).toBe('operacion');
+  });
+
+  it('la pestaña Aprender existe por su nombre, entre Análisis y Ajustes', () => {
+    // Por nombre, no por recuento: main añade «Mis trades» y la lista crece.
+    const index = PANEL_TABS.findIndex((tab) => tab.id === 'aprender');
+    expect(index).toBeGreaterThan(-1);
+    expect(PANEL_TABS[index]!.label).toBe('Aprender');
+    expect(PANEL_TABS[index - 1]?.id).toBe('analisis');
+    expect(PANEL_TABS[index + 1]?.id).toBe('ajustes');
+    // Sin duplicados: cada id aparece una sola vez.
+    const ids = PANEL_TABS.map((tab) => tab.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(tabForKey('analisis', 'ArrowRight')).toBe('aprender');
+    expect(tabForKey('aprender', 'ArrowRight')).toBe('ajustes');
   });
 
   it('tabForKey navega con flechas y da la vuelta', () => {
     // Estructural: añadir pestañas nuevas (Mis trades, Aprender) no rompe esto.
     const last = PANEL_TABS[PANEL_TABS.length - 1]!.id;
     expect(tabForKey('operacion', 'ArrowRight')).toBe(PANEL_TABS[1]!.id);
-    expect(tabForKey('ajustes', 'ArrowRight')).toBe(PANEL_TABS[3]!.id);
+    const ajustes = PANEL_TABS.findIndex((tab) => tab.id === 'ajustes');
+    expect(tabForKey('ajustes', 'ArrowRight')).toBe(PANEL_TABS[ajustes + 1]!.id);
     expect(tabForKey(last, 'ArrowRight')).toBe(PANEL_TABS[0]!.id);
     expect(tabForKey('operacion', 'ArrowLeft')).toBe(last);
     expect(tabForKey(PANEL_TABS[1]!.id, 'ArrowLeft')).toBe(PANEL_TABS[0]!.id);

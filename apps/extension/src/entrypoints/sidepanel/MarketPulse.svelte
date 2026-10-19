@@ -9,6 +9,8 @@
   import { formatPanelPrice, typicalLevelUsd } from '../../lib/price-format';
   import { pulseCollapsedLabel } from '../../lib/findings-view';
   import type { DepthWalls, FearGreed, LiquidationSummary, TimeframeTrend } from '../../lib/types';
+  import AutoLink from './AutoLink.svelte';
+  import { setTermTrendFromRegimen } from './term-trend';
 
   let { symbol }: { symbol: string } = $props();
 
@@ -28,6 +30,7 @@
     liquidations = null;
     regimen = null;
     live = false;
+    setTermTrendFromRegimen(null);
     const handle = startMarketPulse(symbol, {
       cache,
       onChange: (snapshot: MarketPulseSnapshot) => {
@@ -36,6 +39,8 @@
         fearGreed = snapshot.fearGreed;
         regimen = snapshot.regimen;
         live = snapshot.live;
+        // La línea de contexto de los tooltips sigue al régimen 15m/1h/4h.
+        setTermTrendFromRegimen(snapshot.regimen);
       },
     });
     return () => handle.stop();
@@ -73,7 +78,7 @@
 
   <div class="pulse-grid">
     <article class="card" aria-label="Muros del libro">
-      <h3>Muros del libro</h3>
+      <h3><AutoLink text="Muros del libro" /></h3>
       {#if walls && wallCount > 0}
         <ul class="walls">
           {#each walls.asks as wall (wall.price)}
@@ -101,7 +106,7 @@
     </article>
 
     <article class="card" aria-label="Liquidaciones recientes">
-      <h3>Liquidaciones recientes</h3>
+      <h3><AutoLink text="Liquidaciones recientes" /></h3>
       {#if liquidations && liquidations.count > 0}
         <p class="big">{usd(fiveMin?.totalUsd ?? 0)}</p>
         <p class="note">
@@ -122,7 +127,7 @@
     </article>
 
     <article class="card" aria-label="Miedo y codicia">
-      <h3>Miedo y codicia</h3>
+      <h3><AutoLink text="Miedo y codicia" /></h3>
       {#if fearGreed}
         <p class="big">{fearGreed.value}<span class="unit">/100</span></p>
         <p class="note">
@@ -135,7 +140,7 @@
     </article>
 
     <article class="card" aria-label="Régimen por temporalidad">
-      <h3>Régimen</h3>
+      <h3><AutoLink text="Régimen" /></h3>
       {#if regimen && regimen.length > 0}
         <ul class="regime">
           {#each regimen as row (row.timeframe)}
