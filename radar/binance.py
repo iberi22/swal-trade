@@ -20,6 +20,8 @@ class BinanceClient:
         self.api_key = api_key or os.environ.get('BINANCE_API_KEY') or ''
         self.api_secret = api_secret or os.environ.get('BINANCE_API_SECRET') or os.environ.get('BINANCE_SECRET_KEY') or ''
         self.base_url = (base_url or os.environ.get('BINANCE_FUTURES_URL') or DEFAULT_FAPI_URL).rstrip('/')
+        # Last X-MBX-USED-WEIGHT-1M seen on a public movers request (None until one is seen).
+        self.used_weight_1m: Optional[int] = None
 
     def has_credentials(self) -> bool:
         return bool(self.api_key and self.api_secret)
@@ -71,6 +73,68 @@ class BinanceClient:
 
         # Return up to limit closed candles
         return candles[-limit:]
+
+    def _public_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """Public GET (no key). Never raises: returns None on any failure. Records X-MBX-USED-WEIGHT-1M."""
+        url = f'{self.base_url}{path}'
+        if params:
+            url += '?' + urllib.parse.urlencode(params)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Swal-Radar/1.0'})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                try:
+                    w = resp.headers.get('X-MBX-USED-WEIGHT-1M')
+                    if w is not None:
+                        self.used_weight_1m = int(w)
+                except Exception:
+                    pass
+                return json.loads(resp.read().decode('utf-8'))
+        except Exception:
+            return None
+
+    def fetch_exchange_info_universe(self, quotes=('USDT', 'USDC')) -> List[str]:
+        """Symbols that are TRADING perpetual COIN contracts quoted in `quotes`. [] on failure."""
+        data = self._public_get('/fapi/v1/exchangeInfo')
+        if not isinstance(data, dict) or not isinstance(data.get('symbols'), list):
+            return []
+        out = []
+        for s in data['symbols']:
+            if not isinstance(s, dict):
+                continue
+            if (s.get('status') == 'TRADING' and s.get('contractType') == 'PERPETUAL'
+                    and s.get('underlyingType') == 'COIN' and s.get('quoteAsset') in quotes and s.get('symbol')):
+                out.append(str(s['symbol']))
+        return out
+
+    def fetch_ticker_24hr(self) -> Dict[str, float]:
+        """symbol -> 24h quoteVolume. {} on failure."""
+        data = self._public_get('/fapi/v1/ticker/24hr')
+        if not isinstance(data, list):
+            return {}
+        out: Dict[str, float] = {}
+        for t in data:
+            try:
+                out[str(t['symbol'])] = float(t['quoteVolume'])
+            except Exception:
+                continue
+        return out
+
+    def fetch_klines_raw(self, symbol: str, interval: str = '5m', limit: int = 40) -> List[list]:
+        """Raw Binance kline arrays, closed candles only (closeTime <= now - 1000 ms). [] on failure."""
+        data = self._public_get('/fapi/v1/klines', {
+            'symbol': symbol, 'interval': interval, 'limit': max(1, min(limit + 1, 1000))})
+        if not isinstance(data, list):
+            return []
+        now_ms = int(time.time() * 1000)
+        rows = []
+        for k in data:
+            try:
+                if not isinstance(k, list) or len(k) < 10 or int(k[6]) > now_ms - 1000:
+                    continue
+            except Exception:
+                continue
+            rows.append(k)
+        return rows[-limit:]
 
     def _signed_get(self, path: str, params: Optional[Dict[str, Any]] = None, _retry: bool = True) -> Any:
         """

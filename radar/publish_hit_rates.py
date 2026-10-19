@@ -17,7 +17,7 @@ def build_public_table(
 ) -> Dict[str, Any]:
     groups = defaultdict(list)
     for a in forward_alerts:
-        if a.get('source') == 'replay':
+        if a.get('source') in ('replay', 'movers'):
             continue
         if a.get('taken_by_user') == 1:
             continue
@@ -95,7 +95,7 @@ def cli_main(args=None, fetch_klines_func: Optional[Callable] = None):
 
     forward_alerts = []
     for a in all_alerts:
-        if a.get('source') != 'replay' and a.get('taken_by_user') != 1:
+        if a.get('source') not in ('replay', 'movers') and a.get('taken_by_user') != 1:
             status = a.get('status', 'pending')
             if status in ('win_1r', 'win_2r', 'loss', 'expired'):
                 if a.get('net_r') is not None:
