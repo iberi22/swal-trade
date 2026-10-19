@@ -221,3 +221,12 @@ test('POST /ingest/hit-rates: rejects extra root key', async () => {
   // we aren't failing on 400 for root keys in the strict spec ("Se rechazan claves desconocidas en cells o en la raiz"). Let's check how the spec says it.
   // Actually, the spec says "reject extras". My implementation of validateHitRates constructs a new object and only takes what's needed. Wait, the spec says: "each cell's keys must be exactly the schema keys (reject extras, so no per-trade data can ever be stored)" -> this specifies for cells.
 });
+
+test('GET /api/hit-rates devuelve la tabla vacia si el almacen falla al leer', async () => {
+  const env = { DB: { prepare() { throw new Error('no such table: snapshots'); } } };
+  const res = await worker.fetch(new Request('https://example.com/api/hit-rates'), env);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.schema, 'swal.hit-rates.v1');
+  assert.deepEqual(body.cells, []);
+});

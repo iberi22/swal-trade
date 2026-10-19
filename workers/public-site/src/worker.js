@@ -903,7 +903,12 @@ export default {
       const store = snapshotStore(env);
       let hitRatesData = null;
       if (store) {
-        hitRatesData = await store.get('hit-rates');
+        try {
+          hitRatesData = await store.get('hit-rates');
+        } catch (_) {
+          // Una lectura fallida (D1 sin migrar, KV caido) no rompe la pagina: tabla vacia.
+          hitRatesData = null;
+        }
       }
 
       if (!hitRatesData) {
