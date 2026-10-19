@@ -19,7 +19,7 @@ REST de velas evaluado en cada cierre de 5 minutos; el websocket solo para una c
 - Permisos: rutas fapi `ticker/24hr*` y `exchangeInfo*`, host `https://trade.swal.network/api/movers-stats*`, `alarms` (sin aviso de instalacion), `notifications` solo opcional. Nada de `tabs`, `scripting`, `offscreen`, `<all_urls>`. Sonido solo desde el panel abierto.
 - Fuera de v1: interes abierto (una peticion por simbolo y solo ~30 dias de historia) y liquidaciones (`!forceOrder@arr` sin historia, no medible).
 
-## Especificacion compartida (`apps/extension/src/lib/scanner/spec/movers-spec.json`)
+## Especificacion compartida (movers-spec.json (en apps/extension/src/lib/scanner/spec))
 
 ```json
 {"spec":"swal.movers-spec.v1","version":"2026-10-19.1","bar_minutes":5,"tf_label":"5m",
@@ -46,7 +46,7 @@ Definiciones sobre velas cerradas consecutivas; `i` es la ultima cerrada y `W = 
 - Avisos: maximo 6 por hora con resumen "+N mas"; horas de silencio callan avisos y sonido, nunca la lista; insignia = no vistos.
 - Silenciado: grado `negative` silenciado por defecto ("Silenciadas (n)"); `no_evidence` = "Solo informacion" (niveles solo en el detalle como "geometria de medicion"); `promising` o `validated` muestran el plan. Sin estadisticas o con otra version de la especificacion, todo es "Sin evidencia".
 
-## Contrato del Worker `swal.movers-stats.v1` (`workers/public-site/src/movers-stats.js`)
+## Contrato del Worker `swal.movers-stats.v1` (movers-stats.js (en workers/public-site/src))
 
 - `POST /ingest/movers-stats` con el token Bearer de ingestion y comparacion en tiempo constante; cuerpo <= 128 KB; claves `movers-stats:study` y `movers-stats:forward`.
 - `GET /api/movers-stats?method=study|forward`, `Cache-Control: public, max-age=3600`; vacio: `{schema, cells:[], note:"Aun no hay datos publicados."}`; si el almacen falla, tabla vacia (nunca 500).
@@ -57,9 +57,9 @@ Definiciones sobre velas cerradas consecutivas; `i` es la ultima cerrada y `W = 
 
 ## Espejo en el servidor (Python)
 
-- `radar/movers.py` lee el mismo JSON y es la referencia; la version JS se prueba contra goldens que genera Python.
+- movers.py (en radar) lee el mismo JSON y es la referencia; la version JS se prueba contra goldens que genera Python.
 - Alertas: `source='movers'`, `tf='5m'`, `kind='mv_{mode}_{win}m_t{T}_{tier}'`, `dedupe_key='mv:{sym}:{signal}:{T}:{move}:{mode}'`, `created_at` = cierre de la vela de la senal, `strength=0.5` fijo ("no es una puntuacion"). Columna opcional `meta` JSON.
-- `radar/movers_source.py` desde `run_cycle` con `RADAR_MOVERS=1`; maximo `max_events_per_bar` por vela, tier mas alto primero.
+- movers_source.py (en radar) desde `run_cycle` con `RADAR_MOVERS=1`; maximo `max_events_per_bar` por vela, tier mas alto primero.
 - El operador de testnet: `OPERATOR_SOURCES` (por defecto `core`) y lista `OPERATOR_KINDS`; nunca celdas `negative`; lee `SYMBOLS` del archivo del bot y salta lo que el bot descartaria; omite simbolos cuyo precio de testnet difiere >0,5 % de la alerta; enfriamiento por simbolo 4 h; maximo 3 entradas nuevas por hora; omite rafagas de mercado; parada diaria al perder el 2 % del capital; confirma en `/status` que la posicion se abrio, si no anota "descartada por el bot".
 - Se mantiene `/control/manual-signal` (un plugin Rust seria una tercera copia de las definiciones y el registro esta vacio). El take profit del bot es 2R mientras el evaluador mide 1R: opcion `take_profit_pct` en el endpoint.
 
