@@ -34,6 +34,15 @@ class TestPublishHitRates(unittest.TestCase):
             price = close_p
         return candles
 
+    def test_movers_alerts_are_skipped(self):
+        def mk(source):
+            return {'source': source, 'kind': 'mv_follow_30m_t3_mid', 'tf': '5m', 'symbol': 'AAAUSDT',
+                    'direction': 'long', 'status': 'win_1r', 'net_r': 0.9}
+        table = build_public_table([mk('movers')] * 40, {}, {'from': 'a', 'to': 'b'}, 'futures')
+        self.assertEqual(table['cells'], [])
+        table = build_public_table([mk('core')] * 40, {}, {'from': 'a', 'to': 'b'}, 'futures')
+        self.assertEqual(len(table['cells']), 1)
+
     def test_baseline_deterministic(self):
         # 1. test_baseline_deterministic
         candles = self.generate_random_walk(500, seed=1)
