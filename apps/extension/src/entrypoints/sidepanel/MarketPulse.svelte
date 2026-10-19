@@ -7,6 +7,7 @@
     type MarketPulseSnapshot,
   } from '../../lib/market-pulse';
   import { formatPanelPrice, typicalLevelUsd } from '../../lib/price-format';
+  import { pulseCollapsedLabel } from '../../lib/findings-view';
   import type { DepthWalls, FearGreed, LiquidationSummary, TimeframeTrend } from '../../lib/types';
 
   let { symbol }: { symbol: string } = $props();
@@ -66,10 +67,9 @@
 </script>
 
 <section class="pulse" aria-label="Pulso de mercado">
-  <h2>
-    Pulso de mercado
-    <span class="pulse-state">{live ? 'en vivo' : 'sin conexión en vivo'}</span>
-  </h2>
+  <details class="fold">
+  <summary>{pulseCollapsedLabel({ walls, fearGreed })}</summary>
+  <p class="pulse-state">{live ? 'en vivo' : 'sin conexión en vivo'}</p>
 
   <div class="pulse-grid">
     <article class="card" aria-label="Muros del libro">
@@ -150,6 +150,7 @@
       {/if}
     </article>
   </div>
+  </details>
 </section>
 
 <style>
@@ -160,22 +161,9 @@
     flex: 0 0 auto;
   }
 
-  .pulse h2 {
-    margin: 0;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: hsl(var(--muted-foreground));
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
   .pulse-state {
+    margin: 0.3rem 0;
     font-size: 0.7rem;
-    letter-spacing: 0;
-    text-transform: none;
     color: hsl(var(--subtle-foreground));
   }
 

@@ -3,38 +3,37 @@
   import { browser } from 'wxt/browser';
   import { analyze, usingAnalysisStub, volumeFlowOf } from '../../lib/analysis';
   import { mountChart, mountFlowPane, type ChartHandle, type FlowPaneHandle } from '../../lib/chart';
-  import { onTvState, requestTvState, sendPaintCommand, requestSwitchTab } from '../../lib/tv-paint-send';
+  import { onTvState, requestTvState, sendPaintCommand } from '../../lib/tv-paint-send';
   import { shapesForFindings } from '../../lib/tv-bridge/shapes';
-  import { tvStateHint, type TvChartState } from '../../lib/tv-paint';
+  import type { TvChartState } from '../../lib/tv-paint';
   import {
     CHART_FINDING_LIMIT,
     NO_ANNOTATIONS,
     annotationsForFindings,
     findingsLegend,
+    flowCollapsedLabel,
     renderAnalysis,
     type LegendRow,
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
-  import MarketPulse from './MarketPulse.svelte';
-  import RadarCard from './RadarCard.svelte';
+  import { createPanelController, type PanelState } from '../../lib/account/panel-controller';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
-  import { NEWS_REFRESH_MS, fetchNews, relativeTime, type NewsItem } from '../../lib/news';
+  import { fetchNews, type NewsItem } from '../../lib/news';
   import {
     DEFAULT_SETTINGS,
-    HOTKEY_KEYS,
     SETTINGS_KEY,
-    normalizeSymbolList,
     settingsFromStorage,
     symbolAllowed,
     type ExtensionSettings,
-    type HotkeyKey,
   } from '../../lib/settings';
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
-  import ExplainCard from './ExplainCard.svelte';
-  import SizingCard from './SizingCard.svelte';
+  import AnalysisTab from './AnalysisTab.svelte';
+  import OperationTab from './OperationTab.svelte';
+  import SettingsTab from './SettingsTab.svelte';
   import SidepanelFooter from './SidepanelFooter.svelte';
+  import Tabs from './Tabs.svelte';
 
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
@@ -54,11 +53,12 @@
   let flowLegend = $state(CVD_LEGEND_TEXT);
   /** Puntos pintados en el panel de CVD (línea y barras): 0 si no hay flujo. */
   let flowPoints = $state(0);
+  /** Delta de la última vela: el dato que resume el panel de CVD plegado. */
+  let flowDelta = $state<number | null>(null);
 
   let settings = $state<ExtensionSettings>({ ...DEFAULT_SETTINGS, symbols: [] });
   let settingsLoaded = $state(false);
   let symbolDraft = $state('');
-  let settingsOpen = $state(false);
   let blocked = $state(false);
   let claudeStatus = $state<"connected" | "connecting" | "disconnected">("disconnected");
 
@@ -93,6 +93,28 @@
   const legend = $derived<LegendRow[]>(findingsLegend(topFindings));
   const selectedFinding = $derived(topFindings.find((item) => item.id === selectedId) ?? topFindings[0] ?? null);
   let lastPrice = $state<number | null>(null);
+
+  // Modo del panel: posición / sin posición / no sé. Solo pregunta a la cuenta
+  // mientras el panel se ve y hay una clave de solo lectura.
+  let panel = $state<PanelState>({ mode: 'loading', stale: false, snapshot: null, error: null });
+  const controller = createPanelController({
+    send: (message) => browser.runtime.sendMessage(message),
+    now: () => Date.now(),
+    isVisible: () => document.visibilityState === 'visible',
+    setInterval: (fn, ms) => window.setInterval(fn, ms),
+    clearInterval: (handle) => window.clearInterval(handle as number),
+    onChange: (state) => {
+      panel = state;
+    },
+  });
+
+  $effect(() => {
+    controller.setContext({
+      symbol,
+      configured: settings.acctMeta.configured,
+      klinesOk: error === null,
+    });
+  });
 
   function applySettings(next: ExtensionSettings) {
     settings = next;
@@ -215,7 +237,11 @@
       void sendPaintCommand(null);
     };
     window.addEventListener('pagehide', onPageHide);
+    const onVisibility = () => controller.visibilityChanged();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      controller.stop();
+      document.removeEventListener('visibilitychange', onVisibility);
       browser.runtime.onMessage.removeListener(onMessage);
       unsubscribeTv();
       clearInterval(clock);
@@ -264,6 +290,7 @@
         flowPane.setFlow(rows, flowData);
         flowLegend = flowLegendText(rows, flowData);
         flowPoints = cvdLineData(rows, flowData).length;
+        flowDelta = flowData?.delta?.[flowData.delta.length - 1] ?? null;
         applyResult(analysis);
         loading = false;
         stream = openKlineStream(sym, tf, {
@@ -280,6 +307,7 @@
             flowPane.setFlow(rows, liveFlow);
             flowLegend = flowLegendText(rows, liveFlow);
             flowPoints = cvdLineData(rows, liveFlow).length;
+            flowDelta = liveFlow?.delta?.[liveFlow.delta.length - 1] ?? null;
             applyResult(nextResult);
           },
           onLive(isLive) {
@@ -375,13 +403,19 @@
       alive = false;
     };
   });
+  function selectFinding(id: string) {
+    selectedId = id;
+  }
 </script>
+
 
 <div class="app">
   <header class="header">
     <div class="brand">
       <strong>SWAL</strong>
-      <span>futuros · datos públicos</span>
+      <span class="live-dot" class:on={live} role="status" aria-label={live ? 'en vivo' : 'sin conexión en vivo'}>
+        {live ? 'en vivo' : 'sin conexión'}
+      </span>
     </div>
     <form class="controls" onsubmit={onSymbolSubmit}>
       <input
@@ -411,308 +445,64 @@
     {:else if inferred}
       <p class="hint">La página no muestra la temporalidad. Gráfico en {timeframe}.</p>
     {/if}
-    <label class="field check paint-toggle">
-      <input
-        type="checkbox"
-        disabled={!settingsLoaded}
-        checked={settings.paintOnChart}
-        onchange={(event) => {
-          applySettings({
-            ...settings,
-            paintOnChart: (event.currentTarget as HTMLInputElement).checked,
-          });
-        }}
-      />
-      <span>Pintar en el gráfico de Binance (pestaña Trading View)</span>
-    </label>
-    {#if settings.paintOnChart}
-      {#if tvState === 'mismatch' && tvChart}
-        <p class="hint" data-testid="paint-hint">
-          El gráfico muestra {tvChart.symbol} · {tvChart.tf}; el análisis es {symbol} · {timeframe}.
-        </p>
-      {:else}
-        <p class="hint" data-testid="paint-hint">
-          {tvStateHint(tvState) ??
-            `Pintando ${symbol} · ${timeframe} sobre el gráfico de Binance. Se borran al apagar el interruptor.`}
-        </p>
-        {#if tvState === "original" || tvState === "ready" || tvState === "tradingview"}
-          <button
-            type="button"
-            class="btn-return-original"
-            onclick={() => void requestSwitchTab("original")}
-          >Volver a Original</button>
-        {/if}
-      {/if}
-    {/if}
   </header>
 
   <div class="chart" bind:this={chartHost}></div>
 
   <!-- Panel de flujo de volumen: línea de CVD y delta por vela, con la misma
-       escala de tiempo que el gráfico de precio. Un solo tono, sin rojo ni verde. -->
+       escala de tiempo que el gráfico de precio. Un solo tono, sin rojo ni verde.
+       Plegado por defecto: el resumen ya dice hacia dónde empuja el flujo. -->
   <section class="flow" aria-label="Flujo de volumen">
-    <div class="flow-chart" bind:this={flowHost} data-cvd-points={flowPoints}></div>
-    <p class="flow-legend">{flowLegend}</p>
+    <details class="fold">
+      <summary>{flowCollapsedLabel(flowPoints, flowDelta)}</summary>
+      <div class="flow-chart" bind:this={flowHost} data-cvd-points={flowPoints}></div>
+      <p class="flow-legend">{flowLegend}</p>
+    </details>
   </section>
 
-  <!-- Leyenda del gráfico. Vive fuera del canvas a propósito: dentro, el lienzo
-       de lightweight-charts se come los clics. -->
-  <ol class="legend" aria-label="Leyenda del gráfico">
-    {#each legend as row (row.findingId)}
-      <li>
-        <button
-          type="button"
-          class:selected={row.findingId === selectedId}
-          aria-pressed={row.findingId === selectedId}
-          onclick={() => {
-            selectedId = row.findingId;
-          }}
-          data-finding-id={row.findingId}
-        >
-          <span class="swatch" aria-hidden="true"></span>
-          <span class="legend-label">{row.label}</span>
-          <span class="legend-prices">
-            {#if row.confirm !== null}
-              <span class="legend-level" data-kind="confirm">confirma {row.confirm}</span>
-            {/if}
-            {#if row.invalidate !== null}
-              <span class="legend-level" data-kind="invalidate">invalida {row.invalidate}</span>
-            {/if}
-          </span>
-        </button>
-      </li>
-    {/each}
-    {#if legend.length === 0}
-      <li class="legend-empty">Sin niveles que pintar en este tramo.</li>
-    {/if}
-  </ol>
+  <Tabs>
+    {#snippet operacion()}
+      <OperationTab
+        {symbol}
+        {timeframe}
+        {panel}
+        {views}
+        {legend}
+        {selectedId}
+        onSelect={selectFinding}
+        {loading}
+        {error}
+        usingStub={usingAnalysisStub}
+        {result}
+        {selectedFinding}
+        {lastPrice}
+        {newsItems}
+        {newsNote}
+        {newsLoading}
+        {nowMs}
+        {settings}
+        {settingsLoaded}
+        {applySettings}
+      />
+    {/snippet}
+    {#snippet analisis()}
+      <AnalysisTab />
+    {/snippet}
+    {#snippet ajustes()}
+      <SettingsTab
+        {settings}
+        {settingsLoaded}
+        bind:symbolDraft
+        {symbol}
+        {timeframe}
+        {tvState}
+        {tvChart}
+        {claudeStatus}
+        {applySettings}
+        {checkClaudeStatus}
+      />
+    {/snippet}
+  </Tabs>
 
-  <section class="findings" aria-label="Hallazgos">
-    <h2>Hallazgos</h2>
-    {#if loading}
-      <p class="empty">Cargando velas públicas…</p>
-    {:else if error}
-      <p class="empty">{error}</p>
-    {:else if views.length === 0}
-      <p class="empty">Sin hallazgos en este tramo.</p>
-      {#if usingAnalysisStub}
-        <p class="hint">El núcleo de análisis todavía no está en este build.</p>
-      {/if}
-    {/if}
-    <ul>
-      {#each views as item (item.id)}
-        <li>
-          <button
-            type="button"
-            class:selected={item.id === selectedId}
-            aria-pressed={item.id === selectedId}
-            onclick={() => {
-              selectedId = item.id;
-            }}
-          >
-            <span class="label">{item.label}</span>
-            <span class="explanation">{item.explanation}</span>
-            <span class="fuerza">
-              <span class="fuerza-name">fuerza</span>
-              <span
-                class="fuerza-track"
-                role="meter"
-                aria-label="fuerza"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow={item.fuerzaPct}
-              >
-                <span class="fuerza-fill" style:--fuerza-pct="{item.fuerzaPct}%"></span>
-              </span>
-            </span>
-          </button>
-        </li>
-      {/each}
-    </ul>
-    <div class="foot">
-      <span class="live">{live ? 'en vivo' : 'sin conexión en vivo'}</span>
-      <span class="live">{symbol} · {timeframe}</span>
-    </div>
-  </section>
-
-  <SizingCard {lastPrice} finding={selectedFinding} />
-
-  <section class="news" aria-label="Titulares">
-    <h2>
-      Titulares
-      {#if newsLoading}<span class="news-state">cargando…</span>{/if}
-    </h2>
-    {#if newsNote}
-      <p class="empty">{newsNote}</p>
-    {:else if newsItems.length > 0}
-      <ul>
-        {#each newsItems as item (item.id)}
-          <li>
-            <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a>
-            <div class="meta">
-              <span class="source">{item.source || 'fuente desconocida'}</span>
-              <span>{relativeTime(item.publishedAt, nowMs)}</span>
-              <span class="sentiment" data-label={item.sentiment.label}>{item.sentiment.label}</span>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-
-  <MarketPulse symbol={symbol} />
-
-  <RadarCard {symbol} port={settings.radarPort} paintEnabled={settings.paintOnChart} enabled={settings.radarEnabled} />
-
-  <ExplainCard
-    {symbol}
-    {timeframe}
-    {result}
-    ready={settingsLoaded}
-    enabled={settings.explainWithAi}
-    onToggle={(value) => applySettings({ ...settings, explainWithAi: value })}
-  />
-
-  <details class="settings" bind:open={settingsOpen}>
-    <summary>Ajustes</summary>
-    <div class="settings-body">
-      <label class="field">
-        <span>Temporalidad por defecto</span>
-        <select
-          disabled={!settingsLoaded}
-          value={settings.defaultTimeframe}
-          onchange={(event) => {
-            const value = (event.currentTarget as HTMLSelectElement).value;
-            if ((TIMEFRAMES as readonly string[]).includes(value)) {
-              applySettings({ ...settings, defaultTimeframe: value as Timeframe });
-            }
-          }}
-        >
-          {#each TIMEFRAMES as tf (tf)}
-            <option value={tf}>{tf}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="field">
-        <span>Símbolos permitidos (vacío = todos)</span>
-        <input
-          type="text"
-          disabled={!settingsLoaded}
-          value={symbolDraft}
-          spellcheck="false"
-          autocomplete="off"
-          placeholder="BTC, ETH"
-          onblur={() => {
-            applySettings({ ...settings, symbols: normalizeSymbolList(symbolDraft) });
-          }}
-          oninput={(event) => {
-            symbolDraft = (event.currentTarget as HTMLInputElement).value;
-          }}
-        />
-      </label>
-      <label class="field check">
-        <input
-          type="checkbox"
-          disabled={!settingsLoaded}
-          checked={settings.autoSync}
-          onchange={(event) => {
-            applySettings({ ...settings, autoSync: (event.currentTarget as HTMLInputElement).checked });
-          }}
-        />
-        <span>Seguir la página abierta</span>
-      </label>
-      <label class="field check">
-        <input
-          type="checkbox"
-          disabled={!settingsLoaded}
-          checked={settings.hotkeysEnabled}
-          onchange={(e) => applySettings({ ...settings, hotkeysEnabled: (e.currentTarget as HTMLInputElement).checked })}
-        />
-        <span>Atajos de teclado para temporalidad (F1..F12)</span>
-      </label>
-      <p class="hint">F1 a F5 cambian la temporalidad en Binance Futures y previenen acciones del navegador (F1 abre ayuda, F5 recarga la página).</p>
-      <div class="field">
-        <span>Asignación de teclas</span>
-        <div class="hotkeys-grid">
-          {#each HOTKEY_KEYS as key (key)}
-            <div class="hotkey-row">
-              <span class="hotkey-label">{key}</span>
-              <select
-                disabled={!settingsLoaded || !settings.hotkeysEnabled}
-                value={settings.hotkeyMap?.[key] ?? ''}
-                onchange={(e) => {
-                  const val = (e.currentTarget as HTMLSelectElement).value;
-                  applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [key]: val ? (val as Timeframe) : null } });
-                }}
-              >
-                <option value="">—</option>
-                {#each TIMEFRAMES as tf (tf)}<option value={tf}>{tf}</option>{/each}
-              </select>
-            </div>
-          {/each}
-        </div>
-      </div>
-      <div class="claude-bridge-section">
-        <label class="field check">
-          <input
-            type="checkbox"
-            disabled={!settingsLoaded}
-            checked={settings.claudeBridgeEnabled}
-            onchange={(event) => {
-              applySettings({
-                ...settings,
-                claudeBridgeEnabled: (event.currentTarget as HTMLInputElement).checked,
-              });
-              setTimeout(checkClaudeStatus, 150);
-            }}
-          />
-          <span>Permitir que Claude use el gráfico</span>
-        </label>
-        <p class="hint">
-          Permite que un agente local (Claude Code vía swal-trade MCP) lea y dibuje en el gráfico abierto.
-        </p>
-        <div class="claude-status-line">
-          <span class="status-indicator" class:connected={claudeStatus === "connected"}></span>
-          <span>{claudeStatus === "connected" ? "Claude conectado" : "Claude desconectado"}</span>
-        </div>
-        {#if settings.claudeBridgeEnabled}
-          <label class="field">
-            <span>Puerto del puente MCP</span>
-            <input
-              type="number"
-              disabled={!settingsLoaded}
-              value={settings.claudeBridgePort}
-              onchange={(event) => {
-                const port = parseInt((event.currentTarget as HTMLInputElement).value, 10);
-                if (Number.isFinite(port) && port >= 1024 && port <= 65535) {
-                  applySettings({ ...settings, claudeBridgePort: port });
-                }
-              }}
-            />
-          </label>
-          <label class="field">
-            <span>Token de emparejamiento</span>
-            <input
-              type="password"
-              disabled={!settingsLoaded}
-              value={settings.claudeBridgeToken}
-              placeholder="Pegar token de ~/.config/swal-trade/chart-bridge-token"
-              oninput={(event) => {
-                applySettings({
-                  ...settings,
-                  claudeBridgeToken: (event.currentTarget as HTMLInputElement).value.trim(),
-                });
-                setTimeout(checkClaudeStatus, 150);
-              }}
-            />
-          </label>
-        {/if}
-      </div>
-      <p class="hint">
-        Se guarda en <code>storage.local</code> de la extensión. Los titulares se renuevan cada
-        {NEWS_REFRESH_MS / 60000} min.
-      </p>
-    </div>
-  </details>
   <SidepanelFooter {symbol} />
 </div>

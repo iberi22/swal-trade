@@ -7,6 +7,7 @@
   } from '../../lib/radar';
   import { formatPanelPrice } from '../../lib/price-format';
   import { sendPaintCommand } from '../../lib/tv-paint-send';
+  import { radarCollapsedLabel } from '../../lib/findings-view';
 
   let {
     symbol,
@@ -76,10 +77,8 @@
     </section>
   {:else}
     <section class="radar" aria-label="Radar local">
-      <div class="head">
-        <h2>Radar local</h2>
-        <span class="subtle">{snapshot.version ? `v${snapshot.version}` : 'en vivo'}</span>
-      </div>
+     <details class="fold">
+      <summary>{radarCollapsedLabel(snapshot.alerts.length)}</summary>
 
       <div class="subhead">
         <h3>Alertas activas</h3>
@@ -157,9 +156,7 @@
         </div>
         <p class="note">{s.note}</p>
       {/if}
-      <div class="honesty-footer">
-        <p>La fuerza del patrón no es una probabilidad. Esto es una medición, no una recomendación.</p>
-      </div>
+     </details>
     </section>
   {/if}
 {/if}
@@ -174,8 +171,7 @@
     border-radius: var(--radius);
     padding: 0.65rem 0.7rem;
   }
-  .head, .subhead { display: flex; justify-content: space-between; align-items: baseline; }
-  h2 { margin: 0; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+  .subhead { display: flex; justify-content: space-between; align-items: baseline; }
   h3 { margin: 0; font-size: 0.72rem; font-weight: 600; color: hsl(var(--muted-foreground)); }
   h4 { margin: 0 0 0.2rem 0; font-size: 0.7rem; font-weight: 600; color: hsl(var(--foreground)); }
   .subtle, .empty { font-size: 0.7rem; color: hsl(var(--subtle-foreground)); margin: 0; }
@@ -201,6 +197,4 @@
   .kind-row { display: flex; justify-content: space-between; font-size: 0.67rem; color: hsl(var(--muted-foreground)); padding: 0.1rem 0; }
   .kind-name { font-weight: 500; color: hsl(var(--foreground)); }
   .note { margin: 0; font-size: 0.68rem; line-height: 1.35; color: hsl(var(--muted-foreground)); }
-  .honesty-footer { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid hsl(var(--surface-strong)); }
-  .honesty-footer p { margin: 0; font-size: 0.65rem; color: hsl(var(--subtle-foreground)); line-height: 1.3; text-align: center; }
 </style>

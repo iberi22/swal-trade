@@ -3,6 +3,16 @@ import { analyze } from './analysis';
 import { analyze as stubAnalyze } from './analysis-core-stub';
 import {
   CHART_FINDING_LIMIT,
+  COLLAPSED_MAX,
+  collapsedLabel,
+  cutAtWord,
+  findingOneLiner,
+  findingSummary,
+  flowCollapsedLabel,
+  newsCollapsedLabel,
+  pulseCollapsedLabel,
+  radarCollapsedLabel,
+  shortPrice,
   annotationsForFinding,
   annotationsForFindings,
   findingsLegend,
@@ -249,5 +259,69 @@ describe('findingsLegend', () => {
     expect(roleLabel('support', 'sr_zone')).toBe('soporte');
     expect(roleLabel('poc', 'volume_profile')).toBe('POC');
     expect(roleLabel('', '')).toBe('nivel');
+  });
+});
+
+describe('texto corto del panel', () => {
+  it('findingSummary corta en una palabra y pone puntos suspensivos', () => {
+    const long = 'palabra '.repeat(40);
+    const out = findingSummary({ explanation: long }, 50);
+    expect(out.length).toBeLessThanOrEqual(50);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out).not.toMatch(/palab…|\s…/);
+    expect(findingSummary({ explanation: 'corto' })).toBe('corto');
+    expect(findingSummary({ explanation: '', label: 'Doble suelo' })).toBe('Doble suelo');
+    expect(findingSummary({ explanation: 'a\n\n b' })).toBe('a b');
+  });
+
+  it('cutAtWord parte una palabra larga sin espacios', () => {
+    const out = cutAtWord('x'.repeat(200), 20);
+    expect(out).toHaveLength(20);
+    expect(out.endsWith('…')).toBe(true);
+  });
+
+  it('collapsedLabel nunca pasa de 70 caracteres', () => {
+    expect(collapsedLabel('Pulso', 'muro venta 0.0841')).toBe('Pulso · muro venta 0.0841');
+    const out = collapsedLabel('Titulares', 'una cadena muy larga '.repeat(10));
+    expect(out.length).toBeLessThanOrEqual(COLLAPSED_MAX);
+    expect(out.endsWith('…')).toBe(true);
+    expect(collapsedLabel('Solo')).toBe('Solo');
+  });
+
+  it('findingOneLiner usa etiqueta y fuerza', () => {
+    expect(findingOneLiner('Doble suelo', 62.4)).toBe('Doble suelo · fuerza 62');
+  });
+
+  it('shortPrice usa la precisión del tick sin ceros de más', () => {
+    expect(shortPrice(0.0841)).toBe('0.0841');
+    expect(shortPrice(65000.5)).toBe('65000.50');
+    expect(shortPrice(120.3)).toBe('120.30');
+    expect(shortPrice(0.004155)).toBe('0.004155');
+    expect(shortPrice(Number.NaN)).toBe('—');
+    expect(shortPrice(null)).toBe('—');
+  });
+
+  it('las etiquetas de los plegables dicen el dato clave', () => {
+    expect(
+      pulseCollapsedLabel({
+        walls: { asks: [{ price: 0.0841, usd: 900 }], bids: [{ price: 0.08, usd: 100 }] },
+        fearGreed: { value: 34 },
+      }),
+    ).toBe('Pulso · muro venta 0.0841 · miedo 34');
+    expect(pulseCollapsedLabel({ walls: null, fearGreed: null })).toBe('Pulso · sin datos');
+    expect(newsCollapsedLabel(4, 'hace 4 min')).toBe('Titulares · 4 · último hace 4 min');
+    expect(newsCollapsedLabel(0)).toBe('Titulares · sin novedades');
+    expect(radarCollapsedLabel(1)).toBe('Radar · 1 alerta');
+    expect(radarCollapsedLabel(3)).toBe('Radar · 3 alertas');
+    expect(flowCollapsedLabel(0)).toBe('Flujo CVD · sin volumen taker');
+    expect(flowCollapsedLabel(71, 5)).toBe('Flujo CVD · última vela: compra agresiva');
+    expect(flowCollapsedLabel(71, -5)).toBe('Flujo CVD · última vela: venta agresiva');
+    for (const label of [
+      pulseCollapsedLabel({ walls: null, fearGreed: { value: 80 } }),
+      newsCollapsedLabel(99, 'hace 3 días y muchas horas más'),
+      radarCollapsedLabel(12, 'BTCUSDT 15m largo muy largo muy largo muy largo muy largo muy largo'),
+    ]) {
+      expect(label.length).toBeLessThanOrEqual(COLLAPSED_MAX);
+    }
   });
 });

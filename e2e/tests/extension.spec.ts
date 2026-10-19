@@ -28,6 +28,7 @@ interface SidePanel {
 async function openSidePanel(
   fetchImpl?: () => Promise<unknown>,
   klines: unknown = toBinanceKlines(),
+  initScript?: string,
 ): Promise<SidePanel> {
   const manifestPath = path.join(extensionDir, 'manifest.json');
   let manifestRaw: string;
@@ -82,6 +83,7 @@ async function openSidePanel(
     return fulfillJson(route, fetchImpl ? await fetchImpl() : { items: [] });
   });
 
+  if (initScript) await page.addInitScript(initScript);
   await page.goto(`chrome-extension://${extensionId}/${sidePath}`);
   return {
     page,
@@ -93,6 +95,12 @@ async function openSidePanel(
       await rm(userData, { recursive: true, force: true });
     },
   };
+}
+
+/** Abre una pestaña del panel por su nombre. */
+async function openTab(page: import('@playwright/test').Page, name: 'Operación' | 'Análisis' | 'Ajustes') {
+  await page.getByRole('tab', { name }).click();
+  await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
 }
 
 /** Cinco titulares con tonos distintos: positivo, negativo y neutral. */
@@ -183,8 +191,7 @@ test('side panel clears paint on unmount and pagehide', async () => {
     });
 
     // We toggle paint on first to register any setting
-    const settings = page.locator('details.settings');
-    await settings.locator('summary').click();
+    await openTab(page, 'Ajustes');
     const paintToggle = page.getByRole('checkbox', { name: 'Pintar en el gráfico de Binance (pestaña Trading View)' });
     await paintToggle.check();
     // Await for some rendering
@@ -218,6 +225,9 @@ test('side panel renders the chart and findings from mocked klines', async () =>
     const findings = page.getByRole('region', { name: 'Hallazgos' });
     await expect(findings).toContainText('fuerza');
     await expect(findings).toContainText('Doble suelo');
+    // Los tres primeros son una línea «etiqueta · fuerza N»; la explicación va plegada.
+    await expect(findings.locator('summary').first()).toHaveText(/^.+ · fuerza \d+$/);
+    await expect(findings.locator('details.finding[open]')).toHaveCount(0);
     await expect(findings).not.toContainText(/probabilidad/i);
     const canvas = page.locator('.chart canvas').first();
     await expect(canvas).toBeVisible();
@@ -265,7 +275,7 @@ test('the chart overlay renders every top finding, not only the selected one', a
     // La lista de hallazgos y la leyenda comparten la selección.
     const findingButton = page
       .getByRole('region', { name: 'Hallazgos' })
-      .locator('button', { hasText: 'Doble suelo' });
+      .locator('summary', { hasText: 'Doble suelo' });
     await findingButton.click();
     await expect(legend.locator('button').filter({ hasText: 'Doble suelo' })).toHaveAttribute(
       'aria-pressed',
@@ -284,6 +294,10 @@ test('el panel de CVD pinta el flujo de volumen de las velas mockeadas', async (
     const { page } = panel;
     const flow = page.getByRole('region', { name: 'Flujo de volumen' });
     await expect(flow).toBeVisible();
+    // Plegado por defecto: el resumen ya dice hacia dónde empuja el flujo.
+    await expect(flow.locator('summary')).toHaveText(/^Flujo CVD · /);
+    await expect(flow.locator('canvas').first()).toBeHidden();
+    await flow.locator('summary').click();
 
     // La leyenda explica el CVD en una línea.
     await expect(flow.locator('.flow-legend')).toContainText(
@@ -320,6 +334,8 @@ test('news card shows headlines from the mocked api with relative time and senti
     const { page, newsRequests } = panel;
     const news = page.getByRole('region', { name: 'Titulares' });
     await expect(news).toBeVisible();
+    await expect(news.locator('summary')).toHaveText(/^Titulares · 4 · último hace \d/);
+    await news.locator('summary').click();
 
     // Pide al endpoint público con el activo del símbolo abierto.
     await expect
@@ -360,6 +376,7 @@ test('news card degrades to a note when the service has nothing', async () => {
   try {
     const { page } = panel;
     const news = page.getByRole('region', { name: 'Titulares' });
+    await news.locator('summary').click();
     await expect(news).toContainText('Sin titulares recientes.');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
@@ -371,8 +388,8 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
   const panel = await openSidePanel();
   try {
     const { page, extensionId } = panel;
-    const settings = page.locator('details.settings');
-    await settings.locator('summary').click();
+    await openTab(page, 'Ajustes');
+    const settings = page.locator('section.settings');
     // Los controles se habilitan cuando storage.local ha respondido.
     const timeframeSelect = settings.locator('select').first();
     await expect(timeframeSelect).toBeEnabled();
@@ -490,6 +507,104 @@ test('explain card: opt-in gate, mocked AI answer, and local fallback on 429', a
     // es ruido de red esperado, no un fallo de la tarjeta.
     const unexpected = panel.errors.filter((line) => !/429|Too Many Requests/.test(line));
     expect(unexpected, unexpected.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+/** Responde `acct:snapshot` desde el propio panel, como si el background tuviera una clave de lectura. */
+const MOCK_ACCOUNT_SCRIPT = `
+(() => {
+  const runtime = window.chrome && window.chrome.runtime;
+  if (!runtime) return;
+  const original = runtime.sendMessage.bind(runtime);
+  window.__acctRequests = [];
+  runtime.sendMessage = (message, ...rest) => {
+    if (message && message.type === 'acct:snapshot') {
+      window.__acctRequests.push(message.symbol);
+      const now = Date.now();
+      const positions = message.symbol === 'BTCUSDT' ? [{
+        symbol: 'BTCUSDT', side: 'long', size: 0.1, entry: 100, mark: 105, liq: 80,
+        leverage: 5, marginType: 'cross', uPnl: 0.5, breakEven: null, notional: 10.5,
+        stop: null, firstFillMs: null,
+      }] : [];
+      return Promise.resolve({
+        snapshot: { fetchedAt: now, equity: 1000, dailyPnl: null, positions, fundingRate: null, nextFundingMs: null },
+        source: 'api',
+        fetchedAt: now,
+      });
+    }
+    return original(message, ...rest);
+  };
+})();
+`;
+
+test('panel has three tabs, keyboard navigation and sections collapsed by default', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const tablist = page.getByRole('tablist');
+    await expect(tablist.getByRole('tab')).toHaveText(['Operación', 'Análisis', 'Ajustes']);
+    await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
+
+    // Sin posición conocida y sin clave: modo unknown, con el aviso y el dimensionador.
+    await expect(page.getByTestId('mode-notice')).toHaveText(
+      'No sé si tienes posición. Conecta una clave de solo lectura (Ajustes).',
+    );
+    await expect(page.getByTestId('sizing-card')).toHaveCount(1);
+
+    // Pulso, titulares, CVD y hallazgos extra: plegados y con resumen corto.
+    await expect(page.getByRole('region', { name: 'Hallazgos' })).toBeVisible();
+    await expect(page.locator('details[open]')).toHaveCount(0);
+    const summaries = await page.locator('details.fold > summary, details.finding > summary').allTextContents();
+    expect(summaries.length).toBeGreaterThan(3);
+    for (const text of summaries) expect(text.length).toBeLessThanOrEqual(70);
+    await expect(page.getByRole('region', { name: 'Pulso de mercado' }).locator('summary')).toHaveText(/^Pulso · /);
+
+    // Teclado: flechas cambian de pestaña y la elegida sobrevive a una recarga.
+    await page.getByRole('tab', { name: 'Operación' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('Análisis con IA — próximamente')).toBeVisible();
+    await page.keyboard.press('End');
+    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('with an open position the sizing form is gone and the position card shows', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_ACCOUNT_SCRIPT);
+  try {
+    const { page } = panel;
+    // Una clave de lectura configurada: el panel empieza a preguntar por la cuenta.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: { storage: { local: { set(v: unknown, cb: () => void): void } } };
+          }).chrome;
+          api.storage.local.set(
+            { settings: { acctMeta: { configured: true, kind: 'ed25519', last4: 'abcd' } } },
+            resolve,
+          );
+        }),
+    );
+    await page.reload();
+
+    const card = page.getByTestId('position-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('LARGO · 0.1 BTCUSDT');
+    await expect(card).toContainText('SIN STOP');
+    await expect(card).toContainText('Liquidación a 23.8 %');
+    await expect(page.getByTestId('sizing-card')).toHaveCount(0);
+    await expect(page.getByTestId('mode-notice')).toHaveCount(0);
+    const requests = await page.evaluate(() => (window as unknown as { __acctRequests: string[] }).__acctRequests);
+    expect(requests[0]).toBe('BTCUSDT');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
   }

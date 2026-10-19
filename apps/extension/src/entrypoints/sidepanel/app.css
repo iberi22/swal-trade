@@ -393,9 +393,16 @@ select {
   gap: 0.4rem;
 }
 
-/* El interruptor de pintar vive en la cabecera, no en los ajustes: es una
-   acción sobre la página, no una preferencia escondida. */
-.header .field.check.paint-toggle {
+/* El interruptor de pintar vive en la pestaña Ajustes, fuera del bloque de
+   preferencias: es una acción sobre la página. */
+.paint-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.paint-toggle {
+  display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 0.45rem;
@@ -405,7 +412,7 @@ select {
   margin-top: 0.35rem;
 }
 
-.header .field.check.paint-toggle input {
+.paint-toggle input {
   margin-top: 0.15rem;
   accent-color: hsl(var(--accent));
 }
@@ -491,4 +498,97 @@ select {
 .btn-return-original:hover {
   color: hsl(var(--foreground));
   border-color: hsl(var(--muted-foreground));
+}
+
+/* --- T13: estructura de pestañas y texto corto ------------------------- */
+
+/* Punto de conexión: lleno = en vivo, hueco = sin conexión. Sin color. */
+.live-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: hsl(var(--subtle-foreground));
+}
+
+.live-dot::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid hsl(var(--subtle-foreground));
+  background: transparent;
+}
+
+.live-dot.on {
+  color: hsl(var(--foreground));
+}
+
+.live-dot.on::before {
+  background: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
+}
+
+/* Bloques plegables: el resumen (70 caracteres o menos) dice el dato clave. */
+.fold {
+  background: hsl(var(--surface));
+  border-radius: var(--radius);
+  padding: 0.45rem 0.65rem;
+}
+
+.fold > summary,
+.finding > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fold[open] > summary {
+  margin-bottom: 0.4rem;
+}
+
+.flow,
+.news,
+.pulse,
+.radar-wrap {
+  flex: 0 0 auto;
+}
+
+.findings .fold {
+  background: hsl(var(--surface-strong));
+}
+
+.finding {
+  border-radius: calc(var(--radius) - 0.15rem);
+  padding: 0.35rem 0.55rem;
+}
+
+.finding.selected,
+.finding:hover {
+  background: hsl(var(--surface-strong));
+}
+
+.finding[open] > summary {
+  margin-bottom: 0.3rem;
+}
+
+.finding .explanation {
+  margin: 0;
+  font-size: 0.78rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.mode-notice {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: hsl(var(--foreground));
+  background: hsl(var(--surface-strong));
+  border-radius: calc(var(--radius) - 0.3rem);
+  padding: 0.4rem 0.55rem;
 }

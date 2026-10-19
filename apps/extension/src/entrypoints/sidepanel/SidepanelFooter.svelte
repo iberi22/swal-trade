@@ -10,6 +10,7 @@
 </script>
 
 <footer class="sidepanel-footer" aria-label="Enlaces SWAL Trade">
+  <p class="disclaimer">Datos públicos y educativo. La fuerza de un patrón no es una probabilidad ni una recomendación.</p>
   {#each links as link, i (link.label)}
     {#if i > 0}<span class="sep" aria-hidden="true">·</span>{/if}
     <a href={link.href} target="_blank" rel="noopener">{link.label}</a>
@@ -28,6 +29,14 @@
     color: hsl(var(--muted-foreground));
     border-top: 1px solid hsl(var(--surface-strong));
     margin-top: 0.75rem;
+  }
+
+  .disclaimer {
+    flex: 1 0 100%;
+    margin: 0 0 0.2rem;
+    text-align: center;
+    font-size: 0.68rem;
+    color: hsl(var(--subtle-foreground));
   }
 
   .sidepanel-footer a {
