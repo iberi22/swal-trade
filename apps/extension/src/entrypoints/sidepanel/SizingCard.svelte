@@ -11,7 +11,7 @@
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
 
-  let { lastPrice = null, finding = null }: { lastPrice?: number | null; finding?: Finding | null } = $props();
+  let { lastPrice = null, finding = null, compact = false }: { lastPrice?: number | null; finding?: Finding | null; compact?: boolean } = $props();
 
   let capital = $state(DEFAULT_SIZING_PREFERENCES.capital);
   let riskPct = $state(DEFAULT_SIZING_PREFERENCES.riskPct);
@@ -66,7 +66,7 @@
 <section class="sizing" data-testid="sizing-card" aria-label="Tamaño de la posición">
   <div class="card-head">
     <h2>Tamaño de la posición</h2>
-    <span class="head-hint">gestiona el riesgo por el stop</span>
+    {#if !compact}<span class="head-hint">gestiona el riesgo por el stop</span>{/if}
   </div>
 
   <div class="fields-grid">
@@ -122,7 +122,7 @@
       </div>
       <p class="summary-line" data-testid="sizing-summary">{result.summary}</p>
       <p class="fee-line">comisiones aprox. ~{usdFmt.format(result.feeUsd)} USD (taker 0,05 % al entrar y al salir)</p>
-      <p class="leverage-note">Más apalancamiento no cambia la pérdida si salta el stop; solo acerca la liquidación.</p>
+      {#if !compact}<p class="leverage-note">Más apalancamiento no cambia la pérdida si salta el stop; solo acerca la liquidación.</p>{/if}
     {:else}
       <p class="error-line" data-testid="sizing-error">{result.error}</p>
     {/if}

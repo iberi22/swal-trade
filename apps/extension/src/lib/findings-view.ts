@@ -1,5 +1,6 @@
 import type { AnalysisResult, Finding, FindingLevel } from './types';
 import { volumeShockMarkers } from './volume-flow-view';
+import { chartPriceFormat } from './price-format';
 
 export interface ChartMarker {
   time: number;
@@ -383,4 +384,108 @@ export function findingsLegend(
       markerTimes: markersForFinding(finding).map((marker) => marker.time),
     };
   });
+}
+
+// --- Texto corto del panel (T13): una línea por dato, el detalle al expandir ---
+
+/** Largo máximo del resumen de un <details> cerrado. */
+export const COLLAPSED_MAX = 70;
+
+/** Cuántos hallazgos salen como una línea antes de pasar al bloque plegado. */
+export const TOP_ONE_LINERS = 3;
+
+function squash(text: unknown): string {
+  return String(text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/** Corta en un límite de palabra y añade «…»; el resultado nunca pasa de `maxLen`. */
+export function cutAtWord(text: string, maxLen: number): string {
+  const clean = squash(text);
+  const limit = Math.max(2, Math.floor(maxLen));
+  if (clean.length <= limit) return clean;
+  const head = clean.slice(0, limit - 1);
+  const space = head.lastIndexOf(' ');
+  const cut = space >= Math.floor(limit / 2) ? head.slice(0, space) : head;
+  return `${cut.replace(/[\s.,;:·-]+$/, '')}…`;
+}
+
+/** Resumen de una línea de un hallazgo: su explicación (o su etiqueta) cortada por palabra. */
+export function findingSummary(
+  finding: { explanation?: unknown; label?: unknown; kind?: unknown },
+  maxLen = 120,
+): string {
+  const text =
+    squash(finding.explanation) ||
+    squash(finding.label) ||
+    kindLabel(String(finding.kind ?? ''), '');
+  return cutAtWord(text, maxLen);
+}
+
+/** «Título · dato», siempre de 70 caracteres o menos. */
+export function collapsedLabel(title: string, datum?: string | number | null, maxLen = COLLAPSED_MAX): string {
+  const head = squash(title);
+  const tail = datum === null || datum === undefined ? '' : squash(datum);
+  return cutAtWord(tail ? `${head} · ${tail}` : head, maxLen);
+}
+
+/** «Doble suelo · fuerza 62»: la línea de un hallazgo en la lista. */
+export function findingOneLiner(label: string, fuerzaPct: number): string {
+  const pct = Number.isFinite(fuerzaPct) ? Math.round(fuerzaPct) : 0;
+  return cutAtWord(`${squash(label)} · fuerza ${pct}`, 60);
+}
+
+/**
+ * Precio corto con la precisión del tick del gráfico (`chartPriceFormat`),
+ * sin ceros de más: 0.0841, 65000.50.
+ */
+export function shortPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  const { precision } = chartPriceFormat(Math.abs(value));
+  const fixed = value.toFixed(precision);
+  if (!fixed.includes('.')) return fixed;
+  const [int, frac = ''] = fixed.split('.');
+  const trimmed = frac.replace(/0+$/, '');
+  return `${int}.${trimmed.padEnd(Math.min(2, precision), '0')}`;
+}
+
+export interface PulseLabelInput {
+  walls: { bids: readonly { price: number; usd: number }[]; asks: readonly { price: number; usd: number }[] } | null;
+  fearGreed: { value: number } | null;
+}
+
+/** «Pulso · muro venta 0.0841 · miedo 34»: el dato clave del pulso de mercado. */
+export function pulseCollapsedLabel(input: PulseLabelInput): string {
+  const parts: string[] = [];
+  if (input.walls) {
+    const ask = [...input.walls.asks].sort((a, b) => b.usd - a.usd)[0];
+    const bid = [...input.walls.bids].sort((a, b) => b.usd - a.usd)[0];
+    const wall = ask && (!bid || ask.usd >= bid.usd) ? { side: 'venta', price: ask.price } : bid ? { side: 'compra', price: bid.price } : null;
+    if (wall) parts.push(`muro ${wall.side} ${shortPrice(wall.price)}`);
+  }
+  if (input.fearGreed) {
+    const v = Math.round(input.fearGreed.value);
+    parts.push(`${v < 50 ? 'miedo' : v > 50 ? 'codicia' : 'neutral'} ${v}`);
+  }
+  return collapsedLabel('Pulso', parts.join(' · ') || 'sin datos');
+}
+
+/** «Titulares · 4 · último hace 4 min». */
+export function newsCollapsedLabel(count: number, latestRelative?: string | null): string {
+  if (count <= 0) return collapsedLabel('Titulares', 'sin novedades');
+  return collapsedLabel('Titulares', latestRelative ? `${count} · último ${latestRelative}` : String(count));
+}
+
+/** «Radar · 2 alertas». */
+export function radarCollapsedLabel(alerts: number, nearest?: string | null): string {
+  const base = alerts === 1 ? '1 alerta' : `${alerts} alertas`;
+  return collapsedLabel('Radar', nearest ? `${base} · ${nearest}` : base);
+}
+
+/** «Flujo CVD · compra agresiva dominante». */
+export function flowCollapsedLabel(points: number, lastDelta?: number | null): string {
+  if (points <= 0) return collapsedLabel('Flujo CVD', 'sin volumen taker');
+  if (lastDelta === null || lastDelta === undefined || !Number.isFinite(lastDelta) || lastDelta === 0) {
+    return collapsedLabel('Flujo CVD', `${points} velas`);
+  }
+  return collapsedLabel('Flujo CVD', lastDelta > 0 ? 'última vela: compra agresiva' : 'última vela: venta agresiva');
 }
