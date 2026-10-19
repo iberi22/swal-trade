@@ -1,0 +1,1398 @@
+{
+  "schema": "swal.glossary-stats.v1",
+  "generated": "2026-10-19T18:54:03+00:00",
+  "method": "replay_in_sample",
+  "universe": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "days": 90,
+  "caveat": "Frecuencia de reaccion en muestra (90 dias, 5 mayores): no es una probabilidad de que el nivel aguante, no es P&L y no es evidencia hacia adelante.",
+  "levels": [
+    {
+      "id": "prevDayHigh",
+      "side": "resistance",
+      "n": 649,
+      "n_days": 62,
+      "reacted": 199,
+      "broke": 375,
+      "unresolved": 75,
+      "rate": 0.34668989547038326,
+      "ci_low": 0.3088920056657555,
+      "ci_high": 0.38652617163760505,
+      "baseline": 0.36804113938674554,
+      "lift_pp": -2.1351243916362286,
+      "lift_ci": [
+        -7.300607362017497,
+        4.49154486384043
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 271,
+        "rate": 0.3135593220338983
+      },
+      "against_trend": {
+        "n": 378,
+        "rate": 0.3698224852071006
+      },
+      "first_half_lift_pp": -4.942945871160048,
+      "second_half_lift_pp": 0.896988458970005,
+      "symbols_agree": 5
+    },
+    {
+      "id": "prevDayHigh",
+      "side": "support",
+      "n": 554,
+      "n_days": 58,
+      "reacted": 198,
+      "broke": 304,
+      "unresolved": 52,
+      "rate": 0.3944223107569721,
+      "ci_low": 0.3526267316892812,
+      "ci_high": 0.43782143853358774,
+      "baseline": 0.36802114326831215,
+      "lift_pp": 2.640116748865995,
+      "lift_ci": [
+        -3.6311710045516143,
+        8.787703917818417
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 330,
+        "rate": 0.38562091503267976
+      },
+      "against_trend": {
+        "n": 224,
+        "rate": 0.40816326530612246
+      },
+      "first_half_lift_pp": 6.042470437657283,
+      "second_half_lift_pp": -0.985834518007056,
+      "symbols_agree": 3
+    },
+    {
+      "id": "prevDayLow",
+      "side": "resistance",
+      "n": 440,
+      "n_days": 52,
+      "reacted": 154,
+      "broke": 250,
+      "unresolved": 36,
+      "rate": 0.3811881188118812,
+      "ci_low": 0.3351581590353598,
+      "ci_high": 0.4294562478616208,
+      "baseline": 0.3675477197721364,
+      "lift_pp": 1.3640399039744788,
+      "lift_ci": [
+        -5.117540955504829,
+        8.695032545779535
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 203,
+        "rate": 0.40425531914893614
+      },
+      "against_trend": {
+        "n": 237,
+        "rate": 0.3611111111111111
+      },
+      "first_half_lift_pp": -3.778533540348189,
+      "second_half_lift_pp": 5.8400468185065115,
+      "symbols_agree": 3
+    },
+    {
+      "id": "prevDayLow",
+      "side": "support",
+      "n": 544,
+      "n_days": 57,
+      "reacted": 183,
+      "broke": 316,
+      "unresolved": 45,
+      "rate": 0.3667334669338677,
+      "ci_low": 0.325618101234359,
+      "ci_high": 0.40988500456935767,
+      "baseline": 0.3675356327902818,
+      "lift_pp": -0.08021658564140721,
+      "lift_ci": [
+        -5.316742206103131,
+        5.91250140745912
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 308,
+        "rate": 0.4014336917562724
+      },
+      "against_trend": {
+        "n": 236,
+        "rate": 0.32272727272727275
+      },
+      "first_half_lift_pp": 2.8206020639689857,
+      "second_half_lift_pp": -2.6623764490300736,
+      "symbols_agree": 4
+    },
+    {
+      "id": "prevWeekHigh",
+      "side": "resistance",
+      "n": 188,
+      "n_days": 39,
+      "reacted": 59,
+      "broke": 115,
+      "unresolved": 14,
+      "rate": 0.3390804597701149,
+      "ci_low": 0.2728941005989719,
+      "ci_high": 0.412218666190045,
+      "baseline": 0.3672805057689767,
+      "lift_pp": -2.820004599886178,
+      "lift_ci": [
+        -10.465656926729967,
+        6.808363785334764
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 5,
+        "rate": 0.4
+      },
+      "against_trend": {
+        "n": 183,
+        "rate": 0.33727810650887574
+      },
+      "first_half_lift_pp": 4.720671769195073,
+      "second_half_lift_pp": -9.542586681342868,
+      "symbols_agree": 3
+    },
+    {
+      "id": "prevWeekHigh",
+      "side": "support",
+      "n": 191,
+      "n_days": 39,
+      "reacted": 74,
+      "broke": 96,
+      "unresolved": 21,
+      "rate": 0.43529411764705883,
+      "ci_low": 0.3630091277444999,
+      "ci_high": 0.5104387705539106,
+      "baseline": 0.3672246355704054,
+      "lift_pp": 6.806948207665342,
+      "lift_ci": [
+        -3.1994659066007403,
+        17.375761393599138
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 187,
+        "rate": 0.43373493975903615
+      },
+      "against_trend": {
+        "n": 4,
+        "rate": 0.5
+      },
+      "first_half_lift_pp": 2.784704140233302,
+      "second_half_lift_pp": 10.467771754931231,
+      "symbols_agree": 5
+    },
+    {
+      "id": "prevWeekLow",
+      "side": "resistance",
+      "n": 235,
+      "n_days": 35,
+      "reacted": 71,
+      "broke": 121,
+      "unresolved": 43,
+      "rate": 0.3697916666666667,
+      "ci_low": 0.3046867721592217,
+      "ci_high": 0.44000465176717485,
+      "baseline": 0.36800218916125327,
+      "lift_pp": 0.1789477505413417,
+      "lift_ci": [
+        -8.00315340027674,
+        8.255914448895174
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 207,
+        "rate": 0.4036144578313253
+      },
+      "against_trend": {
+        "n": 28,
+        "rate": 0.15384615384615385
+      },
+      "first_half_lift_pp": -1.4674948675822919,
+      "second_half_lift_pp": 2.0536161619599813,
+      "symbols_agree": 2
+    },
+    {
+      "id": "prevWeekLow",
+      "side": "support",
+      "n": 231,
+      "n_days": 38,
+      "reacted": 79,
+      "broke": 123,
+      "unresolved": 29,
+      "rate": 0.3910891089108911,
+      "ci_low": 0.3264260040405084,
+      "ci_high": 0.45981723582588424,
+      "baseline": 0.3681048580300745,
+      "lift_pp": 2.298425088081663,
+      "lift_ci": [
+        -5.711982323891118,
+        11.905592038311546
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 34,
+        "rate": 0.5666666666666667
+      },
+      "against_trend": {
+        "n": 197,
+        "rate": 0.36046511627906974
+      },
+      "first_half_lift_pp": 6.5544657397167585,
+      "second_half_lift_pp": -1.121536809821927,
+      "symbols_agree": 3
+    },
+    {
+      "id": "dayOpen",
+      "side": "resistance",
+      "n": 1816,
+      "n_days": 90,
+      "reacted": 516,
+      "broke": 1035,
+      "unresolved": 265,
+      "rate": 0.33268858800773693,
+      "ci_low": 0.3096782789973078,
+      "ci_high": 0.35652562734357385,
+      "baseline": 0.36807283727283646,
+      "lift_pp": -3.538424926509953,
+      "lift_ci": [
+        -7.5630157777690386,
+        0.7640858823170615
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 671,
+        "rate": 0.3073005093378608
+      },
+      "against_trend": {
+        "n": 1145,
+        "rate": 0.3482328482328482
+      },
+      "first_half_lift_pp": -4.060443847021067,
+      "second_half_lift_pp": -2.9784336043760797,
+      "symbols_agree": 4
+    },
+    {
+      "id": "dayOpen",
+      "side": "support",
+      "n": 1818,
+      "n_days": 90,
+      "reacted": 555,
+      "broke": 948,
+      "unresolved": 315,
+      "rate": 0.36926147704590817,
+      "ci_low": 0.345225323058892,
+      "ci_high": 0.39396422354331095,
+      "baseline": 0.368098019427049,
+      "lift_pp": 0.1163457618859165,
+      "lift_ci": [
+        -3.8465685241491796,
+        3.879101033533583
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 1141,
+        "rate": 0.36012526096033404
+      },
+      "against_trend": {
+        "n": 677,
+        "rate": 0.3853211009174312
+      },
+      "first_half_lift_pp": 2.2438793649313613,
+      "second_half_lift_pp": -2.0774568670931637,
+      "symbols_agree": 3
+    },
+    {
+      "id": "weekOpen",
+      "side": "resistance",
+      "n": 569,
+      "n_days": 66,
+      "reacted": 188,
+      "broke": 323,
+      "unresolved": 58,
+      "rate": 0.3679060665362035,
+      "ci_low": 0.32722476504250125,
+      "ci_high": 0.41055858207794965,
+      "baseline": 0.3681175681707264,
+      "lift_pp": -0.02115016345228815,
+      "lift_ci": [
+        -6.467408086990151,
+        6.274290372517921
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 170,
+        "rate": 0.3312883435582822
+      },
+      "against_trend": {
+        "n": 399,
+        "rate": 0.3850574712643678
+      },
+      "first_half_lift_pp": -0.7634378234750328,
+      "second_half_lift_pp": 0.8238084933439971,
+      "symbols_agree": 3
+    },
+    {
+      "id": "weekOpen",
+      "side": "support",
+      "n": 562,
+      "n_days": 65,
+      "reacted": 186,
+      "broke": 302,
+      "unresolved": 74,
+      "rate": 0.38114754098360654,
+      "ci_low": 0.3391442928304151,
+      "ci_high": 0.42500734261350376,
+      "baseline": 0.3681134438910536,
+      "lift_pp": 1.3034097092552932,
+      "lift_ci": [
+        -4.387900485969832,
+        7.805559607589762
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 407,
+        "rate": 0.34593023255813954
+      },
+      "against_trend": {
+        "n": 155,
+        "rate": 0.4652777777777778
+      },
+      "first_half_lift_pp": 6.544350029498575,
+      "second_half_lift_pp": -4.82265069757557,
+      "symbols_agree": 3
+    },
+    {
+      "id": "monthOpen",
+      "side": "resistance",
+      "n": 326,
+      "n_days": 43,
+      "reacted": 101,
+      "broke": 191,
+      "unresolved": 34,
+      "rate": 0.3458904109589041,
+      "ci_low": 0.293652952892021,
+      "ci_high": 0.40213003469072317,
+      "baseline": 0.3682886001555142,
+      "lift_pp": -2.2398189196610074,
+      "lift_ci": [
+        -9.707612052654946,
+        5.675945236408669
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 155,
+        "rate": 0.3546099290780142
+      },
+      "against_trend": {
+        "n": 171,
+        "rate": 0.33774834437086093
+      },
+      "first_half_lift_pp": 2.982277377564574,
+      "second_half_lift_pp": -5.537172468645074,
+      "symbols_agree": 4
+    },
+    {
+      "id": "monthOpen",
+      "side": "support",
+      "n": 347,
+      "n_days": 47,
+      "reacted": 123,
+      "broke": 178,
+      "unresolved": 46,
+      "rate": 0.40863787375415284,
+      "ci_low": 0.35459403848386145,
+      "ci_high": 0.4649842989549003,
+      "baseline": 0.36827782868576137,
+      "lift_pp": 4.036004506839147,
+      "lift_ci": [
+        -3.2373042220467663,
+        11.981020477446268
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 189,
+        "rate": 0.4226190476190476
+      },
+      "against_trend": {
+        "n": 158,
+        "rate": 0.39097744360902253
+      },
+      "first_half_lift_pp": 2.6354367910662644,
+      "second_half_lift_pp": 4.889601313730169,
+      "symbols_agree": 3
+    },
+    {
+      "id": "pivot",
+      "side": "resistance",
+      "n": 1268,
+      "n_days": 85,
+      "reacted": 396,
+      "broke": 679,
+      "unresolved": 193,
+      "rate": 0.3683720930232558,
+      "ci_low": 0.34005354516190617,
+      "ci_high": 0.39762801890541283,
+      "baseline": 0.3682074090939795,
+      "lift_pp": 0.016468392927632136,
+      "lift_ci": [
+        -4.626197328061343,
+        4.638067196027556
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 491,
+        "rate": 0.3442211055276382
+      },
+      "against_trend": {
+        "n": 777,
+        "rate": 0.3825701624815362
+      },
+      "first_half_lift_pp": -3.1344050077072136,
+      "second_half_lift_pp": 3.494001817774639,
+      "symbols_agree": 3
+    },
+    {
+      "id": "pivot",
+      "side": "support",
+      "n": 1267,
+      "n_days": 86,
+      "reacted": 381,
+      "broke": 675,
+      "unresolved": 211,
+      "rate": 0.36079545454545453,
+      "ci_low": 0.3323836667154865,
+      "ci_high": 0.39021634870580507,
+      "baseline": 0.36816733518451916,
+      "lift_pp": -0.7371880639064632,
+      "lift_ci": [
+        -4.5313752595358245,
+        3.4875923546752396
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 792,
+        "rate": 0.3710144927536232
+      },
+      "against_trend": {
+        "n": 475,
+        "rate": 0.34153005464480873
+      },
+      "first_half_lift_pp": 2.150175983897146,
+      "second_half_lift_pp": -3.8051375934273377,
+      "symbols_agree": 3
+    },
+    {
+      "id": "r1",
+      "side": "resistance",
+      "n": 562,
+      "n_days": 62,
+      "reacted": 198,
+      "broke": 309,
+      "unresolved": 55,
+      "rate": 0.3905325443786982,
+      "ci_low": 0.34904112381977276,
+      "ci_high": 0.43367031927629046,
+      "baseline": 0.3681962769343708,
+      "lift_pp": 2.233626744432743,
+      "lift_ci": [
+        -3.558199735310091,
+        9.35582664839319
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 235,
+        "rate": 0.3448275862068966
+      },
+      "against_trend": {
+        "n": 327,
+        "rate": 0.42105263157894735
+      },
+      "first_half_lift_pp": 0.5668603285146678,
+      "second_half_lift_pp": 4.306401410348027,
+      "symbols_agree": 4
+    },
+    {
+      "id": "r1",
+      "side": "support",
+      "n": 458,
+      "n_days": 53,
+      "reacted": 174,
+      "broke": 260,
+      "unresolved": 24,
+      "rate": 0.4009216589861751,
+      "ci_low": 0.35587766529806786,
+      "ci_high": 0.4477041990153061,
+      "baseline": 0.36808279156649365,
+      "lift_pp": 3.283886741968145,
+      "lift_ci": [
+        -2.610351851915549,
+        9.171474610969954
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 279,
+        "rate": 0.4059040590405904
+      },
+      "against_trend": {
+        "n": 179,
+        "rate": 0.39263803680981596
+      },
+      "first_half_lift_pp": 2.0388796502717965,
+      "second_half_lift_pp": 4.7797903239858215,
+      "symbols_agree": 4
+    },
+    {
+      "id": "s1",
+      "side": "resistance",
+      "n": 391,
+      "n_days": 50,
+      "reacted": 138,
+      "broke": 216,
+      "unresolved": 37,
+      "rate": 0.3898305084745763,
+      "ci_low": 0.34046751226364685,
+      "ci_high": 0.44155885309488846,
+      "baseline": 0.36747649262125165,
+      "lift_pp": 2.235401585332464,
+      "lift_ci": [
+        -5.678525529642686,
+        9.680551680136917
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 186,
+        "rate": 0.39204545454545453
+      },
+      "against_trend": {
+        "n": 205,
+        "rate": 0.38764044943820225
+      },
+      "first_half_lift_pp": 1.0095632230426865,
+      "second_half_lift_pp": 3.1473562380037903,
+      "symbols_agree": 3
+    },
+    {
+      "id": "s1",
+      "side": "support",
+      "n": 486,
+      "n_days": 56,
+      "reacted": 152,
+      "broke": 282,
+      "unresolved": 52,
+      "rate": 0.35023041474654376,
+      "ci_low": 0.30684179979949905,
+      "ci_high": 0.39624706486025224,
+      "baseline": 0.36765968251707704,
+      "lift_pp": -1.7429267770533274,
+      "lift_ci": [
+        -7.1488159155855655,
+        4.97850060950778
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 264,
+        "rate": 0.35443037974683544
+      },
+      "against_trend": {
+        "n": 222,
+        "rate": 0.34517766497461927
+      },
+      "first_half_lift_pp": -1.8324149064441686,
+      "second_half_lift_pp": -1.6743605477442691,
+      "symbols_agree": 3
+    },
+    {
+      "id": "ema20_1h",
+      "side": "resistance",
+      "n": 2364,
+      "n_days": 88,
+      "reacted": 685,
+      "broke": 1333,
+      "unresolved": 346,
+      "rate": 0.33944499504459863,
+      "ci_low": 0.3191076405390278,
+      "ci_high": 0.3603924497480288,
+      "baseline": 0.3681001958858883,
+      "lift_pp": -2.8655200841289696,
+      "lift_ci": [
+        -7.01277244199442,
+        1.5193430639475758
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 938,
+        "rate": 0.32706766917293234
+      },
+      "against_trend": {
+        "n": 1426,
+        "rate": 0.3475409836065574
+      },
+      "first_half_lift_pp": -2.7748823486688945,
+      "second_half_lift_pp": -2.9637903449575234,
+      "symbols_agree": 5
+    },
+    {
+      "id": "ema20_1h",
+      "side": "support",
+      "n": 2393,
+      "n_days": 89,
+      "reacted": 751,
+      "broke": 1225,
+      "unresolved": 417,
+      "rate": 0.3800607287449393,
+      "ci_low": 0.35891092868846003,
+      "ci_high": 0.4016759599092981,
+      "baseline": 0.3680798433328051,
+      "lift_pp": 1.1980885412134212,
+      "lift_ci": [
+        -3.0069828617075633,
+        5.327210337740223
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 1450,
+        "rate": 0.36799350121852153
+      },
+      "against_trend": {
+        "n": 943,
+        "rate": 0.4
+      },
+      "first_half_lift_pp": 3.3742560464892044,
+      "second_half_lift_pp": -1.2336159383557255,
+      "symbols_agree": 4
+    },
+    {
+      "id": "ema50_1h",
+      "side": "resistance",
+      "n": 1701,
+      "n_days": 85,
+      "reacted": 542,
+      "broke": 871,
+      "unresolved": 288,
+      "rate": 0.38358103326256193,
+      "ci_low": 0.35857532506106954,
+      "ci_high": 0.4092180285434333,
+      "baseline": 0.3682048522042675,
+      "lift_pp": 1.5376181058294414,
+      "lift_ci": [
+        -3.3655983208771225,
+        6.1620548469489
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 689,
+        "rate": 0.3702479338842975
+      },
+      "against_trend": {
+        "n": 1012,
+        "rate": 0.3935643564356436
+      },
+      "first_half_lift_pp": 0.6195445359099994,
+      "second_half_lift_pp": 2.5030318813163532,
+      "symbols_agree": 3
+    },
+    {
+      "id": "ema50_1h",
+      "side": "support",
+      "n": 1690,
+      "n_days": 85,
+      "reacted": 539,
+      "broke": 901,
+      "unresolved": 250,
+      "rate": 0.37430555555555556,
+      "ci_low": 0.3496755987308346,
+      "ci_high": 0.39960435045991954,
+      "baseline": 0.36817485684351914,
+      "lift_pp": 0.613069871203642,
+      "lift_ci": [
+        -4.1322663612914425,
+        5.287723018177743
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 1023,
+        "rate": 0.3690205011389522
+      },
+      "against_trend": {
+        "n": 667,
+        "rate": 0.38256227758007116
+      },
+      "first_half_lift_pp": 0.8480123296710829,
+      "second_half_lift_pp": 0.38526742153436877,
+      "symbols_agree": 3
+    },
+    {
+      "id": "ema50_4h",
+      "side": "resistance",
+      "n": 688,
+      "n_days": 67,
+      "reacted": 201,
+      "broke": 389,
+      "unresolved": 98,
+      "rate": 0.34067796610169493,
+      "ci_low": 0.30357642449671257,
+      "ci_high": 0.3798407533505787,
+      "baseline": 0.36810630518491516,
+      "lift_pp": -2.742833908322023,
+      "lift_ci": [
+        -9.100735014245965,
+        3.6887699661383664
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 290,
+        "rate": 0.3488372093023256
+      },
+      "against_trend": {
+        "n": 398,
+        "rate": 0.33433734939759036
+      },
+      "first_half_lift_pp": 2.636849055305884,
+      "second_half_lift_pp": -8.988012421339352,
+      "symbols_agree": 4
+    },
+    {
+      "id": "ema50_4h",
+      "side": "support",
+      "n": 642,
+      "n_days": 67,
+      "reacted": 205,
+      "broke": 354,
+      "unresolved": 83,
+      "rate": 0.3667262969588551,
+      "ci_low": 0.3278128768226475,
+      "ci_high": 0.40745892698688335,
+      "baseline": 0.36816904250304194,
+      "lift_pp": -0.14427455441868298,
+      "lift_ci": [
+        -5.422390478131744,
+        5.6599955976944285
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 396,
+        "rate": 0.37537537537537535
+      },
+      "against_trend": {
+        "n": 246,
+        "rate": 0.35398230088495575
+      },
+      "first_half_lift_pp": -4.0521850115386115,
+      "second_half_lift_pp": 3.8075680446341797,
+      "symbols_agree": 3
+    },
+    {
+      "id": "bbUpper",
+      "side": "resistance",
+      "n": 1489,
+      "n_days": 86,
+      "reacted": 500,
+      "broke": 843,
+      "unresolved": 146,
+      "rate": 0.37230081906180196,
+      "ci_low": 0.3468451167767829,
+      "ci_high": 0.3984849651483406,
+      "baseline": 0.3682088294647808,
+      "lift_pp": 0.4091989597021173,
+      "lift_ci": [
+        -4.178111910529009,
+        5.5664116047067225
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 532,
+        "rate": 0.40384615384615385
+      },
+      "against_trend": {
+        "n": 957,
+        "rate": 0.3554285714285714
+      },
+      "first_half_lift_pp": 1.1031536208202353,
+      "second_half_lift_pp": -0.26562433448844014,
+      "symbols_agree": 2
+    },
+    {
+      "id": "bbUpper",
+      "side": "support",
+      "n": 1114,
+      "n_days": 82,
+      "reacted": 430,
+      "broke": 586,
+      "unresolved": 98,
+      "rate": 0.42322834645669294,
+      "ci_low": 0.3931932806044286,
+      "ci_high": 0.4538417648529639,
+      "baseline": 0.36812981299603986,
+      "lift_pp": 5.509853346065308,
+      "lift_ci": [
+        -0.37950350563226154,
+        10.76760380145484
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 744,
+        "rate": 0.4517543859649123
+      },
+      "against_trend": {
+        "n": 370,
+        "rate": 0.3644578313253012
+      },
+      "first_half_lift_pp": 4.3934013121387006,
+      "second_half_lift_pp": 6.591422482260817,
+      "symbols_agree": 5
+    },
+    {
+      "id": "bbLower",
+      "side": "resistance",
+      "n": 1043,
+      "n_days": 74,
+      "reacted": 396,
+      "broke": 555,
+      "unresolved": 92,
+      "rate": 0.416403785488959,
+      "ci_low": 0.38547065149124693,
+      "ci_high": 0.4480095549534272,
+      "baseline": 0.36782204969089666,
+      "lift_pp": 4.858173579806236,
+      "lift_ci": [
+        -0.25350039943181635,
+        10.000502806256778
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 463,
+        "rate": 0.41935483870967744
+      },
+      "against_trend": {
+        "n": 580,
+        "rate": 0.41392649903288203
+      },
+      "first_half_lift_pp": 2.153044372757096,
+      "second_half_lift_pp": 7.30849971629871,
+      "symbols_agree": 4
+    },
+    {
+      "id": "bbLower",
+      "side": "support",
+      "n": 1355,
+      "n_days": 77,
+      "reacted": 449,
+      "broke": 747,
+      "unresolved": 159,
+      "rate": 0.3754180602006689,
+      "ci_low": 0.3484148415303156,
+      "ci_high": 0.4032190083516896,
+      "baseline": 0.36799251501411206,
+      "lift_pp": 0.7425545186556859,
+      "lift_ci": [
+        -3.903182499226193,
+        5.819356323605729
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 753,
+        "rate": 0.3728813559322034
+      },
+      "against_trend": {
+        "n": 602,
+        "rate": 0.37842778793418647
+      },
+      "first_half_lift_pp": 2.9190507470566063,
+      "second_half_lift_pp": -1.199747408320162,
+      "symbols_agree": 3
+    },
+    {
+      "id": "round",
+      "side": "resistance",
+      "n": 2075,
+      "n_days": 90,
+      "reacted": 642,
+      "broke": 1179,
+      "unresolved": 254,
+      "rate": 0.3525535420098847,
+      "ci_low": 0.3309412995775907,
+      "ci_high": 0.3747865585875229,
+      "baseline": 0.36763701727569376,
+      "lift_pp": -1.5083475265809054,
+      "lift_ci": [
+        -4.225438017930649,
+        1.3831808756723907
+      ],
+      "grade": "no_evidence",
+      "with_trend": {
+        "n": 733,
+        "rate": 0.35987261146496813
+      },
+      "against_trend": {
+        "n": 1342,
+        "rate": 0.34870075440067055
+      },
+      "first_half_lift_pp": -2.7309629001273206,
+      "second_half_lift_pp": -0.15447733771640215,
+      "symbols_agree": 3
+    },
+    {
+      "id": "round",
+      "side": "support",
+      "n": 2081,
+      "n_days": 90,
+      "reacted": 727,
+      "broke": 1070,
+      "unresolved": 284,
+      "rate": 0.4045631608235949,
+      "ci_low": 0.3820974464911252,
+      "ci_high": 0.4274360350405957,
+      "baseline": 0.36755453642835734,
+      "lift_pp": 3.7008624395237555,
+      "lift_ci": [
+        0.5104234650515571,
+        6.942187193239347
+      ],
+      "grade": "promising",
+      "with_trend": {
+        "n": 1337,
+        "rate": 0.41091219096334186
+      },
+      "against_trend": {
+        "n": 744,
+        "rate": 0.3926282051282051
+      },
+      "first_half_lift_pp": 4.397060991864859,
+      "second_half_lift_pp": 3.009042795652339,
+      "symbols_agree": 5
+    }
+  ],
+  "patterns": [
+    {
+      "kind": "double_bottom",
+      "direction": "long",
+      "n": 569,
+      "win_rate": 0.5817223198594025,
+      "ci_low": 0.5407762664092479,
+      "ci_high": 0.621572322547977,
+      "mean_net_r": 0.02051476274165202,
+      "r_ci": [
+        -0.059851845342706496,
+        0.10749525483304043
+      ],
+      "baseline": 0.41531546572934974,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "double_top",
+      "direction": "short",
+      "n": 567,
+      "win_rate": 0.4056437389770723,
+      "ci_low": 0.3659940881026811,
+      "ci_high": 0.4465633194326165,
+      "mean_net_r": -0.3394134038800705,
+      "r_ci": [
+        -0.41819770723104055,
+        -0.25689012345679013
+      ],
+      "baseline": 0.4138253968253968,
+      "grade": "negative"
+    },
+    {
+      "kind": "candle_hammer",
+      "direction": "long",
+      "n": 545,
+      "win_rate": 0.5339449541284403,
+      "ci_low": 0.49197263334265934,
+      "ci_high": 0.5754421008366055,
+      "mean_net_r": -0.3157596330275229,
+      "r_ci": [
+        -0.4075130275229358,
+        -0.22241082568807338
+      ],
+      "baseline": 0.2881155963302752,
+      "grade": "negative"
+    },
+    {
+      "kind": "candle_shooting_star",
+      "direction": "short",
+      "n": 541,
+      "win_rate": 0.4824399260628466,
+      "ci_low": 0.44060561315605384,
+      "ci_high": 0.5245218560607662,
+      "mean_net_r": -0.47143419593345653,
+      "r_ci": [
+        -0.5641321626617375,
+        -0.3717704251386322
+      ],
+      "baseline": 0.2900332717190388,
+      "grade": "negative"
+    },
+    {
+      "kind": "order_block_bearish",
+      "direction": "short",
+      "n": 505,
+      "win_rate": 0.4633663366336634,
+      "ci_low": 0.4203151607798269,
+      "ci_high": 0.5069706362118682,
+      "mean_net_r": -0.43197940594059403,
+      "r_ci": [
+        -0.5225483168316831,
+        -0.33896059405940593
+      ],
+      "baseline": 0.30081386138613864,
+      "grade": "negative"
+    },
+    {
+      "kind": "order_block_bullish",
+      "direction": "long",
+      "n": 504,
+      "win_rate": 0.5416666666666666,
+      "ci_low": 0.49801523194173897,
+      "ci_high": 0.5846877466399579,
+      "mean_net_r": -0.2727853174603175,
+      "r_ci": [
+        -0.36647162698412694,
+        -0.1792857142857143
+      ],
+      "baseline": 0.30745535714285716,
+      "grade": "negative"
+    },
+    {
+      "kind": "liquidity_sweep_bearish",
+      "direction": "short",
+      "n": 495,
+      "win_rate": 0.48282828282828283,
+      "ci_low": 0.4391093003201982,
+      "ci_high": 0.5268117348470229,
+      "mean_net_r": -0.5279640404040404,
+      "r_ci": [
+        -0.6296438383838384,
+        -0.4327408080808081
+      ],
+      "baseline": 0.257510101010101,
+      "grade": "negative"
+    },
+    {
+      "kind": "liquidity_sweep_bullish",
+      "direction": "long",
+      "n": 405,
+      "win_rate": 0.5530864197530864,
+      "ci_low": 0.5043927013308052,
+      "ci_high": 0.6007825462254868,
+      "mean_net_r": -0.3951893827160494,
+      "r_ci": [
+        -0.5056817283950618,
+        -0.278600987654321
+      ],
+      "baseline": 0.24964444444444447,
+      "grade": "negative"
+    },
+    {
+      "kind": "candle_engulfing_bullish",
+      "direction": "long",
+      "n": 343,
+      "win_rate": 0.5276967930029155,
+      "ci_low": 0.4748498285111329,
+      "ci_high": 0.5799302457055355,
+      "mean_net_r": -0.13834110787172013,
+      "r_ci": [
+        -0.24518688046647227,
+        -0.030439941690962098
+      ],
+      "baseline": 0.3898119533527697,
+      "grade": "negative"
+    },
+    {
+      "kind": "range_breakout",
+      "direction": "long",
+      "n": 332,
+      "win_rate": 0.5783132530120482,
+      "ci_low": 0.5245949711691447,
+      "ci_high": 0.6302399994773615,
+      "mean_net_r": 0.06960512048192771,
+      "r_ci": [
+        -0.034403313253012054,
+        0.17324186746987952
+      ],
+      "baseline": 0.45201355421686745,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "candle_engulfing_bearish",
+      "direction": "short",
+      "n": 296,
+      "win_rate": 0.47635135135135137,
+      "ci_low": 0.4201227237048085,
+      "ci_high": 0.5331859321950797,
+      "mean_net_r": -0.2656780405405405,
+      "r_ci": [
+        -0.37651925675675674,
+        -0.14326722972972972
+      ],
+      "baseline": 0.3859239864864865,
+      "grade": "negative"
+    },
+    {
+      "kind": "bull_flag",
+      "direction": "long",
+      "n": 290,
+      "win_rate": 0.5344827586206896,
+      "ci_low": 0.47699728229354893,
+      "ci_high": 0.59106663606353,
+      "mean_net_r": -0.09733551724137932,
+      "r_ci": [
+        -0.2114896551724138,
+        0.0187248275862069
+      ],
+      "baseline": 0.4233689655172414,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "fvg_bullish",
+      "direction": "long",
+      "n": 270,
+      "win_rate": 0.4666666666666667,
+      "ci_low": 0.40804426835534596,
+      "ci_high": 0.5262242638669716,
+      "mean_net_r": -0.3832507407407407,
+      "r_ci": [
+        -0.5017422222222223,
+        -0.25939074074074076
+      ],
+      "baseline": 0.3364962962962963,
+      "grade": "negative"
+    },
+    {
+      "kind": "fvg_bearish",
+      "direction": "short",
+      "n": 252,
+      "win_rate": 0.5277777777777778,
+      "ci_low": 0.46618616998601276,
+      "ci_high": 0.5885352223920319,
+      "mean_net_r": -0.20116031746031746,
+      "r_ci": [
+        -0.33885912698412696,
+        -0.07424563492063492
+      ],
+      "baseline": 0.3709623015873016,
+      "grade": "negative"
+    },
+    {
+      "kind": "range_breakout",
+      "direction": "short",
+      "n": 247,
+      "win_rate": 0.5263157894736842,
+      "ci_low": 0.46412189302553464,
+      "ci_high": 0.5877036738906625,
+      "mean_net_r": -0.03373603238866396,
+      "r_ci": [
+        -0.15675870445344128,
+        0.09381862348178138
+      ],
+      "baseline": 0.44512955465587045,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "candle_morning_star",
+      "direction": "long",
+      "n": 204,
+      "win_rate": 0.4803921568627451,
+      "ci_low": 0.4128305812741239,
+      "ci_high": 0.5486785389630742,
+      "mean_net_r": -0.2505578431372549,
+      "r_ci": [
+        -0.3893730392156863,
+        -0.10921519607843137
+      ],
+      "baseline": 0.38334558823529413,
+      "grade": "negative"
+    },
+    {
+      "kind": "bear_flag",
+      "direction": "short",
+      "n": 201,
+      "win_rate": 0.48756218905472637,
+      "ci_low": 0.4193449724993952,
+      "ci_high": 0.5562459044156872,
+      "mean_net_r": -0.1508273631840796,
+      "r_ci": [
+        -0.2959089552238806,
+        -0.009003482587064682
+      ],
+      "baseline": 0.42721641791044773,
+      "grade": "negative"
+    },
+    {
+      "kind": "candle_evening_star",
+      "direction": "short",
+      "n": 200,
+      "win_rate": 0.485,
+      "ci_low": 0.41667398744428696,
+      "ci_high": 0.5538913700916388,
+      "mean_net_r": -0.24933499999999997,
+      "r_ci": [
+        -0.388842,
+        -0.104512
+      ],
+      "baseline": 0.36625,
+      "grade": "negative"
+    },
+    {
+      "kind": "ascending_triangle",
+      "direction": "long",
+      "n": 130,
+      "win_rate": 0.5153846153846153,
+      "ci_low": 0.43027450266414485,
+      "ci_high": 0.5996116066329207,
+      "mean_net_r": -0.24083923076923078,
+      "r_ci": [
+        -0.4169630769230769,
+        -0.05595846153846154
+      ],
+      "baseline": 0.36996538461538464,
+      "grade": "negative"
+    },
+    {
+      "kind": "rising_wedge",
+      "direction": "short",
+      "n": 111,
+      "win_rate": 0.45045045045045046,
+      "ci_low": 0.3610962590989369,
+      "ci_high": 0.5431195040146466,
+      "mean_net_r": -0.2798702702702703,
+      "r_ci": [
+        -0.46342612612612616,
+        -0.10069099099099099
+      ],
+      "baseline": 0.40182882882882875,
+      "grade": "negative"
+    },
+    {
+      "kind": "descending_triangle",
+      "direction": "short",
+      "n": 101,
+      "win_rate": 0.4752475247524752,
+      "ci_low": 0.3805589702046941,
+      "ci_high": 0.5717499655814577,
+      "mean_net_r": -0.30874752475247524,
+      "r_ci": [
+        -0.5140881188118812,
+        -0.09823564356435645
+      ],
+      "baseline": 0.3732376237623763,
+      "grade": "negative"
+    },
+    {
+      "kind": "falling_wedge",
+      "direction": "long",
+      "n": 95,
+      "win_rate": 0.49473684210526314,
+      "ci_low": 0.3963759800065541,
+      "ci_high": 0.593506806326701,
+      "mean_net_r": -0.18034315789473684,
+      "r_ci": [
+        -0.3839736842105263,
+        0.024188421052631578
+      ],
+      "baseline": 0.4149578947368421,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "candle_doji",
+      "direction": "short",
+      "n": 82,
+      "win_rate": 0.5975609756097561,
+      "ci_low": 0.4893647727203285,
+      "ci_high": 0.6970253834006925,
+      "mean_net_r": -0.2065329268292683,
+      "r_ci": [
+        -0.43546341463414634,
+        0.03705365853658538
+      ],
+      "baseline": 0.3060609756097561,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "candle_doji",
+      "direction": "long",
+      "n": 69,
+      "win_rate": 0.6231884057971014,
+      "ci_low": 0.5052191047597714,
+      "ci_high": 0.7281645193530824,
+      "mean_net_r": -0.08440000000000002,
+      "r_ci": [
+        -0.3439869565217391,
+        0.16621739130434782
+      ],
+      "baseline": 0.33308695652173914,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "inverse_head_shoulders",
+      "direction": "long",
+      "n": 49,
+      "win_rate": 0.46938775510204084,
+      "ci_low": 0.33703528231371394,
+      "ci_high": 0.6061910980000401,
+      "mean_net_r": -0.15232244897959182,
+      "r_ci": [
+        -0.4356142857142857,
+        0.13235714285714287
+      ],
+      "baseline": 0.44095918367346937,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "head_shoulders",
+      "direction": "short",
+      "n": 45,
+      "win_rate": 0.5555555555555556,
+      "ci_low": 0.411761622712813,
+      "ci_high": 0.6906104546101642,
+      "mean_net_r": 0.014673333333333332,
+      "r_ci": [
+        -0.27093555555555554,
+        0.29171111111111114
+      ],
+      "baseline": 0.44824444444444445,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "rsi_divergence_bearish",
+      "direction": "short",
+      "n": 15,
+      "win_rate": 0.6,
+      "ci_low": 0.3574687297653368,
+      "ci_high": 0.8017547420197355,
+      "mean_net_r": 0.13012000000000004,
+      "r_ci": [
+        -0.40384,
+        0.66112
+      ],
+      "baseline": 0.45366666666666666,
+      "grade": "no_evidence"
+    },
+    {
+      "kind": "rsi_divergence_bullish",
+      "direction": "long",
+      "n": 3,
+      "win_rate": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.5614960306476864,
+      "mean_net_r": -1.0623666666666667,
+      "r_ci": [
+        -1.089,
+        -1.0357
+      ],
+      "baseline": 0.4531666666666667,
+      "grade": "no_evidence"
+    }
+  ]
+}
