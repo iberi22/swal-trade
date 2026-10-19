@@ -2,10 +2,12 @@
   import { onMount, type Snippet } from 'svelte';
   import { browser } from 'wxt/browser';
   import { PANEL_TABS, PANEL_TAB_KEY, parsePanelTab, tabForKey, type PanelTab } from '../../lib/account/panel-controller';
+  import { onOpenInLearn } from '../../lib/glossary/learn-nav';
 
   let {
     operacion,
     analisis,
+    aprender,
     ajustes,
     escaner,
     mistrades,
@@ -13,6 +15,7 @@
   }: {
     operacion: Snippet;
     analisis: Snippet;
+    aprender: Snippet;
     ajustes: Snippet;
     escaner: Snippet;
     mistrades: Snippet;
@@ -26,6 +29,10 @@
     onTabChange?.(selected);
   });
   const buttons: Record<string, HTMLButtonElement | undefined> = {};
+
+  // Un término con «Ver en Aprender» cambia a esta pestaña; el detalle del
+  // término lo abre LearnTab, que escucha el mismo aviso.
+  $effect(() => onOpenInLearn(() => select('aprender')));
 
   onMount(() => {
     void browser.storage.session
@@ -53,7 +60,14 @@
 </script>
 
 <div class="tabs">
-  <div class="tablist" role="tablist" aria-label="Secciones del panel" tabindex="-1" onkeydown={onKeydown}>
+  <div
+    class="tablist"
+    role="tablist"
+    aria-label="Secciones del panel"
+    tabindex="-1"
+    onkeydown={onKeydown}
+    style="grid-template-columns: repeat({PANEL_TABS.length}, 1fr)"
+  >
     {#each PANEL_TABS as tab (tab.id)}
       <button
         type="button"
@@ -75,6 +89,9 @@
   </div>
   <div role="tabpanel" id="tabpanel-analisis" aria-labelledby="tab-analisis" hidden={selected !== 'analisis'}>
     {@render analisis()}
+  </div>
+  <div role="tabpanel" id="tabpanel-aprender" aria-labelledby="tab-aprender" hidden={selected !== 'aprender'}>
+    {@render aprender()}
   </div>
   <div role="tabpanel" id="tabpanel-ajustes" aria-labelledby="tab-ajustes" hidden={selected !== 'ajustes'}>
     {@render ajustes()}

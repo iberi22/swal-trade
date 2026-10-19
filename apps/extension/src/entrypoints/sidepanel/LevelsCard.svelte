@@ -10,6 +10,7 @@
   } from '../../lib/context/levels';
   import { signed } from '../../lib/context/sentiment';
   import { formatPanelPrice } from '../../lib/price-format';
+  import AutoLink from './AutoLink.svelte';
 
   let {
     lastPrice,
@@ -60,7 +61,7 @@
           {/if}
           <li class="row" data-testid="levels-row" data-side={row.price >= lastPrice ? 'above' : 'below'}>
             <span class="price">{formatPanelPrice(row.price)}</span>
-            <span class="name">{row.label}</span>
+            <span class="name"><AutoLink text={row.label} /></span>
             <span class="dist">
               {signed(row.distancePct, 2)} %{row.distanceAtr === null ? '' : ` · ${signed(row.distanceAtr, 1)} ATR`}
             </span>
@@ -78,7 +79,7 @@
         <ul class="ranges" data-testid="levels-range">
           {#each ranges as range (range.id)}
             <li>
-              <span class="name">{range.horizon} · {range.label}</span>
+              <span class="name">{range.horizon} · <AutoLink text={range.label} /></span>
               <span class="dist">
                 {formatPanelPrice(range.low)} – {formatPanelPrice(range.high)} (±{range.pct.toFixed(2).replace('.', ',')} %)
               </span>

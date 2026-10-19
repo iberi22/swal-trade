@@ -4,6 +4,7 @@
   import type { ContextSnapshot } from '../../lib/context/context-feed';
   import { buildSentiment } from '../../lib/context/sentiment';
   import type { NewsItem } from '../../lib/news';
+  import AutoLink from './AutoLink.svelte';
 
   let {
     snapshot,
@@ -52,7 +53,7 @@
         <ul class="chips">
           {#each sentiment.items as item (item.id)}
             <li class="chip" class:warn={item.tone === 'warn'} data-id={item.id}>
-              <span class="chip-name">{item.label}</span> {item.value}
+              <span class="chip-name"><AutoLink text={item.label} /></span> {item.value}
             </li>
           {/each}
         </ul>
@@ -72,7 +73,7 @@
           data-id={item.id}
           title="{item.label} · {item.clock}"
         >
-          <span class="chip-name">{item.label}</span>
+          <span class="chip-name"><AutoLink text={item.label} /></span>
           {formatRemaining(item.remainingMs)}
           <span class="clock">{item.clock}</span>
         </li>

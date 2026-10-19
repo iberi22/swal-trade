@@ -34,6 +34,7 @@
   import AnalysisTab from './AnalysisTab.svelte';
   import MyTradesTab from './MyTradesTab.svelte';
   import OperationTab from './OperationTab.svelte';
+  import LearnTab from './LearnTab.svelte';
   import ScannerTab from './ScannerTab.svelte';
   import SettingsTab from './SettingsTab.svelte';
   import SidepanelFooter from './SidepanelFooter.svelte';
@@ -512,6 +513,9 @@
         {lastPrice}
         {atr}
       />
+    {/snippet}
+    {#snippet aprender()}
+      <LearnTab />
     {/snippet}
     {#snippet ajustes()}
       <SettingsTab
