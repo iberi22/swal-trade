@@ -245,11 +245,22 @@ export function buildHistoryPayload(metrics: HistoryMetricsInput, redaction: Red
   };
 }
 
-/** JSON para el LLM con tope duro; descarta lo menos prioritario hasta caber. */
-export function serializeForLlm(payload: AiPositionPayload | AiHistoryPayload): string {
+/**
+ * JSON para el LLM con tope duro; descarta lo menos prioritario hasta caber.
+ * También acepta el payload de un dibujo (`swal.drawing.v1`), que ya es relativo
+ * por construcción: si hiciera falta, se tiran sus listas de niveles y checks.
+ */
+export function serializeForLlm(
+  payload: AiPositionPayload | AiHistoryPayload | { schema: 'swal.drawing.v1' },
+): string {
   const work: Record<string, unknown> = { ...payload };
   let s = JSON.stringify(work);
-  const drops = payload.schema === 'swal.position.v1' ? ['contexto', 'precios', 'reglas'] : ['buckets'];
+  const drops =
+    payload.schema === 'swal.position.v1'
+      ? ['contexto', 'precios', 'reglas']
+      : payload.schema === 'swal.history.v1'
+        ? ['buckets']
+        : ['niveles', 'checks'];
   for (const key of drops) {
     if (s.length <= PAYLOAD_MAX_CHARS) break;
     delete work[key];

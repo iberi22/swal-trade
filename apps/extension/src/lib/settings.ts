@@ -52,10 +52,22 @@ export interface ExtensionSettings {
    */
   paintOnChart: boolean;
   /**
+   * Lee (solo lectura) las herramientas Long/Short Position que el usuario
+   * dibuja en la pestaña Trading View. Arranca apagado: leer el gráfico ajeno
+   * es una acción sobre la página y necesita un `true` explícito.
+   */
+  readDrawings: boolean;
+  /**
    * Explicaciones con IA: manda el símbolo, la temporalidad y los patrones a
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
   explainWithAi: boolean;
+  /**
+   * Lee el texto que el usuario ya ve en su página de Binance Futures
+   * (posiciones abiertas e historial) para no necesitar clave de API.
+   * Local, opt-in y sin pulsar nada: exige un `true` explícito.
+   */
+  readPageAccount: boolean;
   /** Atajos de teclado habilitados para cambiar la temporalidad (F1..F12). */
   hotkeysEnabled: boolean;
   /** Mapa de tecla de función a temporalidad (o null para ninguna). */
@@ -82,7 +94,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   symbols: [],
   autoSync: true,
   paintOnChart: false,
+  readDrawings: false,
   explainWithAi: false,
+  readPageAccount: false,
   hotkeysEnabled: true,
   hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
   claudeBridgeEnabled: false,
@@ -224,8 +238,12 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     autoSync: record.autoSync === false ? false : DEFAULT_SETTINGS.autoSync,
     // Pintar en el gráfico necesita un `true` explícito: se sale del panel.
     paintOnChart: record.paintOnChart === true,
+    // Leer los dibujos del usuario también: solo con un `true` explícito.
+    readDrawings: record.readDrawings === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
+    // Leer la página también: solo cuando el usuario lo enciende.
+    readPageAccount: record.readPageAccount === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
     hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),

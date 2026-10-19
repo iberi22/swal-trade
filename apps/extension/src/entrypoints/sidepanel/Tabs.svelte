@@ -10,6 +10,7 @@
     aprender,
     ajustes,
     escaner,
+    mistrades,
     onTabChange,
   }: {
     operacion: Snippet;
@@ -17,6 +18,7 @@
     aprender: Snippet;
     ajustes: Snippet;
     escaner: Snippet;
+    mistrades: Snippet;
     /** Avisa de la pestaña elegida (incluida la restaurada al abrir). */
     onTabChange?: (tab: PanelTab) => void;
   } = $props();
@@ -97,6 +99,9 @@
   <div role="tabpanel" id="tabpanel-escaner" aria-labelledby="tab-escaner" hidden={selected !== 'escaner'}>
     {@render escaner()}
   </div>
+  <div role="tabpanel" id="tabpanel-mistrades" aria-labelledby="tab-mistrades" hidden={selected !== 'mistrades'}>
+    {@render mistrades()}
+  </div>
 </div>
 
 <style>
@@ -116,7 +121,8 @@
   }
   .tablist {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    /* auto-fit: añadir pestañas no descoloca la barra. */
+    grid-template-columns: repeat(auto-fit, minmax(3.4rem, 1fr));
     gap: 0.25rem;
     background: hsl(var(--surface));
     border-radius: var(--radius);

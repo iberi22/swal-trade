@@ -82,7 +82,9 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -112,7 +114,9 @@ describe('normalizeSettings', () => {
       symbols: ["BTC", "ETH"],
       autoSync: false,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: false,
       hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
       claudeBridgeEnabled: false,
@@ -136,7 +140,9 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -164,6 +170,25 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ paintOnChart: 'true' }).paintOnChart).toBe(false);
     expect(normalizeSettings({ paintOnChart: 1 }).paintOnChart).toBe(false);
     expect(DEFAULT_SETTINGS.paintOnChart).toBe(false);
+  });
+
+  it('leer los dibujos de posición solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: true }).readDrawings).toBe(true);
+    expect(normalizeSettings({ readDrawings: 'true' }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: 1 }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: null }).readDrawings).toBe(false);
+    expect(DEFAULT_SETTINGS.readDrawings).toBe(false);
+  });
+
+  it('leer las posiciones de la página solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).readPageAccount).toBe(false);
+    expect(DEFAULT_SETTINGS.readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: true }).readPageAccount).toBe(true);
+    expect(normalizeSettings({ readPageAccount: 'true' }).readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: 1 }).readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: null }).readPageAccount).toBe(false);
+    expect(settingsFromStorage({ settings: { readPageAccount: true } }).readPageAccount).toBe(true);
   });
 
   it('las explicaciones con IA solo se encienden con true explícito', () => {
@@ -222,6 +247,8 @@ describe('normalizeSettings', () => {
       'paintOnChart',
       'radarEnabled',
       'radarPort',
+      'readDrawings',
+      'readPageAccount',
       'rules',
       'symbols',
     ]);
@@ -247,7 +274,9 @@ describe('settingsFromStorage', () => {
       symbols: ["ETH"],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -269,7 +298,9 @@ describe('settingsFromStorage', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,

@@ -116,6 +116,51 @@ describe('buildPositionPayload', () => {
   });
 });
 
+describe('serializeForLlm con el payload de un dibujo', () => {
+  const drawing = {
+    schema: 'swal.drawing.v1' as const,
+    symbol: 'BTCUSDT',
+    side: 'long' as const,
+    entry_mode: 'mercado' as const,
+    entry_distance_pct: 0,
+    risk_pct: 2,
+    reward_pct: 6,
+    rr: 3,
+    rr_neto: 2.81,
+    stop_atr1h: 1,
+    target_atr1h: 3,
+    target_atr4h: 1.5,
+    target_atr_d: null,
+    fee_share_of_risk: 5,
+    funding_cost_pct_risk_8h: 0.5,
+    funding_side_pays: true,
+    smallest_horizon: '24h' as const,
+    // Solo códigos: ni etiquetas de nivel ni textos de check.
+    niveles: [{ kind: 'pivot', kinds: ['pivot'], distance_pct: 2, distance_atr: 1 }],
+    checks: [{ code: 'tiny_stop', sev: 'warn' as const }],
+    honest_line: 'Lectura de geometría y costes, no una predicción.',
+  };
+
+  it('serializa el dibujo tal cual cuando cabe', () => {
+    const s = serializeForLlm(drawing);
+    expect(JSON.parse(s).schema).toBe('swal.drawing.v1');
+    expect(s.length).toBeLessThanOrEqual(PAYLOAD_MAX_CHARS);
+  });
+
+  it('tira niveles y checks antes que pasarse del tope', () => {
+    const heavy = {
+      ...drawing,
+      niveles: Array.from({ length: 200 }, () => ({ kind: 'pivot', kinds: ['pivot'], distance_pct: 1, distance_atr: 1 })),
+      checks: Array.from({ length: 200 }, (_v, i) => ({ code: `c${i}`, sev: 'info' as const })),
+    };
+    const s = serializeForLlm(heavy);
+    expect(s.length).toBeLessThanOrEqual(PAYLOAD_MAX_CHARS);
+    expect(s).not.toContain('niveles');
+    expect(s).not.toContain('checks');
+    expect(s).toContain('honest_line');
+  });
+});
+
 describe('buildHistoryPayload', () => {
   it('emits aggregates only', () => {
     const p = buildHistoryPayload(

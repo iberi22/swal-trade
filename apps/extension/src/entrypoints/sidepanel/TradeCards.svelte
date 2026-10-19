@@ -8,7 +8,7 @@
   import { DEFAULT_SIZING_PREFERENCES, normalizeSizingPreferences, SIZING_STORAGE_KEY } from '../../lib/sizing';
   import { fetchSymbolFilters } from '../../lib/trade-cards/filters';
   import { defaultPresets } from '../../lib/trade-cards/presets';
-  import { publishSizingLoad } from '../../lib/trade-cards/sizing-bridge';
+  import { publishSizingLoad, sizingLoadFromTicket } from '../../lib/trade-cards/sizing-bridge';
   import { loadPresets, savePresets } from '../../lib/trade-cards/storage';
   import { buildTicketSides, CARDS_FOOTER, formatTicketText, HONEST_R_LINE, type SymbolFilters } from '../../lib/trade-cards/ticket';
   import type { TradeCardPreset, TradeSide, TradeTicket } from '../../lib/trade-cards/types';
@@ -125,12 +125,7 @@
   }
 
   function load(ticket: TradeTicket) {
-    publishSizingLoad({
-      direction: ticket.side,
-      entry: ticket.entries[0]?.price ?? ticket.avgEntry,
-      stop: ticket.stop,
-      riskPct: ticket.basis.basis === 'risk' ? Math.min(5, Math.max(0.1, ticket.basis.pct)) : undefined,
-    });
+    publishSizingLoad(sizingLoadFromTicket(ticket));
   }
 </script>
 

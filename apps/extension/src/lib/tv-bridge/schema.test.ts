@@ -8,6 +8,15 @@ import {
   SWAL_READY,
   SWAL_RESOLUTION_ACK,
   SWAL_SET_RESOLUTION,
+  SWAL_SET_READ,
+  SWAL_POSITION_TOOLS,
+  SWAL_MAX_POSITION_TOOLS,
+  MAX_POSITION_TOOL_ID,
+  MAX_POSITION_TOOL_NAME,
+  buildPositionToolsMessage,
+  buildSetReadMessage,
+  coercePositionTool,
+  parsePositionToolsMessage,
   buildClearMessage,
   buildDrawMessage,
   buildReadyMessage,
@@ -192,6 +201,91 @@ describe('Bridge Schema', () => {
       expect(parseBridgeMessage(123)).toBeNull();
       expect(parseBridgeMessage({ type: SWAL_DRAW, version: 0 })).toBeNull();
       expect(parseBridgeMessage({ type: 'other', version: SWAL_MESSAGE_VERSION })).toBeNull();
+    });
+  });
+
+  describe('lectura de posiciones (swal:set-read / swal:position-tools)', () => {
+    const tool = {
+      id: 'shape-1',
+      name: 'LineToolRiskRewardLong',
+      entry: 81917.9,
+      stopLevel: 592530,
+      profitLevel: 592530,
+    };
+    const message = {
+      type: SWAL_POSITION_TOOLS,
+      version: SWAL_MESSAGE_VERSION,
+      symbol: 'BTCUSDT',
+      minmov: 1,
+      pricescale: 100,
+      tools: [tool],
+    };
+
+    it('valida el control de encendido de la lectura', () => {
+      expect(parseBridgeMessage(buildSetReadMessage(true))).toEqual(buildSetReadMessage(true));
+      expect(parseBridgeMessage(buildSetReadMessage(false))).toEqual(buildSetReadMessage(false));
+      expect(parseBridgeMessage({ type: SWAL_SET_READ, version: SWAL_MESSAGE_VERSION })).toBeNull();
+      expect(parseBridgeMessage({ type: SWAL_SET_READ, version: SWAL_MESSAGE_VERSION, enabled: 'true' })).toBeNull();
+      expect(parseBridgeMessage({ type: SWAL_SET_READ, version: SWAL_MESSAGE_VERSION + 1, enabled: true })).toBeNull();
+    });
+
+    it('acepta un mensaje válido y descarta campos desconocidos', () => {
+      const parsed = parseBridgeMessage({ ...message, extra: 'nope', tools: [{ ...tool, color: 'red' }] });
+      expect(parsed).toEqual(message);
+      expect(parsed && 'tools' in parsed && parsed.tools[0]).not.toHaveProperty('color');
+    });
+
+    it('normaliza el símbolo a mayúsculas y acepta la lista vacía', () => {
+      const parsed = parsePositionToolsMessage({ ...message, symbol: 'btcusdt', tools: [] });
+      expect(parsed?.symbol).toBe('BTCUSDT');
+      expect(parsed?.tools).toEqual([]);
+    });
+
+    it('rechaza NaN, Infinity, tipos equivocados y símbolo inválido', () => {
+      const badMessages: unknown[] = [
+        { ...message, minmov: Number.NaN },
+        { ...message, pricescale: Number.POSITIVE_INFINITY },
+        { ...message, minmov: '1' },
+        { ...message, pricescale: 0 },
+        { ...message, symbol: 'bt c' },
+        { ...message, symbol: 42 },
+        { ...message, tools: 'nope' },
+        { ...message, version: 1 },
+      ];
+      for (const raw of badMessages) expect(parsePositionToolsMessage(raw)).toBeNull();
+      expect(parseBridgeMessage(null)).toBeNull();
+      expect(parseBridgeMessage({ type: SWAL_POSITION_TOOLS, version: SWAL_MESSAGE_VERSION })).toBeNull();
+
+      // Una herramienta rota no invalida el mensaje: se tira y queda la lista vacía.
+      const badTools: unknown[] = [
+        { ...tool, entry: Number.NaN },
+        { ...tool, entry: '81917.9' },
+        { ...tool, entry: 0 },
+        { ...tool, stopLevel: null },
+        { ...tool, profitLevel: -1 },
+        { ...tool, id: 7 },
+        { ...tool, name: '' },
+        'nope',
+        null,
+      ];
+      for (const raw of badTools) {
+        const parsed = parsePositionToolsMessage({ ...message, tools: [raw] });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.tools).toEqual([]);
+      }
+    });
+
+    it('corta textos y el número de herramientas a los topes del contrato', () => {
+      const long = 'x'.repeat(500);
+      const coerced = coercePositionTool({ ...tool, id: long, name: long });
+      expect(coerced?.id).toHaveLength(MAX_POSITION_TOOL_ID);
+      expect(coerced?.name).toHaveLength(MAX_POSITION_TOOL_NAME);
+      const many = Array.from({ length: 40 }, (_v, i) => ({ ...tool, id: `id-${i}` }));
+      const parsed = parsePositionToolsMessage({ ...message, tools: many });
+      expect(parsed?.tools).toHaveLength(SWAL_MAX_POSITION_TOOLS);
+      const built = buildPositionToolsMessage('btcusdt', 1, 100, many);
+      expect(built.tools).toHaveLength(SWAL_MAX_POSITION_TOOLS);
+      expect(built.symbol).toBe('BTCUSDT');
     });
   });
 });

@@ -232,13 +232,16 @@ describe('pestañas', () => {
   });
 
   it('tabForKey navega con flechas y da la vuelta', () => {
-    expect(tabForKey('operacion', 'ArrowRight')).toBe('analisis');
-    expect(tabForKey('ajustes', 'ArrowRight')).toBe('escaner');
-    expect(tabForKey('escaner', 'ArrowRight')).toBe('operacion');
-    expect(tabForKey('operacion', 'ArrowLeft')).toBe('escaner');
-    expect(tabForKey('escaner', 'ArrowLeft')).toBe('ajustes');
+    // Estructural: añadir pestañas nuevas (Mis trades, Aprender) no rompe esto.
+    const last = PANEL_TABS[PANEL_TABS.length - 1]!.id;
+    expect(tabForKey('operacion', 'ArrowRight')).toBe(PANEL_TABS[1]!.id);
+    const ajustes = PANEL_TABS.findIndex((tab) => tab.id === 'ajustes');
+    expect(tabForKey('ajustes', 'ArrowRight')).toBe(PANEL_TABS[ajustes + 1]!.id);
+    expect(tabForKey(last, 'ArrowRight')).toBe(PANEL_TABS[0]!.id);
+    expect(tabForKey('operacion', 'ArrowLeft')).toBe(last);
+    expect(tabForKey(PANEL_TABS[1]!.id, 'ArrowLeft')).toBe(PANEL_TABS[0]!.id);
     expect(tabForKey('analisis', 'Home')).toBe('operacion');
-    expect(tabForKey('analisis', 'End')).toBe('escaner');
+    expect(tabForKey('analisis', 'End')).toBe(last);
     expect(tabForKey('analisis', 'a')).toBeNull();
   });
 });

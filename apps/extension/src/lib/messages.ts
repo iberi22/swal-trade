@@ -1,5 +1,6 @@
 import { isMarketContext } from './market-context';
-import { TV_GET_STATE, TV_STATE, type TvChartState } from './tv-paint';
+import { parsePositionToolsMessage, type BridgePositionToolsMessage } from './tv-bridge/schema';
+import { TV_GET_STATE, TV_POSITION_TOOLS, TV_STATE, type TvChartState } from './tv-paint';
 import type { MarketContext } from './types';
 
 export interface MarketContextMessage {
@@ -45,6 +46,12 @@ export interface HotkeySetTimeframeMessage {
   timeframe: string;
 }
 
+/** El content script releva las herramientas de posición leídas del gráfico. */
+export interface TvPositionToolsMessage {
+  type: typeof TV_POSITION_TOOLS;
+  tools: BridgePositionToolsMessage;
+}
+
 export type RuntimeMessage =
   | MarketContextMessage
   | GetContextMessage
@@ -52,7 +59,8 @@ export type RuntimeMessage =
   | TvStateMessage
   | GetTvStateMessage
   | TvStateResultMessage
-  | HotkeySetTimeframeMessage;
+  | HotkeySetTimeframeMessage
+  | TvPositionToolsMessage;
 
 const TV_STATES: readonly TvChartState[] = [
   'ready',
@@ -105,6 +113,10 @@ export function parseRuntimeMessage(message: unknown): RuntimeMessage | null {
       return { type: 'swal:hotkey-set-timeframe', timeframe };
     }
     return null;
+  }
+  if (type === TV_POSITION_TOOLS) {
+    const tools = parsePositionToolsMessage((message as { tools?: unknown }).tools);
+    return tools ? { type: TV_POSITION_TOOLS, tools } : null;
   }
   if (type === 'context-result') {
     const context = (message as { context?: unknown }).context;
