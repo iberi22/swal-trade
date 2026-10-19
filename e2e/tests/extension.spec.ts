@@ -73,6 +73,19 @@ async function openSidePanel(
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/depth/, (route) =>
     fulfillJson(route, { lastUpdateId: 1, bids: [], asks: [] }),
   );
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/premiumIndex/, (route) =>
+    fulfillJson(route, {
+      symbol: 'BTCUSDT',
+      markPrice: '100.30',
+      indexPrice: '100.00',
+      lastFundingRate: '0.00008000',
+      nextFundingTime: Date.now() + 3_600_000,
+      time: Date.now(),
+    }),
+  );
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/ticker\/24hr/, (route) =>
+    fulfillJson(route, { symbol: 'BTCUSDT', priceChangePercent: '1.195' }),
+  );
   await page.route(/https:\/\/api\.alternative\.me\//, (route) => fulfillJson(route, FNG));
   await page.route(/http:\/\/127\.0\.0\.1:47322\//, (route) => fulfillJson(route, { ok: true, alerts: [] }));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
@@ -539,6 +552,30 @@ const MOCK_ACCOUNT_SCRIPT = `
 })();
 `;
 
+test('context band and levels map show references, never buy or sell wording', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.getByTestId('context-band')).toBeVisible();
+    await expect(page.getByTestId('context-closes')).toBeVisible();
+    await expect(page.getByTestId('context-closes').locator('li')).not.toHaveCount(0);
+    await expect(page.getByTestId('context-disclaimer')).toHaveText(
+      'Referencias, no predicciones: la dirección no está medida.',
+    );
+    await expect(page.getByTestId('context-sentiment')).toContainText('Miedo extremo');
+    await expect(page.getByTestId('levels-card')).toHaveCount(1);
+    await page.getByTestId('levels-card').locator('summary').click();
+    await expect(page.getByTestId('levels-row').first()).toBeVisible();
+    await expect(page.getByTestId('levels-card')).toContainText('Zonas de reacción posible');
+    const text = (await page.locator('body').innerText()).toLowerCase();
+    expect(text).not.toContain('comprar');
+    expect(text).not.toContain('vender');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 test('panel has four tabs, keyboard navigation and sections collapsed by default', async () => {
   const panel = await openSidePanel();
   try {
@@ -555,7 +592,9 @@ test('panel has four tabs, keyboard navigation and sections collapsed by default
 
     // Pulso, titulares, CVD y hallazgos extra: plegados y con resumen corto.
     await expect(page.getByRole('region', { name: 'Hallazgos' })).toBeVisible();
-    await expect(page.locator('details[open]')).toHaveCount(0);
+    // Solo la banda de contexto va abierta de serie.
+    await expect(page.locator('details[open]')).toHaveCount(1);
+    await expect(page.getByTestId('context-band').locator('details')).toHaveAttribute('open', '');
     const summaries = await page.locator('details.fold > summary, details.finding > summary').allTextContents();
     expect(summaries.length).toBeGreaterThan(3);
     for (const text of summaries) expect(text.length).toBeLessThanOrEqual(70);
