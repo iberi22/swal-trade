@@ -19,6 +19,9 @@ const FAPI_PATHS = [
   '/fapi/v1/userTrades*',
   '/fapi/v1/income*',
   '/fapi/v1/premiumIndex*',
+  // Escaner: datos publicos de todo el mercado, sin clave.
+  '/fapi/v1/ticker/24hr*',
+  '/fapi/v1/exchangeInfo*',
 ];
 
 // Se piden en tiempo de ejecucion: clave de lectura (sapi) y proveedores de IA.
@@ -82,7 +85,10 @@ export default defineConfig({
     short_name: 'SWAL Trade',
     version: '0.1.0',
     homepage_url: 'https://trade.swal.network',
-    permissions: browser === 'firefox' ? ['storage'] : ['storage', 'sidePanel'],
+    // `alarms`: escaneo periodico solo si el usuario enciende la vigilancia.
+    permissions: browser === 'firefox' ? ['storage', 'alarms'] : ['storage', 'sidePanel', 'alarms'],
+    // Avisos del escaner: se piden al encender el interruptor.
+    optional_permissions: ['notifications'],
     host_permissions: [
       'https://www.binance.com/*/futures/*',
       // El iframe de la pestaña Trading View. Es donde se pinta.
@@ -96,6 +102,9 @@ export default defineConfig({
       // Explicador con IA. Solo se llama si el usuario enciende el interruptor;
       // el cuerpo lleva símbolo, temporalidad y patrones, nunca datos de cuenta.
       'https://trade.swal.network/api/explain*',
+      // Escaner: estadisticas publicas de movimientos. Su CSP ya la cubre
+      // el prefijo https://trade.swal.network/api/.
+      'https://trade.swal.network/api/movers-stats*',
       // Puente local Claude: comunicación con el servidor MCP en localhost.
       'ws://127.0.0.1/*',
       // Radar local: lectura de alertas y estadísticas en localhost.
