@@ -192,6 +192,17 @@ Silenciar una celda no la convierte en una senal de la contraria. Las celdas que
 
 `python3 -m radar.testnet_operator` envia las alertas ya disparadas del radar al bot de **tu testnet** de Binance Futures (`/control/manual-signal`). Sirve para probar ejecucion (entrada, stop, cierre, reinicio) y juntar evidencia hacia adelante con fills; no afirma ninguna ventaja. Se niega a arrancar si el archivo del bot no dice `BINANCE_TESTNET=true`. Tamano: la perdida si salta el stop es `OPERATOR_RISK_PCT` (0,25 %) del capital, con tope de nocional, apalancamiento y posiciones abiertas. Cada decision queda en `~/.local/share/swal-trade/testnet-operator.jsonl`. Los simbolos USDC del radar se mapean a USDT, porque el saldo de la testnet esta en USDT.
 
+Variables nuevas para consumir alertas de `movers` con seguridad:
+
+- `OPERATOR_SOURCES` (por defecto `core`): lista separada por comas; las alertas de otra fuente se ignoran (si la API no trae `source`, cuenta como `core`).
+- `OPERATOR_KINDS` (vacio por defecto): lista de kinds exactos o prefijos con `*` (por ejemplo `mv_follow_*`) para alertas `movers`; vacio significa que no se opera ninguna. No afecta a las alertas `core`.
+- Nunca se opera una alerta con `cell_grade` `negative`, ni las rafagas de mercado (`mv_market*` o `market_wide`).
+- El simbolo mapeado debe estar en `SYMBOLS` del archivo del bot (si falta, no se opera nada); el precio de la testnet (`BINANCE_FUTURES_URL` del archivo del bot) debe estar a menos de 0,5 % de la entrada de la alerta.
+- `OPERATOR_SYMBOL_COOLDOWN_H` (4) y `OPERATOR_MAX_PER_HOUR` (3) limitan reentradas; `OPERATOR_MAX_OPEN` sigue como tope global.
+- Parada diaria: con el capital en 98 % o menos del capital del primer ciclo del dia UTC no se abren entradas.
+- Cada omision queda una sola vez en el diario como `skipped: ...`; tras enviar, el diario agrega `confirmed open` o `dropped by bot` (si a los 90 s la posicion no esta abierta).
+- `OPERATOR_TP_R`: si se define, el payload lleva `take_profit_r = 1.0`; por defecto se omite. La celda medida puntua el primer toque de 1R, mientras que el bot sale a 2R por defecto.
+
 ## Cómo ejecutar
 
 ### Modo de prueba rápida (`--once`)
