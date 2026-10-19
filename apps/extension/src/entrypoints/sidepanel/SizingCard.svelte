@@ -12,6 +12,7 @@
     type SizingDirection,
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
+  import { subscribeSizingLoad } from '../../lib/trade-cards/sizing-bridge';
 
   let { lastPrice = null, finding = null, compact = false }: { lastPrice?: number | null; finding?: Finding | null; compact?: boolean } = $props();
 
@@ -33,6 +34,18 @@
       direction = prefs.direction;
       loaded = true;
     }).catch(() => { loaded = true; });
+
+    // Tarjetas de operación: «Cargar en el dimensionador».
+    return subscribeSizingLoad((load) => {
+      direction = load.direction;
+      if (load.riskPct !== undefined) riskPct = load.riskPct;
+      entryStr = String(load.entry);
+      stopStr = String(load.stop);
+      userEditedEntry = true;
+      userEditedStop = true;
+      userEditedScale = false;
+      savePreferences();
+    });
   });
 
   function savePreferences() {

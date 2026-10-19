@@ -151,7 +151,7 @@ export function floorToStep(value: number, step?: number): number {
   return roundToDecimals(n * step, decimals);
 }
 
-function roundToTick(price: number, tick?: number): number {
+export function roundToTick(price: number, tick?: number): number {
   if (!tick || !Number.isFinite(tick) || tick <= 0) return price;
   const decimals = Math.min(12, Math.max(0, Math.ceil(-Math.log10(tick)) + 2));
   return roundToDecimals(Math.round(price / tick) * tick, decimals);

@@ -39,6 +39,7 @@
   import RadarCard from './RadarCard.svelte';
   import RulesList from './RulesList.svelte';
   import SizingCard from './SizingCard.svelte';
+  import TradeCards from './TradeCards.svelte';
 
   let {
     symbol,
@@ -273,6 +274,8 @@
 {:else if sections.sizing}
   <SizingCard {lastPrice} finding={selectedFinding} compact />
 {/if}
+
+<TradeCards {symbol} {lastPrice} snapshot={contextSnapshot} {findingsLevels} rules={settings.rules} canLoad={sections.sizing} />
 
 <!-- Leyenda del gráfico. Vive fuera del canvas a propósito: dentro, el lienzo
      de lightweight-charts se come los clics. -->

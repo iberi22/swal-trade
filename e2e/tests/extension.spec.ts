@@ -1118,3 +1118,25 @@ test('sizing: escalonar en 3 tramos shows the tranches and the honest note, neve
     await panel.close();
   }
 });
+
+test('tarjetas de operación: ticket con stop, línea honesta y sin lenguaje de compra o venta', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.getByTestId('trade-cards')).toBeVisible();
+    await expect(page.getByTestId('trade-card').first()).toBeVisible();
+    await page.getByTestId('trade-card').first().click();
+    const ticket = page.getByTestId('trade-ticket');
+    await expect(ticket).toBeVisible();
+    await expect(ticket).toContainText('Stop');
+    await expect(ticket).toContainText('R:R no es probabilidad');
+    await expect(page.getByTestId('trade-copy')).toBeVisible();
+    await expect(page.getByTestId('trade-load')).toBeVisible();
+    const text = (await page.locator('body').innerText()).toLowerCase();
+    expect(text).not.toContain('comprar');
+    expect(text).not.toContain('vender');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
