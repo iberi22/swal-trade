@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "Ngôn ngữ",
+  "settings.language.auto": "Tự động (ngôn ngữ trình duyệt)",
+  "settings.language.hint": "Ngôn ngữ của bảng điều khiển. Thay đổi được áp dụng ngay."
+}
