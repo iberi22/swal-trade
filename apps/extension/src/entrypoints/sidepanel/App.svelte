@@ -17,7 +17,7 @@
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import { atrOf } from '../../lib/account/analysis-view';
-  import { createPanelController, type PanelState } from '../../lib/account/panel-controller';
+  import { createPanelController, type PanelState, type PanelTab } from '../../lib/account/panel-controller';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { fetchNews, type NewsItem } from '../../lib/news';
@@ -32,10 +32,12 @@
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import AnalysisTab from './AnalysisTab.svelte';
   import OperationTab from './OperationTab.svelte';
+  import ScannerTab from './ScannerTab.svelte';
   import SettingsTab from './SettingsTab.svelte';
   import SidepanelFooter from './SidepanelFooter.svelte';
   import Tabs from './Tabs.svelte';
 
+  let activeTab = $state<PanelTab>('operacion');
   let symbol = $state('BTCUSDT');
   let draft = $state('BTCUSDT');
   let timeframe = $state<Timeframe>(DEFAULT_SETTINGS.defaultTimeframe);
@@ -464,7 +466,7 @@
     </details>
   </section>
 
-  <Tabs>
+  <Tabs onTabChange={(tab) => (activeTab = tab)}>
     {#snippet operacion()}
       <OperationTab
         {symbol}
@@ -515,6 +517,9 @@
         {applySettings}
         {checkClaudeStatus}
       />
+    {/snippet}
+    {#snippet escaner()}
+      <ScannerTab active={activeTab === 'escaner'} />
     {/snippet}
   </Tabs>
 

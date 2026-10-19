@@ -807,3 +807,225 @@ select {
   flex-direction: column;
   gap: 0.4rem;
 }
+
+/* Escáner: lista de movimientos. Un solo tono: la jerarquía va con glifos y peso,
+   nunca con color de severidad. */
+.sc-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.sc-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sc-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sc-switch input {
+  accent-color: hsl(var(--primary));
+}
+
+.sc-status,
+.sc-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: hsl(var(--muted-foreground));
+}
+
+.sc-honesty {
+  color: hsl(var(--subtle-foreground));
+}
+
+.sc-fold {
+  background: hsl(var(--surface));
+  border-radius: var(--radius);
+  padding: 0.45rem 0.65rem;
+}
+
+.sc-fold > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sc-fold[open] > summary {
+  margin-bottom: 0.4rem;
+}
+
+.sc-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sc-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.sc-field select,
+.sc-field input {
+  background: hsl(var(--background));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.35rem);
+  padding: 0.25rem 0.4rem;
+  max-width: 7.5rem;
+}
+
+.sc-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+}
+
+.sc-check input {
+  accent-color: hsl(var(--primary));
+}
+
+.sc-check.sc-disabled {
+  color: hsl(var(--subtle-foreground));
+}
+
+.sc-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.sc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sc-row {
+  background: hsl(var(--surface));
+  border-radius: calc(var(--radius) - 0.2rem);
+}
+
+.sc-line {
+  display: grid;
+  grid-template-columns: 0.7rem 1fr auto;
+  align-items: start;
+  gap: 0.35rem;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.sc-line.sc-new .sc-text {
+  font-weight: 700;
+}
+
+.sc-text {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-chev {
+  display: inline-block;
+  color: hsl(var(--muted-foreground));
+  transition: transform 0.12s;
+}
+
+.sc-chev.sc-open {
+  transform: rotate(90deg);
+}
+
+.sc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0 0.55rem 0.55rem 1.6rem;
+}
+
+.sc-facts {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.sc-table-wrap {
+  overflow-x: auto;
+}
+
+.sc-table {
+  border-collapse: collapse;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  width: 100%;
+}
+
+.sc-table th,
+.sc-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.25rem 0.35rem;
+  background: hsl(var(--background));
+}
+
+.sc-table thead th {
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+
+.sc-table tbody th {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sc-levels,
+.sc-geometry p {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-family: var(--font-mono);
+}
+
+.sc-geometry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.sc-geometry strong {
+  font-weight: 600;
+}
+
+.sc-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sc-actions {
+  display: flex;
+  gap: 0.4rem;
+}

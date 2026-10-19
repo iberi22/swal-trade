@@ -98,7 +98,7 @@ async function openSidePanel(
 }
 
 /** Abre una pestaña del panel por su nombre. */
-async function openTab(page: import('@playwright/test').Page, name: 'Operación' | 'Análisis' | 'Ajustes') {
+async function openTab(page: import('@playwright/test').Page, name: 'Operación' | 'Análisis' | 'Ajustes' | 'Escáner') {
   await page.getByRole('tab', { name }).click();
   await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
 }
@@ -539,12 +539,12 @@ const MOCK_ACCOUNT_SCRIPT = `
 })();
 `;
 
-test('panel has three tabs, keyboard navigation and sections collapsed by default', async () => {
+test('panel has four tabs, keyboard navigation and sections collapsed by default', async () => {
   const panel = await openSidePanel();
   try {
     const { page } = panel;
     const tablist = page.getByRole('tablist');
-    await expect(tablist.getByRole('tab')).toHaveText(['Operación', 'Análisis', 'Ajustes']);
+    await expect(tablist.getByRole('tab')).toHaveText(['Operación', 'Análisis', 'Ajustes', 'Escáner']);
     await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
 
     // Sin posición conocida y sin clave: modo unknown, con el aviso y el dimensionador.
@@ -567,6 +567,8 @@ test('panel has three tabs, keyboard navigation and sections collapsed by defaul
     await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('history-card')).toBeVisible();
     await page.keyboard.press('End');
+    await expect(page.getByRole('tab', { name: 'Escáner' })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowLeft');
     await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
     await page.reload();
     await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
@@ -955,6 +957,85 @@ test('"Ver lo que se envía" shows the exact JSON and relative mode carries no U
     // Ver el texto no envía nada.
     const sent = await page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
     expect(sent).toBe(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+// ---------------------------------------------------------------- Escáner
+
+const SC_BAR = 300_000;
+
+/** Velas de 5 m en formato Binance: 40 cerradas que terminan en `lastOpen`, la última cierra en `lastClose`. */
+function scannerKlines(lastOpen: number, lastClose: number): unknown[] {
+  const rows: unknown[] = [];
+  for (let i = 39; i >= 0; i--) {
+    const open = lastOpen - i * SC_BAR;
+    const close = i === 0 ? lastClose : 100;
+    rows.push([
+      open, String(close), String(close * 1.002), String(close * 0.998), String(close), '1000', open + SC_BAR - 1,
+      String(close * 1000), 10, '500', '0', '0',
+    ]);
+  }
+  return rows;
+}
+
+test('scanner tab lists a 6 % drop with no evidence, no levels and no probability wording', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // Hora del servidor: 100 s dentro de una vela de 5 m, asi la ultima cerrada es la vela del disparo.
+    const serverNow = Math.floor(Date.now() / SC_BAR) * SC_BAR + 100_000;
+    const lastOpen = Math.floor((serverNow - 1000 - SC_BAR) / SC_BAR) * SC_BAR;
+    const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT'];
+    await page.route(/fapi\.binance\.com\/fapi\/v1\/time/, (route) => fulfillJson(route, { serverTime: serverNow }));
+    await page.route(/fapi\.binance\.com\/fapi\/v1\/exchangeInfo/, (route) =>
+      fulfillJson(route, {
+        symbols: symbols.map((symbol) => ({
+          symbol, status: 'TRADING', contractType: 'PERPETUAL', quoteAsset: 'USDT', underlyingType: 'COIN',
+        })),
+      }),
+    );
+    await page.route(/fapi\.binance\.com\/fapi\/v1\/ticker\/24hr/, (route) =>
+      fulfillJson(route, symbols.map((symbol, i) => ({ symbol, quoteVolume: String(symbol === 'SOLUSDT' ? 412e6 : (5 - i) * 3e8) }))),
+    );
+    await page.route(/trade\.swal\.network\/api\/movers-stats/, (route) =>
+      fulfillJson(route, { schema: 'swal.movers-stats.v1', method: 'study', cells: [], note: 'Aun no hay datos publicados.' }),
+    );
+    await page.route(/fapi\.binance\.com\/fapi\/v1\/klines/, (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('interval') !== '5m') return route.fallback();
+      const drop = url.searchParams.get('symbol') === 'SOLUSDT';
+      return fulfillJson(route, scannerKlines(lastOpen, drop ? 93.8 : 100));
+    });
+
+    await openTab(page, 'Escáner');
+    await expect(page.getByTestId('scanner-off')).toContainText('datos públicos de Binance');
+    await page.getByTestId('scanner-switch').check();
+
+    const scanner = page.getByRole('region', { name: 'Escáner' });
+    const rows = scanner.getByTestId('scanner-row');
+    await expect(rows.first()).toContainText('SOLUSDT');
+    await expect(rows.first()).toContainText('baja 6,2 %');
+    await expect(rows.first()).toContainText('Sin evidencia');
+    await expect(rows.filter({ hasText: 'BTCUSDT' })).toHaveCount(0);
+
+    await rows.first().getByRole('button').first().click();
+    const detail = rows.first().getByTestId('scanner-detail');
+    const table = detail.getByTestId('scanner-plans');
+    await expect(table).toBeVisible();
+    await expect(table.locator('tbody tr')).toHaveCount(2);
+    await expect(table).toContainText('FOLLOW');
+    await expect(table).toContainText('FADE');
+    await expect(detail.getByTestId('scanner-levels')).toHaveCount(0);
+    await expect(detail.getByTestId('scanner-geometry')).toContainText('Geometría de medición (no es una señal)');
+    await expect(detail.getByTestId('scanner-open-pair')).toHaveText('Abrir en Binance');
+    await expect(detail.getByTestId('scanner-analysis')).toContainText('no superaron al azar');
+
+    const text = await scanner.innerText();
+    expect(text).not.toMatch(/probabilidad/i);
+    expect(text).not.toMatch(/tasa de acierto/i);
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();

@@ -210,16 +210,19 @@ describe('parseSnapshotReply', () => {
 describe('pestañas', () => {
   it('parsePanelTab cae a operacion', () => {
     expect(parsePanelTab('ajustes')).toBe('ajustes');
+    expect(parsePanelTab('escaner')).toBe('escaner');
     expect(parsePanelTab('nada')).toBe('operacion');
     expect(parsePanelTab(undefined)).toBe('operacion');
   });
 
   it('tabForKey navega con flechas y da la vuelta', () => {
     expect(tabForKey('operacion', 'ArrowRight')).toBe('analisis');
-    expect(tabForKey('ajustes', 'ArrowRight')).toBe('operacion');
-    expect(tabForKey('operacion', 'ArrowLeft')).toBe('ajustes');
+    expect(tabForKey('ajustes', 'ArrowRight')).toBe('escaner');
+    expect(tabForKey('escaner', 'ArrowRight')).toBe('operacion');
+    expect(tabForKey('operacion', 'ArrowLeft')).toBe('escaner');
+    expect(tabForKey('escaner', 'ArrowLeft')).toBe('ajustes');
     expect(tabForKey('analisis', 'Home')).toBe('operacion');
-    expect(tabForKey('analisis', 'End')).toBe('ajustes');
+    expect(tabForKey('analisis', 'End')).toBe('escaner');
     expect(tabForKey('analisis', 'a')).toBeNull();
   });
 });
