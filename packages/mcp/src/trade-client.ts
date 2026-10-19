@@ -16,8 +16,11 @@ import type { FetchLike } from "./types.js";
 
 export { BinanceError, isAmbiguousError, isRejectedError, newClientOrderId } from "./errors.js";
 
-/** Binance error code for "no need to change margin type", which is not a failure. */
-export const MARGIN_TYPE_ALREADY_SET = -4048;
+/**
+ * Binance error code for "No need to change margin type.", which is not a failure.
+ * Not -4047 (open orders) or -4048 (open position): those do block the change.
+ */
+export const MARGIN_TYPE_ALREADY_SET = -4046;
 
 /** Error codes that mean "this post-only order cannot rest": reprice and retry. */
 const REPRICE_CODES = new Set([-5022]);
