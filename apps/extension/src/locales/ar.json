@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "اللغة",
+  "settings.language.auto": "تلقائي (لغة المتصفح)",
+  "settings.language.hint": "لغة اللوحة. يُطبَّق التغيير فورًا."
+}

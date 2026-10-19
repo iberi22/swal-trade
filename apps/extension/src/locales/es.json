@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "Idioma",
+  "settings.language.auto": "Automático (idioma del navegador)",
+  "settings.language.hint": "Idioma del panel. El cambio se aplica al instante."
+}
