@@ -113,3 +113,89 @@ export function parseRuntimeMessage(message: unknown): RuntimeMessage | null {
   }
   return null;
 }
+
+/**
+ * Mensajes privilegiados (cuenta e IA). Solo los atiende el background cuando
+ * vienen del panel de la propia extension; ver `lib/background/router.ts`.
+ */
+export type AcctGetParams = Record<string, string | number | undefined>;
+
+export type PrivilegedMessage =
+  | { type: 'acct:snapshot'; symbol: string }
+  | { type: 'acct:get'; path: string; params: AcctGetParams }
+  | { type: 'acct:gen-ed25519' }
+  | { type: 'acct:set-key'; apiKey: string; kind: 'ed25519' | 'hmac'; hmacSecret?: string }
+  | { type: 'acct:test' }
+  | { type: 'acct:clear' }
+  | { type: 'acct:meta' }
+  | { type: 'ai:set-key'; provider: string; key: string; persist: 'session' | 'vault' }
+  | { type: 'ai:clear'; provider?: string }
+  | { type: 'ai:models'; provider: string }
+  | { type: 'ai:analyze'; provider: string; model: string; payload: Record<string, unknown> };
+
+/** Tipos que exigen la guarda de remitente. */
+export function isPrivilegedType(type: unknown): boolean {
+  return typeof type === 'string' && (type.startsWith('acct:') || type.startsWith('ai:'));
+}
+
+const SYMBOL_RE = /^[A-Z0-9]{2,20}$/;
+const API_KEY_RE = /^[A-Za-z0-9]{16,128}$/;
+const PRINTABLE_RE = /^[\x21-\x7e]+$/;
+
+const isPlain = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+export function parsePrivilegedMessage(message: unknown): PrivilegedMessage | null {
+  if (!isPlain(message)) return null;
+  const m = message;
+  switch (m.type) {
+    case 'acct:snapshot':
+      return typeof m.symbol === 'string' && SYMBOL_RE.test(m.symbol)
+        ? { type: 'acct:snapshot', symbol: m.symbol }
+        : null;
+    case 'acct:get': {
+      if (typeof m.path !== 'string' || m.path.length > 80) return null;
+      const params: AcctGetParams = {};
+      if (m.params !== undefined) {
+        if (!isPlain(m.params)) return null;
+        for (const [k, v] of Object.entries(m.params)) {
+          if (v === undefined) continue;
+          if (typeof v !== 'string' && typeof v !== 'number') return null;
+          params[k] = v;
+        }
+      }
+      return { type: 'acct:get', path: m.path, params };
+    }
+    case 'acct:gen-ed25519':
+    case 'acct:test':
+    case 'acct:clear':
+    case 'acct:meta':
+      return { type: m.type };
+    case 'acct:set-key': {
+      if (typeof m.apiKey !== 'string' || !API_KEY_RE.test(m.apiKey)) return null;
+      if (m.kind === 'ed25519') return { type: 'acct:set-key', apiKey: m.apiKey, kind: 'ed25519' };
+      if (m.kind === 'hmac') {
+        const s = m.hmacSecret;
+        if (typeof s !== 'string' || s.length > 256 || !PRINTABLE_RE.test(s)) return null;
+        return { type: 'acct:set-key', apiKey: m.apiKey, kind: 'hmac', hmacSecret: s };
+      }
+      return null;
+    }
+    case 'ai:set-key': {
+      if (typeof m.provider !== 'string' || typeof m.key !== 'string') return null;
+      if (m.key.length < 8 || m.key.length > 512 || !PRINTABLE_RE.test(m.key)) return null;
+      if (m.persist !== 'session' && m.persist !== 'vault') return null;
+      return { type: 'ai:set-key', provider: m.provider, key: m.key, persist: m.persist };
+    }
+    case 'ai:clear':
+      if (m.provider === undefined) return { type: 'ai:clear' };
+      return typeof m.provider === 'string' ? { type: 'ai:clear', provider: m.provider } : null;
+    case 'ai:models':
+      return typeof m.provider === 'string' ? { type: 'ai:models', provider: m.provider } : null;
+    case 'ai:analyze':
+      if (typeof m.provider !== 'string' || typeof m.model !== 'string' || !isPlain(m.payload)) return null;
+      return { type: 'ai:analyze', provider: m.provider, model: m.model, payload: m.payload };
+    default:
+      return null;
+  }
+}

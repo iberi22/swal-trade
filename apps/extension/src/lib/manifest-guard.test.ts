@@ -1,5 +1,63 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import config from '../../wxt.config';
+
+const EXPECTED_HOSTS = [
+  'https://www.binance.com/*/futures/*',
+  'https://www.binance.com/static/chart/tradingview/*',
+  'https://www.tradingview.com/chart/*',
+  'https://fapi.binance.com/fapi/v1/klines*',
+  'https://fapi.binance.com/fapi/v1/depth*',
+  'https://fapi.binance.com/fapi/v1/time*',
+  'https://fapi.binance.com/fapi/v2/positionRisk*',
+  'https://fapi.binance.com/fapi/v3/account*',
+  'https://fapi.binance.com/fapi/v1/openOrders*',
+  'https://fapi.binance.com/fapi/v1/openAlgoOrders*',
+  'https://fapi.binance.com/fapi/v1/userTrades*',
+  'https://fapi.binance.com/fapi/v1/income*',
+  'https://fapi.binance.com/fapi/v1/premiumIndex*',
+  'https://api.alternative.me/fng/*',
+  'wss://fstream.binance.com/*',
+  'https://trade.swal.network/api/news*',
+  'https://trade.swal.network/api/explain*',
+  'ws://127.0.0.1/*',
+  'http://127.0.0.1/*',
+];
+
+const EXPECTED_OPTIONAL = [
+  'https://api.binance.com/sapi/v1/account/apiRestrictions*',
+  'https://opencode.ai/inference/*',
+  'https://openrouter.ai/api/*',
+  'https://api.openai.com/v1/*',
+  'https://api.anthropic.com/v1/*',
+  'https://generativelanguage.googleapis.com/*',
+];
+
+const EXPECTED_CSP =
+  "script-src 'self'; object-src 'self'; connect-src " +
+  [
+    'https://fapi.binance.com/fapi/v1/klines',
+    'https://fapi.binance.com/fapi/v1/depth',
+    'https://fapi.binance.com/fapi/v1/time',
+    'https://fapi.binance.com/fapi/v2/positionRisk',
+    'https://fapi.binance.com/fapi/v3/account',
+    'https://fapi.binance.com/fapi/v1/openOrders',
+    'https://fapi.binance.com/fapi/v1/openAlgoOrders',
+    'https://fapi.binance.com/fapi/v1/userTrades',
+    'https://fapi.binance.com/fapi/v1/income',
+    'https://fapi.binance.com/fapi/v1/premiumIndex',
+    'wss://fstream.binance.com',
+    'https://api.alternative.me/fng/',
+    'https://trade.swal.network/api/',
+    'http://127.0.0.1:*',
+    'ws://127.0.0.1:*',
+    'https://api.binance.com/sapi/v1/account/apiRestrictions',
+    'https://opencode.ai/inference/',
+    'https://openrouter.ai/api/',
+    'https://api.openai.com/v1/',
+    'https://api.anthropic.com/v1/',
+    'https://generativelanguage.googleapis.com/',
+  ].join(' ');
 
 // The helper to check host_permissions
 function checkHosts(hosts: string[]) {
@@ -7,14 +65,7 @@ function checkHosts(hosts: string[]) {
     'https://www.binance.com/*/futures/*',
     'https://www.binance.com/static/chart/tradingview/*',
     'https://www.tradingview.com/chart/*',
-    'https://fapi.binance.com/fapi/v1/klines*',
-    'https://fapi.binance.com/fapi/v1/depth*',
-    'https://api.alternative.me/fng/*',
-    'wss://fstream.binance.com/*',
-    'https://trade.swal.network/api/news*',
-    'https://trade.swal.network/api/explain*',
-    'ws://127.0.0.1/*',
-    'http://127.0.0.1/*'
+    ...EXPECTED_HOSTS,
   ];
 
   const allowedPrefixes = [
@@ -83,7 +134,7 @@ describe('Manifest Guard', () => {
     it('should lock content security policy', async () => {
       const manifest = await getManifest('chrome');
       const csp = manifest.content_security_policy?.extension_pages;
-      expect(csp).toBe("script-src 'self'; object-src 'self'");
+      expect(csp).toBe(EXPECTED_CSP);
       expect(csp).not.toContain('unsafe-eval');
     });
 
@@ -98,25 +149,28 @@ describe('Manifest Guard', () => {
       expect(() => checkHosts(hosts)).not.toThrow();
     });
 
+    it('should have exact optional_host_permissions and no wildcard hosts', async () => {
+      const manifest = await getManifest('chrome');
+      expect(manifest.optional_host_permissions).toEqual(EXPECTED_OPTIONAL);
+      for (const host of [...manifest.host_permissions, ...manifest.optional_host_permissions]) {
+        expect(host).not.toMatch(/:\/\/\*[./]/);
+        expect(host).not.toBe('<all_urls>');
+      }
+      expect(manifest.permissions ?? []).not.toContain('<all_urls>');
+    });
+
+    it('should keep connect-src to the exact list', async () => {
+      const manifest = await getManifest('chrome');
+      const csp: string = manifest.content_security_policy.extension_pages;
+      expect(csp).toContain('connect-src ');
+      expect(csp).not.toMatch(/connect-src[^;]*(\s\*|https:\s|https:$|\*\.)/);
+    });
+
     it('should have exact set of host_permissions (snapshot-style)', async () => {
       const manifest = await getManifest('chrome');
       const hosts = manifest.host_permissions || [];
 
-      const expectedHosts = [
-        'https://www.binance.com/*/futures/*',
-        'https://www.binance.com/static/chart/tradingview/*',
-        'https://www.tradingview.com/chart/*',
-        'https://fapi.binance.com/fapi/v1/klines*',
-        'https://fapi.binance.com/fapi/v1/depth*',
-        'https://api.alternative.me/fng/*',
-        'wss://fstream.binance.com/*',
-        'https://trade.swal.network/api/news*',
-        'https://trade.swal.network/api/explain*',
-        'ws://127.0.0.1/*',
-        'http://127.0.0.1/*'
-      ];
-
-      expect(hosts).toEqual(expectedHosts);
+      expect(hosts).toEqual(EXPECTED_HOSTS);
     });
   });
 
@@ -139,7 +193,7 @@ describe('Manifest Guard', () => {
     it('should lock content security policy', async () => {
       const manifest = await getManifest('firefox');
       const csp = manifest.content_security_policy?.extension_pages;
-      expect(csp).toBe("script-src 'self'; object-src 'self'");
+      expect(csp).toBe(EXPECTED_CSP);
       expect(csp).not.toContain('unsafe-eval');
     });
 
@@ -154,25 +208,28 @@ describe('Manifest Guard', () => {
       expect(() => checkHosts(hosts)).not.toThrow();
     });
 
+    it('should have exact optional_host_permissions and no wildcard hosts', async () => {
+      const manifest = await getManifest('firefox');
+      expect(manifest.optional_host_permissions).toEqual(EXPECTED_OPTIONAL);
+      for (const host of [...manifest.host_permissions, ...manifest.optional_host_permissions]) {
+        expect(host).not.toMatch(/:\/\/\*[./]/);
+        expect(host).not.toBe('<all_urls>');
+      }
+      expect(manifest.permissions ?? []).not.toContain('<all_urls>');
+    });
+
+    it('should keep connect-src to the exact list', async () => {
+      const manifest = await getManifest('firefox');
+      const csp: string = manifest.content_security_policy.extension_pages;
+      expect(csp).toContain('connect-src ');
+      expect(csp).not.toMatch(/connect-src[^;]*(\s\*|https:\s|https:$|\*\.)/);
+    });
+
     it('should have exact set of host_permissions (snapshot-style)', async () => {
       const manifest = await getManifest('firefox');
       const hosts = manifest.host_permissions || [];
 
-      const expectedHosts = [
-        'https://www.binance.com/*/futures/*',
-        'https://www.binance.com/static/chart/tradingview/*',
-        'https://www.tradingview.com/chart/*',
-        'https://fapi.binance.com/fapi/v1/klines*',
-        'https://fapi.binance.com/fapi/v1/depth*',
-        'https://api.alternative.me/fng/*',
-        'wss://fstream.binance.com/*',
-        'https://trade.swal.network/api/news*',
-        'https://trade.swal.network/api/explain*',
-        'ws://127.0.0.1/*',
-        'http://127.0.0.1/*'
-      ];
-
-      expect(hosts).toEqual(expectedHosts);
+      expect(hosts).toEqual(EXPECTED_HOSTS);
     });
   });
 
@@ -212,5 +269,12 @@ describe('Manifest Guard', () => {
     it('should throw on unallowed ws://', () => {
       expect(() => checkHosts(['ws://evil.com/*'])).toThrow('ws:// only allowed for 127.0.0.1: ws://evil.com/*');
     });
+  });
+});
+
+describe('Runtime dependencies', () => {
+  it('only lightweight-charts is a runtime dependency', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+    expect(Object.keys(pkg.dependencies)).toEqual(['lightweight-charts']);
   });
 });
