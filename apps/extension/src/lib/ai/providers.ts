@@ -47,7 +47,7 @@ export const PROVIDERS: readonly Provider[] = Object.freeze([
     chatUrl: 'https://api.openai.com/v1/chat/completions',
     modelsUrl: 'https://api.openai.com/v1/models',
     needsKey: true,
-    hostPermission: 'https://api.openai.com/*',
+    hostPermission: 'https://api.openai.com/v1/*',
   },
   {
     id: 'anthropic',
@@ -56,7 +56,7 @@ export const PROVIDERS: readonly Provider[] = Object.freeze([
     chatUrl: 'https://api.anthropic.com/v1/messages',
     modelsUrl: null,
     needsKey: true,
-    hostPermission: 'https://api.anthropic.com/*',
+    hostPermission: 'https://api.anthropic.com/v1/*',
   },
   {
     id: 'gemini',

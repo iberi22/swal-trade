@@ -278,3 +278,13 @@ describe('Runtime dependencies', () => {
     expect(Object.keys(pkg.dependencies)).toEqual(['lightweight-charts']);
   });
 });
+
+describe('AI providers vs optional hosts', () => {
+  it('each provider hostPermission (except local) is declared in optional_host_permissions', async () => {
+    const { PROVIDERS } = await import('./ai/providers');
+    for (const p of PROVIDERS) {
+      if (p.id === 'local') continue;
+      expect(EXPECTED_OPTIONAL, `${p.id} -> ${p.hostPermission}`).toContain(p.hostPermission);
+    }
+  });
+});

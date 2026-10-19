@@ -4,6 +4,9 @@
   import { normalizeSymbolList, HOTKEY_KEYS, type ExtensionSettings } from '../../lib/settings';
   import { NEWS_REFRESH_MS } from '../../lib/news';
   import { TIMEFRAMES, type Timeframe } from '../../lib/types';
+  import CredentialsAi from './CredentialsAi.svelte';
+  import CredentialsBinance from './CredentialsBinance.svelte';
+  import RulesSettings from './RulesSettings.svelte';
 
   let {
     settings,
@@ -206,5 +209,13 @@
       Se guarda en <code>storage.local</code> de la extensión. Los titulares se renuevan cada
       {NEWS_REFRESH_MS / 60000} min.
     </p>
+  </div>
+</section>
+
+<section class="settings" aria-label="Cuenta, reglas e IA">
+  <div class="settings-body">
+    <CredentialsBinance {settings} {applySettings} />
+    <RulesSettings {settings} {settingsLoaded} {applySettings} />
+    <CredentialsAi {settings} {settingsLoaded} {applySettings} />
   </div>
 </section>

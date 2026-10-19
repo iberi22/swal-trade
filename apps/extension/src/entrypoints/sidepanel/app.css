@@ -592,3 +592,85 @@ select {
   border-radius: calc(var(--radius) - 0.3rem);
   padding: 0.4rem 0.55rem;
 }
+
+/* --- T14a: posición, reglas y credenciales ------------------------------ */
+
+.btn {
+  display: inline-block;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  border-radius: calc(var(--radius) - 0.3rem);
+  background: transparent;
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--subtle-foreground));
+  cursor: pointer;
+}
+
+.btn.small {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.btn:hover:not(:disabled) {
+  background: hsl(var(--surface-strong));
+}
+
+.btn.selected {
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cred {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid hsl(var(--surface-strong));
+  border-radius: calc(var(--radius) - 0.2rem);
+  min-width: 0;
+}
+
+.cred legend {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+}
+
+.cred .step,
+.cred .hint {
+  margin: 0;
+}
+
+.cred .step {
+  font-size: 0.78rem;
+}
+
+.cred .pem {
+  margin: 0;
+  padding: 0.4rem;
+  background: hsl(var(--background));
+  border-radius: calc(var(--radius) - 0.3rem);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.cred input[type='password'],
+.cred input[type='number'] {
+  background: hsl(var(--background));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.2rem);
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-mono);
+  width: 100%;
+  box-sizing: border-box;
+}
+
