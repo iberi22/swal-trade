@@ -8,6 +8,7 @@
   import { t } from '../../lib/i18n/i18n.svelte';
   import CredentialsAi from './CredentialsAi.svelte';
   import CredentialsBinance from './CredentialsBinance.svelte';
+  import PromptSettings from './PromptSettings.svelte';
   import RulesSettings from './RulesSettings.svelte';
 
   let {
@@ -267,5 +268,6 @@
     <CredentialsBinance {settings} {applySettings} />
     <RulesSettings {settings} {settingsLoaded} {applySettings} />
     <CredentialsAi {settings} {settingsLoaded} {applySettings} />
+    <PromptSettings />
   </div>
 </section>
