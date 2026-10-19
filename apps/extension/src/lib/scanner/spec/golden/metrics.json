@@ -1,0 +1,4926 @@
+{
+ "golden": "metrics",
+ "spec": "swal.movers-spec.v1",
+ "spec_version": "2026-10-19.1",
+ "spec_sha": "c356eba4049d8ce98a893360cd1ec8de7cf7eb790858cf456972071df197004f",
+ "tolerance": {
+  "abs": 1e-09,
+  "rel": 1e-09
+ },
+ "datasets": {
+  "main": {
+   "BTCUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 60004.266783,
+     "high": 60012.36589,
+     "low": 59977.693553,
+     "close": 60004.266783,
+     "volume": 1174.479,
+     "quote_volume": 70473751.247,
+     "taker_buy_volume": 528.267
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 60004.266783,
+     "high": 60054.981769,
+     "low": 59989.541552,
+     "close": 60026.540472,
+     "volume": 839.198,
+     "quote_volume": 50374152.711,
+     "taker_buy_volume": 516.096
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 60026.540472,
+     "high": 60057.361613,
+     "low": 60005.267712,
+     "close": 60048.298995,
+     "volume": 1126.086,
+     "quote_volume": 67619548.822,
+     "taker_buy_volume": 522.602
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 60048.298995,
+     "high": 60056.162353,
+     "low": 60016.153376,
+     "close": 60034.461252,
+     "volume": 901.164,
+     "quote_volume": 54100895.24,
+     "taker_buy_volume": 606.795
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 60034.461252,
+     "high": 60046.063216,
+     "low": 60017.611135,
+     "close": 60036.347864,
+     "volume": 1141.876,
+     "quote_volume": 68554064.753,
+     "taker_buy_volume": 892.534
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 60036.347864,
+     "high": 60057.450079,
+     "low": 60020.669778,
+     "close": 60025.147984,
+     "volume": 1179.09,
+     "quote_volume": 70775051.736,
+     "taker_buy_volume": 661.17
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 60025.147984,
+     "high": 60037.990503,
+     "low": 59993.377664,
+     "close": 60002.467553,
+     "volume": 1175.78,
+     "quote_volume": 70549701.3,
+     "taker_buy_volume": 692.199
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 60002.467553,
+     "high": 60010.401133,
+     "low": 59974.438982,
+     "close": 59985.08043,
+     "volume": 826.948,
+     "quote_volume": 49604542.291,
+     "taker_buy_volume": 395.475
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 59985.08043,
+     "high": 59999.492008,
+     "low": 59960.696147,
+     "close": 59995.9166,
+     "volume": 1199.371,
+     "quote_volume": 71957362.488,
+     "taker_buy_volume": 932.927
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 59995.9166,
+     "high": 60002.542594,
+     "low": 59960.408897,
+     "close": 59986.032885,
+     "volume": 884.039,
+     "quote_volume": 53029992.526,
+     "taker_buy_volume": 630.459
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 59986.032885,
+     "high": 60018.62313,
+     "low": 59964.549971,
+     "close": 59992.885427,
+     "volume": 1196.106,
+     "quote_volume": 71757850.216,
+     "taker_buy_volume": 471.58
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 59992.885427,
+     "high": 60006.711045,
+     "low": 59966.64292,
+     "close": 59981.91138,
+     "volume": 807.108,
+     "quote_volume": 48411880.53,
+     "taker_buy_volume": 433.831
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 59981.91138,
+     "high": 60000.945694,
+     "low": 59967.726496,
+     "close": 59973.073074,
+     "volume": 1058.269,
+     "quote_volume": 63467644.068,
+     "taker_buy_volume": 509.546
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 59973.073074,
+     "high": 59995.599461,
+     "low": 59952.264226,
+     "close": 59952.865718,
+     "volume": 830.2,
+     "quote_volume": 49772869.119,
+     "taker_buy_volume": 299.69
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 59952.865718,
+     "high": 59989.277098,
+     "low": 59925.867017,
+     "close": 59959.722051,
+     "volume": 812.245,
+     "quote_volume": 48701984.437,
+     "taker_buy_volume": 419.633
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 59959.722051,
+     "high": 59979.706264,
+     "low": 59923.605225,
+     "close": 59946.757236,
+     "volume": 1063.841,
+     "quote_volume": 63773818.165,
+     "taker_buy_volume": 351.416
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 59946.757236,
+     "high": 59974.006321,
+     "low": 59910.327115,
+     "close": 59926.630271,
+     "volume": 1041.858,
+     "quote_volume": 62435039.161,
+     "taker_buy_volume": 485.121
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 59926.630271,
+     "high": 59942.516039,
+     "low": 59893.380423,
+     "close": 59921.990136,
+     "volume": 908.294,
+     "quote_volume": 54426784.109,
+     "taker_buy_volume": 651.344
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 59921.990136,
+     "high": 59951.714452,
+     "low": 59911.151996,
+     "close": 59938.533646,
+     "volume": 984.091,
+     "quote_volume": 58984971.514,
+     "taker_buy_volume": 385.123
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 59938.533646,
+     "high": 59954.99975,
+     "low": 59898.239803,
+     "close": 59915.494871,
+     "volume": 938.897,
+     "quote_volume": 56254478.388,
+     "taker_buy_volume": 708.213
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 59915.494871,
+     "high": 59937.21951,
+     "low": 59912.404629,
+     "close": 59918.088264,
+     "volume": 811.103,
+     "quote_volume": 48599741.145,
+     "taker_buy_volume": 458.359
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 59918.088264,
+     "high": 59931.878361,
+     "low": 59908.065384,
+     "close": 59925.997544,
+     "volume": 853.301,
+     "quote_volume": 51134913.63,
+     "taker_buy_volume": 478.779
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 59925.997544,
+     "high": 59949.855698,
+     "low": 59910.997364,
+     "close": 59918.122793,
+     "volume": 1195.824,
+     "quote_volume": 71651529.271,
+     "taker_buy_volume": 744.642
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 59918.122793,
+     "high": 59934.943923,
+     "low": 59903.480373,
+     "close": 59933.215604,
+     "volume": 849.456,
+     "quote_volume": 50910629.594,
+     "taker_buy_volume": 536.191
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 59933.215604,
+     "high": 59945.301169,
+     "low": 59932.261534,
+     "close": 59936.749851,
+     "volume": 845.834,
+     "quote_volume": 50696540.873,
+     "taker_buy_volume": 477.66
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 59936.749851,
+     "high": 59982.785852,
+     "low": 59923.078797,
+     "close": 59956.318819,
+     "volume": 1164.525,
+     "quote_volume": 69820632.172,
+     "taker_buy_volume": 638.111
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 59956.318819,
+     "high": 59957.548279,
+     "low": 59930.281252,
+     "close": 59949.97556,
+     "volume": 971.245,
+     "quote_volume": 58226114.012,
+     "taker_buy_volume": 626.006
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 59949.97556,
+     "high": 59959.243666,
+     "low": 59907.097343,
+     "close": 59927.811351,
+     "volume": 1041.667,
+     "quote_volume": 62424823.466,
+     "taker_buy_volume": 399.72
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 59927.811351,
+     "high": 59942.899632,
+     "low": 59912.522526,
+     "close": 59931.809037,
+     "volume": 921.732,
+     "quote_volume": 55241066.208,
+     "taker_buy_volume": 446.269
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 59931.809037,
+     "high": 59953.080871,
+     "low": 59880.463266,
+     "close": 59907.836475,
+     "volume": 984.746,
+     "quote_volume": 58994002.337,
+     "taker_buy_volume": 583.96
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 59907.836475,
+     "high": 59922.997813,
+     "low": 59906.433693,
+     "close": 59918.304508,
+     "volume": 1025.168,
+     "quote_volume": 61426328.396,
+     "taker_buy_volume": 781.321
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 59918.304508,
+     "high": 59957.117307,
+     "low": 59890.455849,
+     "close": 59935.853161,
+     "volume": 926.295,
+     "quote_volume": 55518281.104,
+     "taker_buy_volume": 731.7
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 59935.853161,
+     "high": 59959.737668,
+     "low": 59917.142284,
+     "close": 59927.548583,
+     "volume": 933.809,
+     "quote_volume": 55960884.215,
+     "taker_buy_volume": 552.474
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 59927.548583,
+     "high": 59944.28615,
+     "low": 59923.149332,
+     "close": 59931.333236,
+     "volume": 1160.584,
+     "quote_volume": 69555346.453,
+     "taker_buy_volume": 735.467
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 59931.333236,
+     "high": 59944.251211,
+     "low": 59890.947286,
+     "close": 59920.141494,
+     "volume": 807.872,
+     "quote_volume": 48407804.549,
+     "taker_buy_volume": 526.826
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 59920.141494,
+     "high": 59922.564547,
+     "low": 59900.192039,
+     "close": 59910.724704,
+     "volume": 1114.878,
+     "quote_volume": 66793148.936,
+     "taker_buy_volume": 478.626
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 59910.724704,
+     "high": 59917.843194,
+     "low": 59871.436895,
+     "close": 59898.767259,
+     "volume": 919.856,
+     "quote_volume": 55098240.456,
+     "taker_buy_volume": 517.28
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 59898.767259,
+     "high": 59911.853316,
+     "low": 59873.61689,
+     "close": 59879.969536,
+     "volume": 1071.686,
+     "quote_volume": 64172525.032,
+     "taker_buy_volume": 430.323
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 59879.969536,
+     "high": 59914.785691,
+     "low": 59850.570875,
+     "close": 59889.600831,
+     "volume": 976.796,
+     "quote_volume": 58499922.533,
+     "taker_buy_volume": 626.245
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 59889.600831,
+     "high": 59901.350541,
+     "low": 59888.365639,
+     "close": 59889.331008,
+     "volume": 1033.399,
+     "quote_volume": 61889574.774,
+     "taker_buy_volume": 439.956
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 59889.331008,
+     "high": 59905.712238,
+     "low": 59879.461177,
+     "close": 59887.870656,
+     "volume": 1095.335,
+     "quote_volume": 65597280.805,
+     "taker_buy_volume": 809.927
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 59887.870656,
+     "high": 59906.477294,
+     "low": 59862.632926,
+     "close": 59875.285724,
+     "volume": 805.843,
+     "quote_volume": 48250079.874,
+     "taker_buy_volume": 510.698
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 59875.285724,
+     "high": 59883.598568,
+     "low": 59850.999638,
+     "close": 59861.605296,
+     "volume": 1163.793,
+     "quote_volume": 69666517.212,
+     "taker_buy_volume": 366.828
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 59861.605296,
+     "high": 59873.34446,
+     "low": 59828.898086,
+     "close": 59839.99312,
+     "volume": 1062.999,
+     "quote_volume": 63609852.846,
+     "taker_buy_volume": 526.685
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 59839.99312,
+     "high": 59862.027985,
+     "low": 59812.562998,
+     "close": 59832.753579,
+     "volume": 1076.772,
+     "quote_volume": 64426233.737,
+     "taker_buy_volume": 816.243
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 59832.753579,
+     "high": 59877.133688,
+     "low": 59806.797747,
+     "close": 59856.444769,
+     "volume": 868.733,
+     "quote_volume": 51999268.833,
+     "taker_buy_volume": 449.801
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 59856.444769,
+     "high": 59873.14081,
+     "low": 59854.446612,
+     "close": 59860.809792,
+     "volume": 873.79,
+     "quote_volume": 52305776.988,
+     "taker_buy_volume": 408.876
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 59860.809792,
+     "high": 59875.052963,
+     "low": 59843.259285,
+     "close": 59848.585976,
+     "volume": 891.742,
+     "quote_volume": 53369497.756,
+     "taker_buy_volume": 508.965
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 59848.585976,
+     "high": 59862.391594,
+     "low": 59826.110516,
+     "close": 59852.927087,
+     "volume": 882.229,
+     "quote_volume": 52803988.011,
+     "taker_buy_volume": 517.692
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 59852.927087,
+     "high": 59890.682511,
+     "low": 59830.088148,
+     "close": 59863.104776,
+     "volume": 1090.038,
+     "quote_volume": 65253059.004,
+     "taker_buy_volume": 807.113
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 59863.104776,
+     "high": 59890.653399,
+     "low": 59860.618406,
+     "close": 59884.484583,
+     "volume": 815.277,
+     "quote_volume": 48822442.937,
+     "taker_buy_volume": 468.126
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 59884.484583,
+     "high": 59908.828346,
+     "low": 59853.068974,
+     "close": 59879.098754,
+     "volume": 1019.311,
+     "quote_volume": 61035424.03,
+     "taker_buy_volume": 726.184
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 59879.098754,
+     "high": 59913.824443,
+     "low": 59857.309501,
+     "close": 59890.096155,
+     "volume": 886.84,
+     "quote_volume": 53112932.874,
+     "taker_buy_volume": 400.766
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 59890.096155,
+     "high": 59893.471573,
+     "low": 59856.977567,
+     "close": 59878.376659,
+     "volume": 953.018,
+     "quote_volume": 57065170.767,
+     "taker_buy_volume": 492.717
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 59878.376659,
+     "high": 59886.434416,
+     "low": 59839.693117,
+     "close": 59869.607387,
+     "volume": 1006.41,
+     "quote_volume": 60253371.57,
+     "taker_buy_volume": 719.998
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 59869.607387,
+     "high": 59890.022732,
+     "low": 59840.765698,
+     "close": 59870.895576,
+     "volume": 909.469,
+     "quote_volume": 54450723.529,
+     "taker_buy_volume": 332.645
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 59870.895576,
+     "high": 59900.139755,
+     "low": 59847.71741,
+     "close": 59878.655565,
+     "volume": 1162.688,
+     "quote_volume": 69620194.281,
+     "taker_buy_volume": 697.756
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 59878.655565,
+     "high": 59916.268947,
+     "low": 59868.172971,
+     "close": 59893.331055,
+     "volume": 813.391,
+     "quote_volume": 48716696.44,
+     "taker_buy_volume": 491.494
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 59893.331055,
+     "high": 59926.326377,
+     "low": 59891.603551,
+     "close": 59897.77672,
+     "volume": 827.405,
+     "quote_volume": 49559719.947,
+     "taker_buy_volume": 598.695
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 59897.77672,
+     "high": 59925.440122,
+     "low": 59871.235492,
+     "close": 59919.122068,
+     "volume": 944.431,
+     "quote_volume": 56589476.374,
+     "taker_buy_volume": 454.323
+    }
+   ],
+   "AAAUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 100.014039,
+     "high": 100.042096,
+     "low": 99.969155,
+     "close": 100.014039,
+     "volume": 1147.591,
+     "quote_volume": 114775.211,
+     "taker_buy_volume": 443.789
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 100.014039,
+     "high": 100.022,
+     "low": 99.97375,
+     "close": 100.009934,
+     "volume": 1057.83,
+     "quote_volume": 105793.509,
+     "taker_buy_volume": 388.548
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 100.009934,
+     "high": 100.031135,
+     "low": 99.937958,
+     "close": 99.984544,
+     "volume": 915.835,
+     "quote_volume": 91569.345,
+     "taker_buy_volume": 557.003
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 99.984544,
+     "high": 99.993581,
+     "low": 99.979215,
+     "close": 99.992165,
+     "volume": 1171.74,
+     "quote_volume": 117164.82,
+     "taker_buy_volume": 353.743
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 99.992165,
+     "high": 100.017909,
+     "low": 99.961645,
+     "close": 100.015022,
+     "volume": 981.097,
+     "quote_volume": 98124.438,
+     "taker_buy_volume": 632.612
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 100.015022,
+     "high": 100.041691,
+     "low": 99.972638,
+     "close": 100.026636,
+     "volume": 1111.47,
+     "quote_volume": 111176.605,
+     "taker_buy_volume": 473.215
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 100.026636,
+     "high": 100.080125,
+     "low": 99.982207,
+     "close": 100.035961,
+     "volume": 800.404,
+     "quote_volume": 80069.183,
+     "taker_buy_volume": 361.837
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 100.035961,
+     "high": 100.053423,
+     "low": 100.000731,
+     "close": 100.04265,
+     "volume": 886.805,
+     "quote_volume": 88718.322,
+     "taker_buy_volume": 527.751
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 100.04265,
+     "high": 100.084334,
+     "low": 100.02426,
+     "close": 100.064899,
+     "volume": 838.751,
+     "quote_volume": 83929.535,
+     "taker_buy_volume": 322.754
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 100.064899,
+     "high": 100.085308,
+     "low": 99.990176,
+     "close": 100.029518,
+     "volume": 849.223,
+     "quote_volume": 84947.367,
+     "taker_buy_volume": 363.559
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 100.029518,
+     "high": 100.050483,
+     "low": 99.983684,
+     "close": 99.993584,
+     "volume": 937.573,
+     "quote_volume": 93751.285,
+     "taker_buy_volume": 701.17
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 99.993584,
+     "high": 100.024889,
+     "low": 99.939496,
+     "close": 99.959161,
+     "volume": 1036.195,
+     "quote_volume": 103577.183,
+     "taker_buy_volume": 707.102
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 99.959161,
+     "high": 100.000911,
+     "low": 99.915323,
+     "close": 99.943678,
+     "volume": 1043.494,
+     "quote_volume": 104290.629,
+     "taker_buy_volume": 532.918
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 99.943678,
+     "high": 99.984483,
+     "low": 99.902874,
+     "close": 99.97935,
+     "volume": 883.486,
+     "quote_volume": 88330.356,
+     "taker_buy_volume": 445.111
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 99.97935,
+     "high": 100.028162,
+     "low": 99.92947,
+     "close": 99.940509,
+     "volume": 966.015,
+     "quote_volume": 96544.031,
+     "taker_buy_volume": 753.53
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 99.940509,
+     "high": 99.974438,
+     "low": 99.89347,
+     "close": 99.959762,
+     "volume": 1006.5,
+     "quote_volume": 100609.501,
+     "taker_buy_volume": 464.196
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 99.959762,
+     "high": 99.971355,
+     "low": 99.912987,
+     "close": 99.926359,
+     "volume": 1128.956,
+     "quote_volume": 112812.463,
+     "taker_buy_volume": 819.769
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 99.926359,
+     "high": 99.985734,
+     "low": 99.906216,
+     "close": 99.965621,
+     "volume": 830.465,
+     "quote_volume": 83017.95,
+     "taker_buy_volume": 559.487
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 99.965621,
+     "high": 99.994226,
+     "low": 99.944139,
+     "close": 99.953959,
+     "volume": 1143.199,
+     "quote_volume": 114267.265,
+     "taker_buy_volume": 620.414
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 99.953959,
+     "high": 99.974992,
+     "low": 99.914745,
+     "close": 99.946361,
+     "volume": 865.625,
+     "quote_volume": 86516.069,
+     "taker_buy_volume": 271.351
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 99.946361,
+     "high": 99.994214,
+     "low": 99.911308,
+     "close": 99.960475,
+     "volume": 845.376,
+     "quote_volume": 84504.187,
+     "taker_buy_volume": 463.166
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 99.960475,
+     "high": 99.977709,
+     "low": 99.949439,
+     "close": 99.963058,
+     "volume": 902.669,
+     "quote_volume": 90233.554,
+     "taker_buy_volume": 329.869
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 99.963058,
+     "high": 99.993161,
+     "low": 99.909087,
+     "close": 99.948837,
+     "volume": 1103.95,
+     "quote_volume": 110338.519,
+     "taker_buy_volume": 559.58
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 99.948837,
+     "high": 99.975328,
+     "low": 99.875918,
+     "close": 99.921141,
+     "volume": 899.348,
+     "quote_volume": 89863.878,
+     "taker_buy_volume": 283.604
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 99.921141,
+     "high": 99.972783,
+     "low": 99.911199,
+     "close": 99.948501,
+     "volume": 935.54,
+     "quote_volume": 93505.821,
+     "taker_buy_volume": 400.543
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 99.948501,
+     "high": 99.955144,
+     "low": 99.897692,
+     "close": 99.938509,
+     "volume": 996.154,
+     "quote_volume": 99554.146,
+     "taker_buy_volume": 588.292
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 99.938509,
+     "high": 99.998183,
+     "low": 99.926106,
+     "close": 99.958838,
+     "volume": 1173.284,
+     "quote_volume": 117280.105,
+     "taker_buy_volume": 396.287
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 99.958838,
+     "high": 100.005817,
+     "low": 99.90041,
+     "close": 99.921579,
+     "volume": 1124.912,
+     "quote_volume": 112402.984,
+     "taker_buy_volume": 627.401
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 99.921579,
+     "high": 99.975738,
+     "low": 99.894059,
+     "close": 99.959163,
+     "volume": 907.969,
+     "quote_volume": 90759.821,
+     "taker_buy_volume": 692.223
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 99.959163,
+     "high": 100.028579,
+     "low": 99.944933,
+     "close": 99.991857,
+     "volume": 1177.005,
+     "quote_volume": 117690.916,
+     "taker_buy_volume": 649.425
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 99.991857,
+     "high": 100.012161,
+     "low": 99.935724,
+     "close": 99.984428,
+     "volume": 989.462,
+     "quote_volume": 98930.793,
+     "taker_buy_volume": 741.218
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 99.984428,
+     "high": 99.993606,
+     "low": 99.942363,
+     "close": 99.964024,
+     "volume": 1129.01,
+     "quote_volume": 112860.382,
+     "taker_buy_volume": 663.386
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 99.964024,
+     "high": 100.008076,
+     "low": 99.937108,
+     "close": 100.003071,
+     "volume": 1002.161,
+     "quote_volume": 100219.177,
+     "taker_buy_volume": 604.454
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 100.003071,
+     "high": 100.048869,
+     "low": 99.974749,
+     "close": 99.994353,
+     "volume": 823.413,
+     "quote_volume": 82336.65,
+     "taker_buy_volume": 326.709
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 99.994353,
+     "high": 100.051287,
+     "low": 99.968257,
+     "close": 100.002086,
+     "volume": 1104.389,
+     "quote_volume": 110441.203,
+     "taker_buy_volume": 544.668
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 100.002086,
+     "high": 100.046276,
+     "low": 99.969027,
+     "close": 100.009841,
+     "volume": 898.394,
+     "quote_volume": 89848.241,
+     "taker_buy_volume": 511.218
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 100.009841,
+     "high": 100.054901,
+     "low": 99.9647,
+     "close": 100.048308,
+     "volume": 1106.423,
+     "quote_volume": 110695.75,
+     "taker_buy_volume": 808.136
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 100.048308,
+     "high": 100.056065,
+     "low": 100.019974,
+     "close": 100.030223,
+     "volume": 902.428,
+     "quote_volume": 90270.074,
+     "taker_buy_volume": 429.952
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 100.030223,
+     "high": 100.089576,
+     "low": 100.017582,
+     "close": 100.050559,
+     "volume": 1156.362,
+     "quote_volume": 115694.665,
+     "taker_buy_volume": 416.01
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 100.050559,
+     "high": 100.077768,
+     "low": 99.978865,
+     "close": 100.025475,
+     "volume": 908.463,
+     "quote_volume": 90869.443,
+     "taker_buy_volume": 485.138
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 100.025475,
+     "high": 100.088653,
+     "low": 100.013346,
+     "close": 100.039121,
+     "volume": 1134.788,
+     "quote_volume": 113523.194,
+     "taker_buy_volume": 777.592
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 100.039121,
+     "high": 100.071676,
+     "low": 99.999703,
+     "close": 100.035887,
+     "volume": 855.285,
+     "quote_volume": 85559.194,
+     "taker_buy_volume": 675.455
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 100.035887,
+     "high": 100.07816,
+     "low": 100.007204,
+     "close": 100.012832,
+     "volume": 957.852,
+     "quote_volume": 95797.491,
+     "taker_buy_volume": 339.852
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 100.012832,
+     "high": 100.024493,
+     "low": 99.987218,
+     "close": 99.996669,
+     "volume": 930.132,
+     "quote_volume": 93010.102,
+     "taker_buy_volume": 610.128
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 99.996669,
+     "high": 100.021472,
+     "low": 99.935753,
+     "close": 99.956991,
+     "volume": 1008.782,
+     "quote_volume": 100834.814,
+     "taker_buy_volume": 693.236
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 99.956991,
+     "high": 99.991668,
+     "low": 99.937497,
+     "close": 99.954776,
+     "volume": 830.338,
+     "quote_volume": 82996.248,
+     "taker_buy_volume": 570.15
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 99.954776,
+     "high": 100.011312,
+     "low": 99.920466,
+     "close": 99.961873,
+     "volume": 829.312,
+     "quote_volume": 82899.581,
+     "taker_buy_volume": 339.972
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 99.961873,
+     "high": 100.002927,
+     "low": 99.918762,
+     "close": 99.943833,
+     "volume": 973.108,
+     "quote_volume": 97256.143,
+     "taker_buy_volume": 464.762
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 99.943833,
+     "high": 99.969385,
+     "low": 99.89681,
+     "close": 99.936266,
+     "volume": 1118.646,
+     "quote_volume": 111793.304,
+     "taker_buy_volume": 382.874
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 99.936266,
+     "high": 99.972439,
+     "low": 99.860008,
+     "close": 99.898678,
+     "volume": 826.561,
+     "quote_volume": 82572.351,
+     "taker_buy_volume": 412.214
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 99.898678,
+     "high": 103.935752,
+     "low": 99.897458,
+     "close": 103.914832,
+     "volume": 3871.936,
+     "quote_volume": 402351.578,
+     "taker_buy_volume": 2838.994
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 103.914832,
+     "high": 103.986829,
+     "low": 103.90863,
+     "close": 103.95229,
+     "volume": 930.566,
+     "quote_volume": 96734.467,
+     "taker_buy_volume": 605.275
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 103.95229,
+     "high": 103.966363,
+     "low": 103.946809,
+     "close": 103.964996,
+     "volume": 1194.489,
+     "quote_volume": 124185.044,
+     "taker_buy_volume": 520.919
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 103.964996,
+     "high": 104.019521,
+     "low": 103.945771,
+     "close": 103.981611,
+     "volume": 979.411,
+     "quote_volume": 101840.733,
+     "taker_buy_volume": 768.755
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 103.981611,
+     "high": 104.024705,
+     "low": 103.967295,
+     "close": 103.977322,
+     "volume": 809.087,
+     "quote_volume": 84126.699,
+     "taker_buy_volume": 412.057
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 103.977322,
+     "high": 104.019981,
+     "low": 103.948822,
+     "close": 103.993686,
+     "volume": 1145.065,
+     "quote_volume": 119079.53,
+     "taker_buy_volume": 674.051
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 103.993686,
+     "high": 104.059989,
+     "low": 103.97619,
+     "close": 104.030762,
+     "volume": 895.88,
+     "quote_volume": 93199.079,
+     "taker_buy_volume": 633.573
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 104.030762,
+     "high": 104.031818,
+     "low": 103.976244,
+     "close": 104.018556,
+     "volume": 890.259,
+     "quote_volume": 92603.455,
+     "taker_buy_volume": 414.145
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 104.018556,
+     "high": 104.036674,
+     "low": 103.992566,
+     "close": 104.025364,
+     "volume": 1035.716,
+     "quote_volume": 107740.734,
+     "taker_buy_volume": 540.334
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 104.025364,
+     "high": 104.091001,
+     "low": 103.97684,
+     "close": 104.062859,
+     "volume": 889.745,
+     "quote_volume": 92589.408,
+     "taker_buy_volume": 485.74
+    }
+   ],
+   "BBBUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 50.016512,
+     "high": 50.02295,
+     "low": 50.015209,
+     "close": 50.016512,
+     "volume": 1051.965,
+     "quote_volume": 52615.621,
+     "taker_buy_volume": 712.639
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 50.016512,
+     "high": 50.053407,
+     "low": 50.015438,
+     "close": 50.035088,
+     "volume": 1011.923,
+     "quote_volume": 50631.657,
+     "taker_buy_volume": 434.167
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 50.035088,
+     "high": 50.045592,
+     "low": 50.025659,
+     "close": 50.041792,
+     "volume": 1184.406,
+     "quote_volume": 59269.798,
+     "taker_buy_volume": 793.492
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 50.041792,
+     "high": 50.055321,
+     "low": 50.024514,
+     "close": 50.049726,
+     "volume": 1145.786,
+     "quote_volume": 57346.275,
+     "taker_buy_volume": 581.181
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 50.049726,
+     "high": 50.066348,
+     "low": 50.039059,
+     "close": 50.051417,
+     "volume": 1151.284,
+     "quote_volume": 57623.396,
+     "taker_buy_volume": 431.976
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 50.051417,
+     "high": 50.054221,
+     "low": 50.013519,
+     "close": 50.033157,
+     "volume": 841.552,
+     "quote_volume": 42105.503,
+     "taker_buy_volume": 308.731
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 50.033157,
+     "high": 50.053328,
+     "low": 50.018897,
+     "close": 50.044462,
+     "volume": 1100.919,
+     "quote_volume": 55094.9,
+     "taker_buy_volume": 858.089
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 50.044462,
+     "high": 50.046472,
+     "low": 50.021786,
+     "close": 50.045475,
+     "volume": 943.639,
+     "quote_volume": 47224.862,
+     "taker_buy_volume": 627.284
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 50.045475,
+     "high": 50.06741,
+     "low": 50.015211,
+     "close": 50.037029,
+     "volume": 990.24,
+     "quote_volume": 49548.668,
+     "taker_buy_volume": 542.653
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 50.037029,
+     "high": 50.062554,
+     "low": 50.014486,
+     "close": 50.040057,
+     "volume": 1018.741,
+     "quote_volume": 50977.858,
+     "taker_buy_volume": 507.455
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 50.040057,
+     "high": 50.041377,
+     "low": 50.013364,
+     "close": 50.030655,
+     "volume": 1005.021,
+     "quote_volume": 50281.859,
+     "taker_buy_volume": 546.092
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 50.030655,
+     "high": 50.052741,
+     "low": 50.009052,
+     "close": 50.016138,
+     "volume": 849.372,
+     "quote_volume": 42482.307,
+     "taker_buy_volume": 418.516
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 50.016138,
+     "high": 50.044699,
+     "low": 50.010786,
+     "close": 50.026991,
+     "volume": 814.513,
+     "quote_volume": 40747.634,
+     "taker_buy_volume": 316.714
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 50.026991,
+     "high": 50.042546,
+     "low": 49.989576,
+     "close": 50.008337,
+     "volume": 1038.489,
+     "quote_volume": 51933.108,
+     "taker_buy_volume": 736.412
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 50.008337,
+     "high": 50.013986,
+     "low": 49.998586,
+     "close": 50.003763,
+     "volume": 1025.881,
+     "quote_volume": 51297.91,
+     "taker_buy_volume": 676.16
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 50.003763,
+     "high": 50.023251,
+     "low": 49.984544,
+     "close": 49.988066,
+     "volume": 877.223,
+     "quote_volume": 43850.681,
+     "taker_buy_volume": 657.996
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 49.988066,
+     "high": 50.00497,
+     "low": 49.986029,
+     "close": 49.996292,
+     "volume": 1019.238,
+     "quote_volume": 50958.121,
+     "taker_buy_volume": 356.698
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 49.996292,
+     "high": 50.016324,
+     "low": 49.983956,
+     "close": 50.004792,
+     "volume": 1125.531,
+     "quote_volume": 56281.943,
+     "taker_buy_volume": 606.844
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 50.004792,
+     "high": 50.006281,
+     "low": 49.98453,
+     "close": 50.004245,
+     "volume": 979.509,
+     "quote_volume": 48979.608,
+     "taker_buy_volume": 596.395
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 50.004245,
+     "high": 50.029525,
+     "low": 49.98057,
+     "close": 50.024144,
+     "volume": 809.029,
+     "quote_volume": 40470.983,
+     "taker_buy_volume": 378.985
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 50.024144,
+     "high": 50.046226,
+     "low": 50.008915,
+     "close": 50.01347,
+     "volume": 1198.474,
+     "quote_volume": 59939.844,
+     "taker_buy_volume": 692.049
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 50.01347,
+     "high": 50.018012,
+     "low": 49.986578,
+     "close": 50.00881,
+     "volume": 995.332,
+     "quote_volume": 49775.369,
+     "taker_buy_volume": 357.784
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 50.00881,
+     "high": 50.033495,
+     "low": 50.007087,
+     "close": 50.014099,
+     "volume": 872.948,
+     "quote_volume": 43659.708,
+     "taker_buy_volume": 572.815
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 50.014099,
+     "high": 50.020808,
+     "low": 50.011887,
+     "close": 50.016773,
+     "volume": 997.989,
+     "quote_volume": 49916.189,
+     "taker_buy_volume": 504.585
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 50.016773,
+     "high": 50.029551,
+     "low": 50.014833,
+     "close": 50.024527,
+     "volume": 1093.466,
+     "quote_volume": 54700.12,
+     "taker_buy_volume": 435.134
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 50.024527,
+     "high": 50.031882,
+     "low": 50.00908,
+     "close": 50.029501,
+     "volume": 992.831,
+     "quote_volume": 49670.84,
+     "taker_buy_volume": 646.066
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 50.029501,
+     "high": 50.044882,
+     "low": 49.98793,
+     "close": 50.01199,
+     "volume": 1169.142,
+     "quote_volume": 58471.118,
+     "taker_buy_volume": 889.243
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 50.01199,
+     "high": 50.024844,
+     "low": 49.993451,
+     "close": 50.001625,
+     "volume": 1005.973,
+     "quote_volume": 50300.285,
+     "taker_buy_volume": 589.907
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 50.001625,
+     "high": 50.005733,
+     "low": 49.972598,
+     "close": 49.98943,
+     "volume": 986.808,
+     "quote_volume": 49329.969,
+     "taker_buy_volume": 683.126
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 49.98943,
+     "high": 49.995306,
+     "low": 49.971187,
+     "close": 49.986601,
+     "volume": 1008.884,
+     "quote_volume": 50430.682,
+     "taker_buy_volume": 333.095
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 49.986601,
+     "high": 49.991943,
+     "low": 49.972064,
+     "close": 49.97583,
+     "volume": 1025.857,
+     "quote_volume": 51268.055,
+     "taker_buy_volume": 531.944
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 49.97583,
+     "high": 50.011092,
+     "low": 49.962019,
+     "close": 49.990811,
+     "volume": 1117.547,
+     "quote_volume": 55867.081,
+     "taker_buy_volume": 818.745
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 49.990811,
+     "high": 49.992339,
+     "low": 49.967079,
+     "close": 49.976334,
+     "volume": 1197.755,
+     "quote_volume": 59859.404,
+     "taker_buy_volume": 366.663
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 49.976334,
+     "high": 49.999137,
+     "low": 49.967208,
+     "close": 49.981487,
+     "volume": 806.638,
+     "quote_volume": 40316.967,
+     "taker_buy_volume": 524.126
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 49.981487,
+     "high": 50.002789,
+     "low": 49.972868,
+     "close": 49.977138,
+     "volume": 918.468,
+     "quote_volume": 45902.402,
+     "taker_buy_volume": 604.551
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 49.977138,
+     "high": 49.998144,
+     "low": 49.961768,
+     "close": 49.992904,
+     "volume": 884.354,
+     "quote_volume": 44211.425,
+     "taker_buy_volume": 389.454
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 49.992904,
+     "high": 50.000239,
+     "low": 49.973942,
+     "close": 49.985339,
+     "volume": 978.779,
+     "quote_volume": 48924.6,
+     "taker_buy_volume": 671.013
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 49.985339,
+     "high": 50.000841,
+     "low": 49.956053,
+     "close": 49.970381,
+     "volume": 1189.541,
+     "quote_volume": 59441.817,
+     "taker_buy_volume": 769.951
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 49.970381,
+     "high": 49.989673,
+     "low": 49.95706,
+     "close": 49.968275,
+     "volume": 907.958,
+     "quote_volume": 45369.095,
+     "taker_buy_volume": 541.495
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 49.968275,
+     "high": 49.985442,
+     "low": 49.944567,
+     "close": 49.966314,
+     "volume": 835.188,
+     "quote_volume": 41731.266,
+     "taker_buy_volume": 602.886
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 49.966314,
+     "high": 49.990575,
+     "low": 49.933982,
+     "close": 49.949774,
+     "volume": 858.334,
+     "quote_volume": 42873.59,
+     "taker_buy_volume": 514.979
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 49.949774,
+     "high": 49.992444,
+     "low": 49.932119,
+     "close": 49.969551,
+     "volume": 821.512,
+     "quote_volume": 41050.586,
+     "taker_buy_volume": 470.676
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 49.969551,
+     "high": 49.984542,
+     "low": 49.961904,
+     "close": 49.96685,
+     "volume": 1108.59,
+     "quote_volume": 55392.75,
+     "taker_buy_volume": 634.175
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 49.96685,
+     "high": 50.00397,
+     "low": 49.943202,
+     "close": 49.983147,
+     "volume": 906.532,
+     "quote_volume": 45311.322,
+     "taker_buy_volume": 668.847
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 49.983147,
+     "high": 49.998966,
+     "low": 49.959646,
+     "close": 49.978333,
+     "volume": 973.723,
+     "quote_volume": 48665.052,
+     "taker_buy_volume": 529.1
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 49.978333,
+     "high": 49.98509,
+     "low": 49.956669,
+     "close": 49.960625,
+     "volume": 1099.261,
+     "quote_volume": 54919.766,
+     "taker_buy_volume": 785.791
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 49.960625,
+     "high": 49.962247,
+     "low": 49.940911,
+     "close": 49.947465,
+     "volume": 1191.016,
+     "quote_volume": 59488.229,
+     "taker_buy_volume": 654.424
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 49.947465,
+     "high": 49.973731,
+     "low": 49.946734,
+     "close": 49.962121,
+     "volume": 1033.102,
+     "quote_volume": 51615.968,
+     "taker_buy_volume": 675.392
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 49.962121,
+     "high": 49.967657,
+     "low": 49.954196,
+     "close": 49.956048,
+     "volume": 1049.481,
+     "quote_volume": 52427.923,
+     "taker_buy_volume": 577.232
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 49.956048,
+     "high": 49.960144,
+     "low": 49.940511,
+     "close": 49.95989,
+     "volume": 1014.412,
+     "quote_volume": 50679.912,
+     "taker_buy_volume": 555.882
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 49.95989,
+     "high": 54.225557,
+     "low": 49.950642,
+     "close": 54.208617,
+     "volume": 4696.608,
+     "quote_volume": 254596.625,
+     "taker_buy_volume": 1878.9
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 54.208617,
+     "high": 54.242447,
+     "low": 54.208187,
+     "close": 54.222627,
+     "volume": 1123.363,
+     "quote_volume": 60911.693,
+     "taker_buy_volume": 625.078
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 54.222627,
+     "high": 54.246847,
+     "low": 54.197814,
+     "close": 54.228925,
+     "volume": 843.145,
+     "quote_volume": 45722.847,
+     "taker_buy_volume": 398.716
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 54.228925,
+     "high": 54.257401,
+     "low": 54.227556,
+     "close": 54.249332,
+     "volume": 1046.746,
+     "quote_volume": 56785.272,
+     "taker_buy_volume": 527.557
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 54.249332,
+     "high": 54.273724,
+     "low": 54.239059,
+     "close": 54.26788,
+     "volume": 980.373,
+     "quote_volume": 53202.764,
+     "taker_buy_volume": 472.279
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 54.26788,
+     "high": 54.281526,
+     "low": 54.240331,
+     "close": 54.251091,
+     "volume": 896.92,
+     "quote_volume": 48658.888,
+     "taker_buy_volume": 439.445
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 54.251091,
+     "high": 54.257974,
+     "low": 54.239142,
+     "close": 54.247688,
+     "volume": 810.777,
+     "quote_volume": 43982.777,
+     "taker_buy_volume": 630.415
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 54.247688,
+     "high": 54.250786,
+     "low": 54.229395,
+     "close": 54.236445,
+     "volume": 1036.867,
+     "quote_volume": 56235.98,
+     "taker_buy_volume": 714.084
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 54.236445,
+     "high": 54.252029,
+     "low": 54.228274,
+     "close": 54.239711,
+     "volume": 1062.236,
+     "quote_volume": 57615.374,
+     "taker_buy_volume": 776.338
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 54.239711,
+     "high": 54.264565,
+     "low": 54.221825,
+     "close": 54.226688,
+     "volume": 1152.791,
+     "quote_volume": 62512.038,
+     "taker_buy_volume": 809.536
+    }
+   ],
+   "CCCUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 10.002896,
+     "high": 10.003115,
+     "low": 10.00106,
+     "close": 10.002896,
+     "volume": 1066.184,
+     "quote_volume": 10664.927,
+     "taker_buy_volume": 384.062
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 10.002896,
+     "high": 10.007207,
+     "low": 10.000116,
+     "close": 10.002121,
+     "volume": 859.366,
+     "quote_volume": 8595.483,
+     "taker_buy_volume": 366.549
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 10.002121,
+     "high": 10.002455,
+     "low": 10.001684,
+     "close": 10.002219,
+     "volume": 1147.859,
+     "quote_volume": 11481.137,
+     "taker_buy_volume": 473.567
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 10.002219,
+     "high": 10.006579,
+     "low": 9.999101,
+     "close": 10.005327,
+     "volume": 1153.433,
+     "quote_volume": 11540.474,
+     "taker_buy_volume": 614.612
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 10.005327,
+     "high": 10.005727,
+     "low": 9.998988,
+     "close": 10.002612,
+     "volume": 1082.074,
+     "quote_volume": 10823.567,
+     "taker_buy_volume": 767.411
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 10.002612,
+     "high": 10.004428,
+     "low": 9.996273,
+     "close": 9.999097,
+     "volume": 861.556,
+     "quote_volume": 8614.782,
+     "taker_buy_volume": 419.139
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 9.999097,
+     "high": 10.003332,
+     "low": 9.995258,
+     "close": 9.996726,
+     "volume": 1115.042,
+     "quote_volume": 11146.77,
+     "taker_buy_volume": 547.007
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 9.996726,
+     "high": 10.000646,
+     "low": 9.993974,
+     "close": 9.996656,
+     "volume": 806.301,
+     "quote_volume": 8060.314,
+     "taker_buy_volume": 379.376
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 9.996656,
+     "high": 10.000282,
+     "low": 9.993223,
+     "close": 9.993899,
+     "volume": 886.936,
+     "quote_volume": 8863.949,
+     "taker_buy_volume": 670.176
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 9.993899,
+     "high": 9.997797,
+     "low": 9.989478,
+     "close": 9.993201,
+     "volume": 1109.984,
+     "quote_volume": 11092.293,
+     "taker_buy_volume": 878.604
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 9.993201,
+     "high": 9.999128,
+     "low": 9.991953,
+     "close": 9.995985,
+     "volume": 833.713,
+     "quote_volume": 8333.782,
+     "taker_buy_volume": 488.2
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 9.995985,
+     "high": 9.99764,
+     "low": 9.992652,
+     "close": 9.995126,
+     "volume": 829.887,
+     "quote_volume": 8294.825,
+     "taker_buy_volume": 343.491
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 9.995126,
+     "high": 10.000552,
+     "low": 9.992432,
+     "close": 9.996857,
+     "volume": 810.667,
+     "quote_volume": 8104.122,
+     "taker_buy_volume": 369.112
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 9.996857,
+     "high": 9.999792,
+     "low": 9.996511,
+     "close": 9.999635,
+     "volume": 929.297,
+     "quote_volume": 9292.631,
+     "taker_buy_volume": 525.977
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 9.999635,
+     "high": 10.001357,
+     "low": 9.994312,
+     "close": 9.996894,
+     "volume": 951.742,
+     "quote_volume": 9514.464,
+     "taker_buy_volume": 709.942
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 9.996894,
+     "high": 9.998518,
+     "low": 9.995465,
+     "close": 9.996002,
+     "volume": 1015.459,
+     "quote_volume": 10150.531,
+     "taker_buy_volume": 534.403
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 9.996002,
+     "high": 10.000486,
+     "low": 9.992637,
+     "close": 9.997323,
+     "volume": 841.038,
+     "quote_volume": 8408.128,
+     "taker_buy_volume": 552.201
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 9.997323,
+     "high": 10.004635,
+     "low": 9.996913,
+     "close": 10.000899,
+     "volume": 1138.228,
+     "quote_volume": 11383.303,
+     "taker_buy_volume": 696.512
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 10.000899,
+     "high": 10.004487,
+     "low": 9.998142,
+     "close": 9.999326,
+     "volume": 1131.421,
+     "quote_volume": 11313.447,
+     "taker_buy_volume": 485.416
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 9.999326,
+     "high": 10.001946,
+     "low": 9.990974,
+     "close": 9.995469,
+     "volume": 1006.196,
+     "quote_volume": 10057.401,
+     "taker_buy_volume": 450.494
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 9.995469,
+     "high": 10.001965,
+     "low": 9.993187,
+     "close": 9.997291,
+     "volume": 977.677,
+     "quote_volume": 9774.121,
+     "taker_buy_volume": 606.931
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 9.997291,
+     "high": 10.001877,
+     "low": 9.991314,
+     "close": 9.993884,
+     "volume": 1014.109,
+     "quote_volume": 10134.887,
+     "taker_buy_volume": 362.468
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 9.993884,
+     "high": 9.99477,
+     "low": 9.991248,
+     "close": 9.993382,
+     "volume": 981.133,
+     "quote_volume": 9804.837,
+     "taker_buy_volume": 708.516
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 9.993382,
+     "high": 9.996925,
+     "low": 9.992878,
+     "close": 9.996465,
+     "volume": 895.585,
+     "quote_volume": 8952.685,
+     "taker_buy_volume": 629.815
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 9.996465,
+     "high": 9.99654,
+     "low": 9.991547,
+     "close": 9.992784,
+     "volume": 1011.021,
+     "quote_volume": 10102.915,
+     "taker_buy_volume": 593.54
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 9.992784,
+     "high": 9.994814,
+     "low": 9.990592,
+     "close": 9.991184,
+     "volume": 1103.985,
+     "quote_volume": 11030.118,
+     "taker_buy_volume": 698.04
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 9.991184,
+     "high": 9.992764,
+     "low": 9.990163,
+     "close": 9.990245,
+     "volume": 929.823,
+     "quote_volume": 9289.16,
+     "taker_buy_volume": 417.473
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 9.990245,
+     "high": 9.99509,
+     "low": 9.986974,
+     "close": 9.992276,
+     "volume": 845.129,
+     "quote_volume": 8444.763,
+     "taker_buy_volume": 595.341
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 9.992276,
+     "high": 9.994072,
+     "low": 9.991516,
+     "close": 9.99174,
+     "volume": 1176.934,
+     "quote_volume": 11759.619,
+     "taker_buy_volume": 924.146
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 9.99174,
+     "high": 9.996244,
+     "low": 9.988282,
+     "close": 9.993777,
+     "volume": 1103.083,
+     "quote_volume": 11023.966,
+     "taker_buy_volume": 871.764
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 9.993777,
+     "high": 9.997744,
+     "low": 9.991283,
+     "close": 9.993918,
+     "volume": 1068.332,
+     "quote_volume": 10676.823,
+     "taker_buy_volume": 710.304
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 9.993918,
+     "high": 9.997885,
+     "low": 9.990824,
+     "close": 9.992658,
+     "volume": 811.414,
+     "quote_volume": 8108.182,
+     "taker_buy_volume": 546.11
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 9.992658,
+     "high": 9.995613,
+     "low": 9.987327,
+     "close": 9.99037,
+     "volume": 1034.549,
+     "quote_volume": 10335.527,
+     "taker_buy_volume": 506.9
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 9.99037,
+     "high": 9.991426,
+     "low": 9.986137,
+     "close": 9.990354,
+     "volume": 946.628,
+     "quote_volume": 9457.148,
+     "taker_buy_volume": 671.372
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 9.990354,
+     "high": 9.991999,
+     "low": 9.989531,
+     "close": 9.989685,
+     "volume": 883.047,
+     "quote_volume": 8821.362,
+     "taker_buy_volume": 294.119
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 9.989685,
+     "high": 9.994107,
+     "low": 9.988172,
+     "close": 9.989836,
+     "volume": 1148.192,
+     "quote_volume": 11470.25,
+     "taker_buy_volume": 431.783
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 9.989836,
+     "high": 9.991662,
+     "low": 9.988355,
+     "close": 9.988492,
+     "volume": 1192.57,
+     "quote_volume": 11911.976,
+     "taker_buy_volume": 821.993
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 9.988492,
+     "high": 9.990571,
+     "low": 9.988125,
+     "close": 9.990002,
+     "volume": 1188.844,
+     "quote_volume": 11876.553,
+     "taker_buy_volume": 599.609
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 9.990002,
+     "high": 9.994217,
+     "low": 9.984329,
+     "close": 9.986817,
+     "volume": 1171.679,
+     "quote_volume": 11701.344,
+     "taker_buy_volume": 808.197
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 9.986817,
+     "high": 9.990846,
+     "low": 9.979349,
+     "close": 9.983042,
+     "volume": 985.064,
+     "quote_volume": 9833.935,
+     "taker_buy_volume": 747.21
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 9.983042,
+     "high": 9.989739,
+     "low": 9.980346,
+     "close": 9.985083,
+     "volume": 978.096,
+     "quote_volume": 9766.37,
+     "taker_buy_volume": 534.931
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 9.985083,
+     "high": 9.991293,
+     "low": 9.982352,
+     "close": 9.986303,
+     "volume": 939.242,
+     "quote_volume": 9379.555,
+     "taker_buy_volume": 328.253
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 9.986303,
+     "high": 9.99221,
+     "low": 9.984932,
+     "close": 9.987813,
+     "volume": 1061.845,
+     "quote_volume": 10605.51,
+     "taker_buy_volume": 362.414
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 9.987813,
+     "high": 9.991231,
+     "low": 9.982145,
+     "close": 9.984265,
+     "volume": 997.761,
+     "quote_volume": 9961.91,
+     "taker_buy_volume": 544.549
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 9.984265,
+     "high": 9.988698,
+     "low": 9.981234,
+     "close": 9.981642,
+     "volume": 912.326,
+     "quote_volume": 9106.511,
+     "taker_buy_volume": 338.293
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 9.981642,
+     "high": 9.989782,
+     "low": 9.978025,
+     "close": 9.985285,
+     "volume": 959.999,
+     "quote_volume": 9585.864,
+     "taker_buy_volume": 714.848
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 9.985285,
+     "high": 9.98955,
+     "low": 9.983528,
+     "close": 9.988825,
+     "volume": 1141.463,
+     "quote_volume": 11401.874,
+     "taker_buy_volume": 724.809
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 9.988825,
+     "high": 9.989088,
+     "low": 9.98422,
+     "close": 9.985304,
+     "volume": 899.395,
+     "quote_volume": 8980.733,
+     "taker_buy_volume": 555.172
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 9.984297,
+     "high": 9.987012,
+     "low": 9.981088,
+     "close": 9.984322,
+     "volume": 1190.627,
+     "quote_volume": 11887.603,
+     "taker_buy_volume": 397.149
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 9.984322,
+     "high": 10.388716,
+     "low": 9.983092,
+     "close": 10.385268,
+     "volume": 3239.68,
+     "quote_volume": 33644.945,
+     "taker_buy_volume": 2264.851
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 10.385268,
+     "high": 10.388052,
+     "low": 10.381334,
+     "close": 10.381905,
+     "volume": 1018.878,
+     "quote_volume": 10577.895,
+     "taker_buy_volume": 750.509
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 10.381905,
+     "high": 10.383473,
+     "low": 10.374382,
+     "close": 10.377883,
+     "volume": 1199.356,
+     "quote_volume": 12446.776,
+     "taker_buy_volume": 611.376
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 10.377883,
+     "high": 10.379771,
+     "low": 10.372705,
+     "close": 10.378986,
+     "volume": 1180.121,
+     "quote_volume": 12248.46,
+     "taker_buy_volume": 520.198
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 10.378986,
+     "high": 10.383428,
+     "low": 10.376487,
+     "close": 10.379609,
+     "volume": 1009.7,
+     "quote_volume": 10480.291,
+     "taker_buy_volume": 491.027
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 10.379609,
+     "high": 10.384778,
+     "low": 10.370866,
+     "close": 10.375737,
+     "volume": 1065.893,
+     "quote_volume": 11059.425,
+     "taker_buy_volume": 514.089
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 10.375737,
+     "high": 10.384611,
+     "low": 10.373989,
+     "close": 10.379839,
+     "volume": 1174.511,
+     "quote_volume": 12191.235,
+     "taker_buy_volume": 711.191
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 10.379839,
+     "high": 10.380404,
+     "low": 10.373409,
+     "close": 10.375937,
+     "volume": 828.631,
+     "quote_volume": 8597.823,
+     "taker_buy_volume": 625.767
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 10.375937,
+     "high": 10.381574,
+     "low": 10.37239,
+     "close": 10.376848,
+     "volume": 1119.08,
+     "quote_volume": 11612.523,
+     "taker_buy_volume": 527.684
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 10.376848,
+     "high": 10.37961,
+     "low": 10.37164,
+     "close": 10.376618,
+     "volume": 1053.164,
+     "quote_volume": 10928.281,
+     "taker_buy_volume": 602.918
+    }
+   ],
+   "DDDUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 1.999971,
+     "high": 2.000157,
+     "low": 1.999246,
+     "close": 1.999971,
+     "volume": 1096.588,
+     "quote_volume": 2193.145,
+     "taker_buy_volume": 387.564
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 1.999971,
+     "high": 2.000653,
+     "low": 1.999494,
+     "close": 2.000292,
+     "volume": 907.626,
+     "quote_volume": 1815.517,
+     "taker_buy_volume": 437.783
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 2.000292,
+     "high": 2.00109,
+     "low": 1.999686,
+     "close": 1.999771,
+     "volume": 812.219,
+     "quote_volume": 1624.252,
+     "taker_buy_volume": 478.041
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 1.999771,
+     "high": 2.000064,
+     "low": 1.999443,
+     "close": 1.99963,
+     "volume": 883.158,
+     "quote_volume": 1765.99,
+     "taker_buy_volume": 706.03
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 1.99963,
+     "high": 1.999696,
+     "low": 1.99923,
+     "close": 1.999257,
+     "volume": 831.164,
+     "quote_volume": 1661.71,
+     "taker_buy_volume": 597.539
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 1.999257,
+     "high": 1.999859,
+     "low": 1.998709,
+     "close": 1.99919,
+     "volume": 1169.762,
+     "quote_volume": 2338.576,
+     "taker_buy_volume": 702.893
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 1.99919,
+     "high": 1.999423,
+     "low": 1.998892,
+     "close": 1.999073,
+     "volume": 1002.101,
+     "quote_volume": 2003.273,
+     "taker_buy_volume": 541.579
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 1.999073,
+     "high": 2.000289,
+     "low": 1.998446,
+     "close": 1.999782,
+     "volume": 1118.832,
+     "quote_volume": 2237.42,
+     "taker_buy_volume": 435.556
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 1.999782,
+     "high": 2.000245,
+     "low": 1.998909,
+     "close": 1.999721,
+     "volume": 1034.604,
+     "quote_volume": 2068.919,
+     "taker_buy_volume": 684.82
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 1.999721,
+     "high": 2.000289,
+     "low": 1.99939,
+     "close": 1.999765,
+     "volume": 932.746,
+     "quote_volume": 1865.273,
+     "taker_buy_volume": 474.426
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 1.999765,
+     "high": 2.000695,
+     "low": 1.999165,
+     "close": 1.999781,
+     "volume": 1144.515,
+     "quote_volume": 2288.779,
+     "taker_buy_volume": 890.472
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 1.999781,
+     "high": 1.999958,
+     "low": 1.998803,
+     "close": 1.999017,
+     "volume": 1135.239,
+     "quote_volume": 2269.362,
+     "taker_buy_volume": 781.807
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 1.999017,
+     "high": 1.999444,
+     "low": 1.998602,
+     "close": 1.998626,
+     "volume": 894.159,
+     "quote_volume": 1787.089,
+     "taker_buy_volume": 714.127
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 1.998626,
+     "high": 1.998815,
+     "low": 1.998414,
+     "close": 1.998728,
+     "volume": 1166.621,
+     "quote_volume": 2331.758,
+     "taker_buy_volume": 537.653
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 1.998728,
+     "high": 1.999667,
+     "low": 1.998119,
+     "close": 1.998599,
+     "volume": 896.918,
+     "quote_volume": 1792.579,
+     "taker_buy_volume": 405.305
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 1.998599,
+     "high": 1.998968,
+     "low": 1.997894,
+     "close": 1.998864,
+     "volume": 817.041,
+     "quote_volume": 1633.154,
+     "taker_buy_volume": 367.597
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 1.998864,
+     "high": 1.99927,
+     "low": 1.997819,
+     "close": 1.998771,
+     "volume": 876.334,
+     "quote_volume": 1751.591,
+     "taker_buy_volume": 618.887
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 1.998771,
+     "high": 1.999561,
+     "low": 1.998191,
+     "close": 1.999259,
+     "volume": 1060.613,
+     "quote_volume": 2120.44,
+     "taker_buy_volume": 346.75
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 1.999259,
+     "high": 1.999867,
+     "low": 1.997893,
+     "close": 1.998689,
+     "volume": 1012.977,
+     "quote_volume": 2024.626,
+     "taker_buy_volume": 700.431
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 1.998689,
+     "high": 1.999161,
+     "low": 1.99793,
+     "close": 1.998005,
+     "volume": 1025.325,
+     "quote_volume": 2048.604,
+     "taker_buy_volume": 407.666
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 1.998005,
+     "high": 1.998319,
+     "low": 1.997477,
+     "close": 1.997798,
+     "volume": 1000.025,
+     "quote_volume": 1997.848,
+     "taker_buy_volume": 683.216
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 1.997798,
+     "high": 1.999394,
+     "low": 1.997693,
+     "close": 1.998526,
+     "volume": 957.227,
+     "quote_volume": 1913.043,
+     "taker_buy_volume": 396.794
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 1.998526,
+     "high": 1.999287,
+     "low": 1.998165,
+     "close": 1.999005,
+     "volume": 924.489,
+     "quote_volume": 1848.058,
+     "taker_buy_volume": 563.556
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 1.999005,
+     "high": 2.000169,
+     "low": 1.9987,
+     "close": 1.999385,
+     "volume": 1135.73,
+     "quote_volume": 2270.762,
+     "taker_buy_volume": 630.584
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 1.999385,
+     "high": 2.000328,
+     "low": 1.998657,
+     "close": 1.998803,
+     "volume": 1067.712,
+     "quote_volume": 2134.146,
+     "taker_buy_volume": 534.25
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 1.998803,
+     "high": 1.999899,
+     "low": 1.998232,
+     "close": 1.998982,
+     "volume": 820.296,
+     "quote_volume": 1639.757,
+     "taker_buy_volume": 525.447
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 1.998982,
+     "high": 1.999128,
+     "low": 1.997712,
+     "close": 1.998508,
+     "volume": 889.185,
+     "quote_volume": 1777.043,
+     "taker_buy_volume": 586.536
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 1.998508,
+     "high": 1.999506,
+     "low": 1.997598,
+     "close": 1.997757,
+     "volume": 1113.245,
+     "quote_volume": 2223.993,
+     "taker_buy_volume": 340.355
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 1.997757,
+     "high": 1.997871,
+     "low": 1.996724,
+     "close": 1.99764,
+     "volume": 1061.54,
+     "quote_volume": 2120.575,
+     "taker_buy_volume": 777.001
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 1.99764,
+     "high": 1.998468,
+     "low": 1.996138,
+     "close": 1.997045,
+     "volume": 808.466,
+     "quote_volume": 1614.543,
+     "taker_buy_volume": 640.41
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 1.997045,
+     "high": 1.997728,
+     "low": 1.996726,
+     "close": 1.997478,
+     "volume": 806.287,
+     "quote_volume": 1610.541,
+     "taker_buy_volume": 579.324
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 1.997478,
+     "high": 1.997513,
+     "low": 1.996196,
+     "close": 1.997192,
+     "volume": 1198.848,
+     "quote_volume": 2394.33,
+     "taker_buy_volume": 483.939
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 1.997192,
+     "high": 1.998166,
+     "low": 1.996809,
+     "close": 1.997049,
+     "volume": 934.368,
+     "quote_volume": 1865.979,
+     "taker_buy_volume": 554.214
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 1.997049,
+     "high": 1.997422,
+     "low": 1.995462,
+     "close": 1.99632,
+     "volume": 826.331,
+     "quote_volume": 1649.621,
+     "taker_buy_volume": 626.81
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 1.99632,
+     "high": 1.997144,
+     "low": 1.995187,
+     "close": 1.995532,
+     "volume": 1162.505,
+     "quote_volume": 2319.816,
+     "taker_buy_volume": 741.819
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 1.995532,
+     "high": 1.99651,
+     "low": 1.994431,
+     "close": 1.99487,
+     "volume": 1107.478,
+     "quote_volume": 2209.274,
+     "taker_buy_volume": 650.919
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 1.99487,
+     "high": 1.995887,
+     "low": 1.994507,
+     "close": 1.994924,
+     "volume": 837.612,
+     "quote_volume": 1670.972,
+     "taker_buy_volume": 400.544
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 1.994924,
+     "high": 1.995016,
+     "low": 1.994038,
+     "close": 1.994299,
+     "volume": 1043.333,
+     "quote_volume": 2080.718,
+     "taker_buy_volume": 431.999
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 1.994299,
+     "high": 1.994364,
+     "low": 1.993512,
+     "close": 1.994148,
+     "volume": 1092.029,
+     "quote_volume": 2177.668,
+     "taker_buy_volume": 575.162
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 1.994148,
+     "high": 1.995469,
+     "low": 1.99384,
+     "close": 1.994705,
+     "volume": 1049.729,
+     "quote_volume": 2093.9,
+     "taker_buy_volume": 559.358
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 1.994705,
+     "high": 1.995406,
+     "low": 1.993729,
+     "close": 1.995342,
+     "volume": 1104.933,
+     "quote_volume": 2204.719,
+     "taker_buy_volume": 799.67
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 1.995342,
+     "high": 1.995698,
+     "low": 1.9948,
+     "close": 1.995554,
+     "volume": 953.102,
+     "quote_volume": 1901.967,
+     "taker_buy_volume": 491.693
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 1.995554,
+     "high": 1.996116,
+     "low": 1.994961,
+     "close": 1.995135,
+     "volume": 1025.511,
+     "quote_volume": 2046.033,
+     "taker_buy_volume": 707.308
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 1.995135,
+     "high": 1.995167,
+     "low": 1.993656,
+     "close": 1.994584,
+     "volume": 1097.482,
+     "quote_volume": 2189.02,
+     "taker_buy_volume": 659.493
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 1.994584,
+     "high": 1.99515,
+     "low": 1.993884,
+     "close": 1.994345,
+     "volume": 948.393,
+     "quote_volume": 1891.423,
+     "taker_buy_volume": 686.291
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 1.994345,
+     "high": 1.995479,
+     "low": 1.993864,
+     "close": 1.995058,
+     "volume": 847.443,
+     "quote_volume": 1690.698,
+     "taker_buy_volume": 608.946
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 1.995058,
+     "high": 1.996003,
+     "low": 1.994677,
+     "close": 1.994867,
+     "volume": 904.382,
+     "quote_volume": 1804.122,
+     "taker_buy_volume": 680.372
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 1.994867,
+     "high": 1.995168,
+     "low": 1.994316,
+     "close": 1.995051,
+     "volume": 962.633,
+     "quote_volume": 1920.502,
+     "taker_buy_volume": 629.522
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 1.995051,
+     "high": 1.995583,
+     "low": 1.994444,
+     "close": 1.994635,
+     "volume": 808.568,
+     "quote_volume": 1612.798,
+     "taker_buy_volume": 502.672
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 1.994635,
+     "high": 2.075539,
+     "low": 1.99387,
+     "close": 2.075162,
+     "volume": 3598.232,
+     "quote_volume": 7466.913,
+     "taker_buy_volume": 1415.426
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 2.075162,
+     "high": 2.076879,
+     "low": 2.074357,
+     "close": 2.075903,
+     "volume": 1066.675,
+     "quote_volume": 2214.314,
+     "taker_buy_volume": 325.786
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 2.075903,
+     "high": 2.076418,
+     "low": 2.075708,
+     "close": 2.076277,
+     "volume": 1025.272,
+     "quote_volume": 2128.749,
+     "taker_buy_volume": 414.543
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 2.076277,
+     "high": 2.076935,
+     "low": 2.076024,
+     "close": 2.076205,
+     "volume": 1055.672,
+     "quote_volume": 2191.791,
+     "taker_buy_volume": 535.39
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 2.076205,
+     "high": 2.076366,
+     "low": 2.075526,
+     "close": 2.07635,
+     "volume": 924.363,
+     "quote_volume": 1919.301,
+     "taker_buy_volume": 503.366
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 2.07635,
+     "high": 2.076665,
+     "low": 2.075945,
+     "close": 2.076551,
+     "volume": 1146.388,
+     "quote_volume": 2380.533,
+     "taker_buy_volume": 780.697
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 2.076551,
+     "high": 2.076767,
+     "low": 2.075122,
+     "close": 2.075824,
+     "volume": 969.959,
+     "quote_volume": 2013.464,
+     "taker_buy_volume": 627.531
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 2.075824,
+     "high": 2.076479,
+     "low": 2.075179,
+     "close": 2.075337,
+     "volume": 968.884,
+     "quote_volume": 2010.761,
+     "taker_buy_volume": 766.336
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 2.075337,
+     "high": 2.076943,
+     "low": 2.074581,
+     "close": 2.076025,
+     "volume": 802.05,
+     "quote_volume": 1665.076,
+     "taker_buy_volume": 635.543
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 2.076025,
+     "high": 2.076362,
+     "low": 2.075422,
+     "close": 2.076203,
+     "volume": 1124.957,
+     "quote_volume": 2335.639,
+     "taker_buy_volume": 661.679
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 2.076203,
+     "high": 2.076414,
+     "low": 2.074974,
+     "close": 2.0758,
+     "volume": 1140.578,
+     "quote_volume": 2367.612,
+     "taker_buy_volume": 441.958
+    }
+   ],
+   "EEEUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 30.00788,
+     "high": 30.017986,
+     "low": 29.998881,
+     "close": 30.00788,
+     "volume": 1130.464,
+     "quote_volume": 33922.828,
+     "taker_buy_volume": 407.433
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 30.00788,
+     "high": 30.022641,
+     "low": 30.004285,
+     "close": 30.019433,
+     "volume": 1193.397,
+     "quote_volume": 35825.101,
+     "taker_buy_volume": 924.536
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 30.019433,
+     "high": 30.027126,
+     "low": 30.008194,
+     "close": 30.019337,
+     "volume": 1157.937,
+     "quote_volume": 34760.501,
+     "taker_buy_volume": 695.89
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 30.019337,
+     "high": 30.028727,
+     "low": 30.000843,
+     "close": 30.015198,
+     "volume": 879.65,
+     "quote_volume": 26402.869,
+     "taker_buy_volume": 394.97
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 30.015198,
+     "high": 30.018203,
+     "low": 29.994758,
+     "close": 30.003674,
+     "volume": 897.669,
+     "quote_volume": 26933.368,
+     "taker_buy_volume": 675.092
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 30.003674,
+     "high": 30.010141,
+     "low": 29.987288,
+     "close": 29.99598,
+     "volume": 1152.725,
+     "quote_volume": 34577.116,
+     "taker_buy_volume": 639.673
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 29.99598,
+     "high": 30.019442,
+     "low": 29.986595,
+     "close": 30.006361,
+     "volume": 981.786,
+     "quote_volume": 29459.825,
+     "taker_buy_volume": 303.688
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 30.006361,
+     "high": 30.021446,
+     "low": 30.000806,
+     "close": 30.016494,
+     "volume": 1017.16,
+     "quote_volume": 30531.577,
+     "taker_buy_volume": 521.06
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 30.016494,
+     "high": 30.021751,
+     "low": 30.014381,
+     "close": 30.01489,
+     "volume": 1134.996,
+     "quote_volume": 34066.78,
+     "taker_buy_volume": 579.356
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 30.01489,
+     "high": 30.023231,
+     "low": 29.997579,
+     "close": 30.007889,
+     "volume": 1095.768,
+     "quote_volume": 32881.684,
+     "taker_buy_volume": 833.93
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 30.007889,
+     "high": 30.012955,
+     "low": 30.002152,
+     "close": 30.004893,
+     "volume": 1052.853,
+     "quote_volume": 31590.741,
+     "taker_buy_volume": 437.799
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 30.004893,
+     "high": 30.015219,
+     "low": 29.989987,
+     "close": 29.998482,
+     "volume": 1016.128,
+     "quote_volume": 30482.298,
+     "taker_buy_volume": 375.913
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 29.998482,
+     "high": 30.006023,
+     "low": 29.987389,
+     "close": 29.999889,
+     "volume": 866.856,
+     "quote_volume": 26005.583,
+     "taker_buy_volume": 536.963
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 29.999889,
+     "high": 30.011052,
+     "low": 29.991537,
+     "close": 30.010525,
+     "volume": 1152.114,
+     "quote_volume": 34575.546,
+     "taker_buy_volume": 544.164
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 30.010525,
+     "high": 30.018651,
+     "low": 30.009013,
+     "close": 30.010356,
+     "volume": 1102.019,
+     "quote_volume": 33071.983,
+     "taker_buy_volume": 513.513
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 30.010356,
+     "high": 30.020351,
+     "low": 29.992439,
+     "close": 30.003814,
+     "volume": 1004.325,
+     "quote_volume": 30133.58,
+     "taker_buy_volume": 766.337
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 30.003814,
+     "high": 30.01799,
+     "low": 30.000974,
+     "close": 30.00999,
+     "volume": 898.206,
+     "quote_volume": 26955.153,
+     "taker_buy_volume": 519.233
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 30.00999,
+     "high": 30.0113,
+     "low": 30.005632,
+     "close": 30.005947,
+     "volume": 975.842,
+     "quote_volume": 29281.063,
+     "taker_buy_volume": 607.406
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 30.005947,
+     "high": 30.014703,
+     "low": 29.997241,
+     "close": 30.00857,
+     "volume": 844.704,
+     "quote_volume": 25348.359,
+     "taker_buy_volume": 414.203
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 30.00857,
+     "high": 30.008619,
+     "low": 30.002817,
+     "close": 30.004544,
+     "volume": 975.77,
+     "quote_volume": 29277.534,
+     "taker_buy_volume": 630.017
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 30.004544,
+     "high": 30.014492,
+     "low": 29.994204,
+     "close": 29.995988,
+     "volume": 1030.73,
+     "quote_volume": 30917.764,
+     "taker_buy_volume": 447.192
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 29.995988,
+     "high": 29.999199,
+     "low": 29.984633,
+     "close": 29.99002,
+     "volume": 945.456,
+     "quote_volume": 28354.244,
+     "taker_buy_volume": 356.636
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 29.99002,
+     "high": 29.999754,
+     "low": 29.988963,
+     "close": 29.991913,
+     "volume": 1104.424,
+     "quote_volume": 33123.788,
+     "taker_buy_volume": 354.249
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 29.991913,
+     "high": 30.004416,
+     "low": 29.975141,
+     "close": 29.982029,
+     "volume": 987.073,
+     "quote_volume": 29594.451,
+     "taker_buy_volume": 449.493
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 29.982029,
+     "high": 29.996372,
+     "low": 29.969364,
+     "close": 29.987355,
+     "volume": 1037.616,
+     "quote_volume": 31115.36,
+     "taker_buy_volume": 728.753
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 29.987355,
+     "high": 30.000943,
+     "low": 29.984405,
+     "close": 29.996631,
+     "volume": 1101.812,
+     "quote_volume": 33050.648,
+     "taker_buy_volume": 880.72
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 29.996631,
+     "high": 30.004672,
+     "low": 29.992333,
+     "close": 29.994557,
+     "volume": 1196.47,
+     "quote_volume": 35887.588,
+     "taker_buy_volume": 921.136
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 29.994557,
+     "high": 30.01233,
+     "low": 29.982905,
+     "close": 30.002801,
+     "volume": 1174.942,
+     "quote_volume": 35251.551,
+     "taker_buy_volume": 924.361
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 30.002801,
+     "high": 30.00781,
+     "low": 29.977654,
+     "close": 29.99126,
+     "volume": 994.042,
+     "quote_volume": 29812.572,
+     "taker_buy_volume": 407.844
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 29.99126,
+     "high": 30.014333,
+     "low": 29.977544,
+     "close": 29.999815,
+     "volume": 840.688,
+     "quote_volume": 25220.484,
+     "taker_buy_volume": 307.7
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 29.999815,
+     "high": 30.011037,
+     "low": 29.990741,
+     "close": 29.996457,
+     "volume": 940.137,
+     "quote_volume": 28200.78,
+     "taker_buy_volume": 418.839
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 29.996457,
+     "high": 30.011392,
+     "low": 29.983177,
+     "close": 29.987861,
+     "volume": 1067.166,
+     "quote_volume": 32002.026,
+     "taker_buy_volume": 678.505
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 29.987861,
+     "high": 29.993138,
+     "low": 29.974102,
+     "close": 29.98267,
+     "volume": 949.591,
+     "quote_volume": 28471.274,
+     "taker_buy_volume": 485.499
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 29.98267,
+     "high": 29.992354,
+     "low": 29.96688,
+     "close": 29.970928,
+     "volume": 806.343,
+     "quote_volume": 24166.848,
+     "taker_buy_volume": 487.308
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 29.970928,
+     "high": 29.989217,
+     "low": 29.963269,
+     "close": 29.982741,
+     "volume": 1121.488,
+     "quote_volume": 33625.285,
+     "taker_buy_volume": 891.515
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 29.982741,
+     "high": 29.997334,
+     "low": 29.965931,
+     "close": 29.977727,
+     "volume": 1074.442,
+     "quote_volume": 32209.329,
+     "taker_buy_volume": 612.809
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 29.977727,
+     "high": 29.98313,
+     "low": 29.960317,
+     "close": 29.971178,
+     "volume": 806.733,
+     "quote_volume": 24178.738,
+     "taker_buy_volume": 394.359
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 29.971178,
+     "high": 29.97873,
+     "low": 29.9607,
+     "close": 29.975854,
+     "volume": 940.062,
+     "quote_volume": 28179.161,
+     "taker_buy_volume": 319.416
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 29.975854,
+     "high": 29.993347,
+     "low": 29.969585,
+     "close": 29.985556,
+     "volume": 967.458,
+     "quote_volume": 29009.766,
+     "taker_buy_volume": 322.739
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 29.985556,
+     "high": 29.991511,
+     "low": 29.965936,
+     "close": 29.974205,
+     "volume": 1005.16,
+     "quote_volume": 30128.872,
+     "taker_buy_volume": 344.392
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 29.974205,
+     "high": 29.985472,
+     "low": 29.973103,
+     "close": 29.977596,
+     "volume": 922.395,
+     "quote_volume": 27651.185,
+     "taker_buy_volume": 595.423
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 29.977596,
+     "high": 29.982158,
+     "low": 29.975731,
+     "close": 29.981269,
+     "volume": 847.835,
+     "quote_volume": 25419.169,
+     "taker_buy_volume": 588.592
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 29.981269,
+     "high": 29.98918,
+     "low": 29.973874,
+     "close": 29.981886,
+     "volume": 1083.487,
+     "quote_volume": 32484.984,
+     "taker_buy_volume": 515.499
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 29.981886,
+     "high": 30.004348,
+     "low": 29.976034,
+     "close": 29.992946,
+     "volume": 1027.513,
+     "quote_volume": 30818.142,
+     "taker_buy_volume": 735.676
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 29.992946,
+     "high": 30.011278,
+     "low": 29.98318,
+     "close": 30.00461,
+     "volume": 1001.94,
+     "quote_volume": 30062.819,
+     "taker_buy_volume": 542.853
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 30.00461,
+     "high": 30.008879,
+     "low": 29.987813,
+     "close": 30.002684,
+     "volume": 912.101,
+     "quote_volume": 27365.478,
+     "taker_buy_volume": 377.184
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 30.002684,
+     "high": 30.016808,
+     "low": 29.988028,
+     "close": 30.001539,
+     "volume": 1035.961,
+     "quote_volume": 31080.424,
+     "taker_buy_volume": 393.923
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 30.001539,
+     "high": 30.01619,
+     "low": 29.986861,
+     "close": 29.993144,
+     "volume": 882.295,
+     "quote_volume": 26462.801,
+     "taker_buy_volume": 415.608
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 29.993144,
+     "high": 30.006928,
+     "low": 29.992395,
+     "close": 29.992814,
+     "volume": 923.83,
+     "quote_volume": 27708.262,
+     "taker_buy_volume": 683.795
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 29.992814,
+     "high": 30.017749,
+     "low": 29.992127,
+     "close": 30.004052,
+     "volume": 1116.694,
+     "quote_volume": 33505.345,
+     "taker_buy_volume": 350.974
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 30.004052,
+     "high": 30.015111,
+     "low": 28.205455,
+     "close": 28.212886,
+     "volume": 4288.56,
+     "quote_volume": 120992.653,
+     "taker_buy_volume": 3406.782
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 28.212886,
+     "high": 28.229052,
+     "low": 28.199912,
+     "close": 28.218683,
+     "volume": 1041.708,
+     "quote_volume": 29395.628,
+     "taker_buy_volume": 753.207
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 28.218683,
+     "high": 28.23104,
+     "low": 28.2061,
+     "close": 28.228279,
+     "volume": 875.937,
+     "quote_volume": 24726.194,
+     "taker_buy_volume": 383.435
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 28.228279,
+     "high": 28.234563,
+     "low": 28.215909,
+     "close": 28.228476,
+     "volume": 802.811,
+     "quote_volume": 22662.131,
+     "taker_buy_volume": 550.258
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 28.228476,
+     "high": 28.23868,
+     "low": 28.215961,
+     "close": 28.231721,
+     "volume": 1056.162,
+     "quote_volume": 29817.271,
+     "taker_buy_volume": 691.058
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 28.231721,
+     "high": 28.241751,
+     "low": 28.229544,
+     "close": 28.235997,
+     "volume": 927.27,
+     "quote_volume": 26182.393,
+     "taker_buy_volume": 715.818
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 28.235997,
+     "high": 28.254084,
+     "low": 28.233547,
+     "close": 28.244688,
+     "volume": 1163.752,
+     "quote_volume": 32869.812,
+     "taker_buy_volume": 508.723
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 28.244688,
+     "high": 28.247192,
+     "low": 28.241975,
+     "close": 28.242181,
+     "volume": 985.515,
+     "quote_volume": 27833.093,
+     "taker_buy_volume": 452.441
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 28.242181,
+     "high": 28.246938,
+     "low": 28.240999,
+     "close": 28.242874,
+     "volume": 942.852,
+     "quote_volume": 26628.85,
+     "taker_buy_volume": 686.063
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 28.242874,
+     "high": 28.248913,
+     "low": 28.234228,
+     "close": 28.239382,
+     "volume": 1071.089,
+     "quote_volume": 30246.891,
+     "taker_buy_volume": 379.707
+    }
+   ],
+   "FFFUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 4.998858,
+     "high": 5.000335,
+     "low": 4.996459,
+     "close": 4.998858,
+     "volume": 1044.811,
+     "quote_volume": 5222.862,
+     "taker_buy_volume": 679.498
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 4.998858,
+     "high": 5.001199,
+     "low": 4.997139,
+     "close": 4.998548,
+     "volume": 1141.723,
+     "quote_volume": 5706.957,
+     "taker_buy_volume": 846.895
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 4.998548,
+     "high": 5.000544,
+     "low": 4.996201,
+     "close": 4.998985,
+     "volume": 981.683,
+     "quote_volume": 4907.419,
+     "taker_buy_volume": 489.857
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 4.998985,
+     "high": 5.000808,
+     "low": 4.998008,
+     "close": 5.000195,
+     "volume": 1146.75,
+     "quote_volume": 5733.974,
+     "taker_buy_volume": 601.064
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 5.000195,
+     "high": 5.000598,
+     "low": 4.999489,
+     "close": 5.000023,
+     "volume": 1026.468,
+     "quote_volume": 5132.364,
+     "taker_buy_volume": 386.99
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 5.000023,
+     "high": 5.000322,
+     "low": 4.996801,
+     "close": 4.998243,
+     "volume": 899.061,
+     "quote_volume": 4493.726,
+     "taker_buy_volume": 447.445
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 4.998243,
+     "high": 4.999613,
+     "low": 4.997282,
+     "close": 4.998911,
+     "volume": 875.484,
+     "quote_volume": 4376.467,
+     "taker_buy_volume": 361.727
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 4.998911,
+     "high": 5.001665,
+     "low": 4.998121,
+     "close": 5.000909,
+     "volume": 1197.517,
+     "quote_volume": 5988.673,
+     "taker_buy_volume": 423.003
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 5.000909,
+     "high": 5.002864,
+     "low": 4.997357,
+     "close": 4.999399,
+     "volume": 1014.286,
+     "quote_volume": 5070.82,
+     "taker_buy_volume": 330.389
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 4.999399,
+     "high": 5.000336,
+     "low": 4.998016,
+     "close": 4.998056,
+     "volume": 1157.35,
+     "quote_volume": 5784.501,
+     "taker_buy_volume": 803.848
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 4.998056,
+     "high": 5.000056,
+     "low": 4.996011,
+     "close": 4.99882,
+     "volume": 1033.425,
+     "quote_volume": 5165.906,
+     "taker_buy_volume": 690.379
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 4.99882,
+     "high": 5.000228,
+     "low": 4.995484,
+     "close": 4.997337,
+     "volume": 1137.004,
+     "quote_volume": 5681.992,
+     "taker_buy_volume": 517.622
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 4.997337,
+     "high": 4.998162,
+     "low": 4.995181,
+     "close": 4.997431,
+     "volume": 895.243,
+     "quote_volume": 4473.915,
+     "taker_buy_volume": 562.012
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 4.997431,
+     "high": 4.999708,
+     "low": 4.996165,
+     "close": 4.997239,
+     "volume": 1119.675,
+     "quote_volume": 5595.284,
+     "taker_buy_volume": 742.522
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 4.997239,
+     "high": 4.998937,
+     "low": 4.996593,
+     "close": 4.998747,
+     "volume": 1021.065,
+     "quote_volume": 5104.046,
+     "taker_buy_volume": 314.783
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 4.998747,
+     "high": 5.000203,
+     "low": 4.996903,
+     "close": 4.998507,
+     "volume": 1111.05,
+     "quote_volume": 5553.592,
+     "taker_buy_volume": 435.697
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 4.998507,
+     "high": 5.000183,
+     "low": 4.997408,
+     "close": 4.998669,
+     "volume": 909.661,
+     "quote_volume": 4547.094,
+     "taker_buy_volume": 719.555
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 4.998669,
+     "high": 4.998683,
+     "low": 4.996376,
+     "close": 4.997546,
+     "volume": 967.188,
+     "quote_volume": 4833.566,
+     "taker_buy_volume": 411.644
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 4.997546,
+     "high": 4.998776,
+     "low": 4.997466,
+     "close": 4.998552,
+     "volume": 832.721,
+     "quote_volume": 4162.399,
+     "taker_buy_volume": 509.66
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 4.998552,
+     "high": 5.001548,
+     "low": 4.996701,
+     "close": 4.999805,
+     "volume": 1095.152,
+     "quote_volume": 5475.546,
+     "taker_buy_volume": 486.346
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 4.999805,
+     "high": 5.001338,
+     "low": 4.997992,
+     "close": 5.000818,
+     "volume": 1062.988,
+     "quote_volume": 5315.81,
+     "taker_buy_volume": 514.544
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 5.000818,
+     "high": 5.003168,
+     "low": 4.997895,
+     "close": 4.999999,
+     "volume": 850.896,
+     "quote_volume": 4254.479,
+     "taker_buy_volume": 334.513
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 4.999999,
+     "high": 5.001353,
+     "low": 4.999188,
+     "close": 5.000484,
+     "volume": 1088.443,
+     "quote_volume": 5442.742,
+     "taker_buy_volume": 389.531
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 5.000484,
+     "high": 5.003682,
+     "low": 4.999862,
+     "close": 5.00202,
+     "volume": 929.939,
+     "quote_volume": 4651.573,
+     "taker_buy_volume": 414.255
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 5.00202,
+     "high": 5.004076,
+     "low": 5.000921,
+     "close": 5.001825,
+     "volume": 1143.136,
+     "quote_volume": 5717.766,
+     "taker_buy_volume": 820.436
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 5.001825,
+     "high": 5.003177,
+     "low": 4.999179,
+     "close": 5.001595,
+     "volume": 828.196,
+     "quote_volume": 4142.301,
+     "taker_buy_volume": 533.233
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 5.001595,
+     "high": 5.00399,
+     "low": 5.001526,
+     "close": 5.003586,
+     "volume": 1162.284,
+     "quote_volume": 5815.588,
+     "taker_buy_volume": 499.974
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 5.003586,
+     "high": 5.005678,
+     "low": 5.001893,
+     "close": 5.002715,
+     "volume": 842.299,
+     "quote_volume": 4213.781,
+     "taker_buy_volume": 306.215
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 5.002715,
+     "high": 5.004099,
+     "low": 4.999437,
+     "close": 5.001777,
+     "volume": 1121.846,
+     "quote_volume": 5611.224,
+     "taker_buy_volume": 372.65
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 5.001777,
+     "high": 5.003214,
+     "low": 5.000554,
+     "close": 5.00152,
+     "volume": 957.335,
+     "quote_volume": 4788.13,
+     "taker_buy_volume": 633.505
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 5.00152,
+     "high": 5.002085,
+     "low": 4.998552,
+     "close": 5.00055,
+     "volume": 837.124,
+     "quote_volume": 4186.081,
+     "taker_buy_volume": 382.875
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 5.00055,
+     "high": 5.001805,
+     "low": 5.000523,
+     "close": 5.001021,
+     "volume": 839.612,
+     "quote_volume": 4198.917,
+     "taker_buy_volume": 601.968
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 5.001021,
+     "high": 5.001589,
+     "low": 4.998621,
+     "close": 5.000061,
+     "volume": 1184.662,
+     "quote_volume": 5923.382,
+     "taker_buy_volume": 410.407
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 5.000061,
+     "high": 5.002277,
+     "low": 4.998047,
+     "close": 4.998219,
+     "volume": 958.49,
+     "quote_volume": 4790.743,
+     "taker_buy_volume": 568.941
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 4.998219,
+     "high": 5.000234,
+     "low": 4.997085,
+     "close": 4.997177,
+     "volume": 928.538,
+     "quote_volume": 4640.069,
+     "taker_buy_volume": 727.628
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 4.997177,
+     "high": 4.999009,
+     "low": 4.993265,
+     "close": 4.995442,
+     "volume": 1022.578,
+     "quote_volume": 5108.229,
+     "taker_buy_volume": 770.268
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 4.995442,
+     "high": 4.99767,
+     "low": 4.99509,
+     "close": 4.995514,
+     "volume": 1102.439,
+     "quote_volume": 5507.25,
+     "taker_buy_volume": 724.782
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 4.995514,
+     "high": 4.998634,
+     "low": 4.995412,
+     "close": 4.996652,
+     "volume": 827.879,
+     "quote_volume": 4136.623,
+     "taker_buy_volume": 399.798
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 4.996652,
+     "high": 4.9975,
+     "low": 4.994594,
+     "close": 4.997188,
+     "volume": 1152.892,
+     "quote_volume": 5761.218,
+     "taker_buy_volume": 608.459
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 4.997188,
+     "high": 4.997866,
+     "low": 4.995957,
+     "close": 4.997651,
+     "volume": 1096.982,
+     "quote_volume": 5482.333,
+     "taker_buy_volume": 723.022
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 4.997651,
+     "high": 4.998931,
+     "low": 4.99518,
+     "close": 4.997883,
+     "volume": 878.112,
+     "quote_volume": 4388.701,
+     "taker_buy_volume": 689.679
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 4.997883,
+     "high": 4.999814,
+     "low": 4.995347,
+     "close": 4.997547,
+     "volume": 1144.765,
+     "quote_volume": 5721.017,
+     "taker_buy_volume": 489.815
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 4.997547,
+     "high": 4.999997,
+     "low": 4.997347,
+     "close": 4.998324,
+     "volume": 1148.488,
+     "quote_volume": 5740.515,
+     "taker_buy_volume": 765.679
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 4.998324,
+     "high": 5.000679,
+     "low": 4.996509,
+     "close": 4.999531,
+     "volume": 916.914,
+     "quote_volume": 4584.14,
+     "taker_buy_volume": 381.194
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 4.999531,
+     "high": 4.999955,
+     "low": 4.997421,
+     "close": 4.998119,
+     "volume": 1166.264,
+     "quote_volume": 5829.126,
+     "taker_buy_volume": 706.933
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 4.998119,
+     "high": 5.001013,
+     "low": 4.998087,
+     "close": 4.999402,
+     "volume": 1185.698,
+     "quote_volume": 5927.781,
+     "taker_buy_volume": 828.02
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 4.999402,
+     "high": 5.002876,
+     "low": 4.99925,
+     "close": 5.001201,
+     "volume": 854.85,
+     "quote_volume": 4275.277,
+     "taker_buy_volume": 422.588
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 5.001201,
+     "high": 5.003185,
+     "low": 4.998838,
+     "close": 4.999925,
+     "volume": 903.428,
+     "quote_volume": 4517.072,
+     "taker_buy_volume": 502.48
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 4.999925,
+     "high": 5.003128,
+     "low": 4.999727,
+     "close": 5.001408,
+     "volume": 837.949,
+     "quote_volume": 4190.925,
+     "taker_buy_volume": 276.259
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 5.001408,
+     "high": 5.003827,
+     "low": 5.000729,
+     "close": 5.002123,
+     "volume": 963.017,
+     "quote_volume": 4817.129,
+     "taker_buy_volume": 671.692
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 5.002123,
+     "high": 5.002989,
+     "low": 4.998256,
+     "close": 5.00038,
+     "volume": 1071.99,
+     "quote_volume": 5360.358,
+     "taker_buy_volume": 780.173
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 5.00038,
+     "high": 5.000547,
+     "low": 4.998496,
+     "close": 4.999489,
+     "volume": 1183.167,
+     "quote_volume": 5915.231,
+     "taker_buy_volume": 756.452
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 4.999489,
+     "high": 5.001666,
+     "low": 4.997671,
+     "close": 4.998448,
+     "volume": 1034.607,
+     "quote_volume": 5171.429,
+     "taker_buy_volume": 759.787
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 4.998448,
+     "high": 4.999742,
+     "low": 4.996747,
+     "close": 4.999337,
+     "volume": 843.18,
+     "quote_volume": 4215.341,
+     "taker_buy_volume": 525.407
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 4.999337,
+     "high": 5.001255,
+     "low": 4.998783,
+     "close": 5.001114,
+     "volume": 1052.041,
+     "quote_volume": 5261.377,
+     "taker_buy_volume": 721.175
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 5.001114,
+     "high": 5.001592,
+     "low": 4.998758,
+     "close": 5.000685,
+     "volume": 1029.489,
+     "quote_volume": 5148.15,
+     "taker_buy_volume": 657.509
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 5.000685,
+     "high": 5.00267,
+     "low": 4.998884,
+     "close": 5.002532,
+     "volume": 1007.017,
+     "quote_volume": 5037.635,
+     "taker_buy_volume": 577.789
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 5.002532,
+     "high": 5.003928,
+     "low": 4.999249,
+     "close": 5.001018,
+     "volume": 1078.111,
+     "quote_volume": 5391.652,
+     "taker_buy_volume": 408.585
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 5.001018,
+     "high": 5.002637,
+     "low": 4.999951,
+     "close": 5.001568,
+     "volume": 898.636,
+     "quote_volume": 4494.589,
+     "taker_buy_volume": 425.812
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 5.001568,
+     "high": 5.003387,
+     "low": 4.999183,
+     "close": 4.999797,
+     "volume": 801.117,
+     "quote_volume": 4005.422,
+     "taker_buy_volume": 592.935
+    }
+   ],
+   "GGGUSDT": [
+    {
+     "open_time_ms": 1759999800000,
+     "open": 20.004041,
+     "high": 20.011104,
+     "low": 19.994594,
+     "close": 20.004041,
+     "volume": 1044.951,
+     "quote_volume": 20903.242,
+     "taker_buy_volume": 484.856
+    },
+    {
+     "open_time_ms": 1760000100000,
+     "open": 20.004041,
+     "high": 20.017057,
+     "low": 20.001046,
+     "close": 20.010996,
+     "volume": 875.805,
+     "quote_volume": 17525.731,
+     "taker_buy_volume": 447.411
+    },
+    {
+     "open_time_ms": 1760000400000,
+     "open": 20.010996,
+     "high": 20.014298,
+     "low": 20.003742,
+     "close": 20.013557,
+     "volume": 1056.417,
+     "quote_volume": 21142.662,
+     "taker_buy_volume": 577.154
+    },
+    {
+     "open_time_ms": 1760000700000,
+     "open": 20.013557,
+     "high": 20.022749,
+     "low": 20.009741,
+     "close": 20.009797,
+     "volume": 922.289,
+     "quote_volume": 18454.815,
+     "taker_buy_volume": 412.338
+    },
+    {
+     "open_time_ms": 1760001000000,
+     "open": 20.009797,
+     "high": 20.020303,
+     "low": 20.004482,
+     "close": 20.012105,
+     "volume": 1152.754,
+     "quote_volume": 23069.035,
+     "taker_buy_volume": 570.916
+    },
+    {
+     "open_time_ms": 1760001300000,
+     "open": 20.012105,
+     "high": 20.016494,
+     "low": 20.007103,
+     "close": 20.008038,
+     "volume": 1184.024,
+     "quote_volume": 23689.997,
+     "taker_buy_volume": 409.953
+    },
+    {
+     "open_time_ms": 1760001600000,
+     "open": 20.008038,
+     "high": 20.010085,
+     "low": 19.995505,
+     "close": 20.0024,
+     "volume": 974.31,
+     "quote_volume": 19488.538,
+     "taker_buy_volume": 600.439
+    },
+    {
+     "open_time_ms": 1760001900000,
+     "open": 20.0024,
+     "high": 20.012294,
+     "low": 20.000641,
+     "close": 20.006363,
+     "volume": 908.956,
+     "quote_volume": 18184.904,
+     "taker_buy_volume": 567.771
+    },
+    {
+     "open_time_ms": 1760002200000,
+     "open": 20.006363,
+     "high": 20.022083,
+     "low": 19.996991,
+     "close": 20.012467,
+     "volume": 943.262,
+     "quote_volume": 18877.0,
+     "taker_buy_volume": 316.466
+    },
+    {
+     "open_time_ms": 1760002500000,
+     "open": 20.012467,
+     "high": 20.021371,
+     "low": 20.01013,
+     "close": 20.015383,
+     "volume": 1193.914,
+     "quote_volume": 23896.646,
+     "taker_buy_volume": 921.097
+    },
+    {
+     "open_time_ms": 1760002800000,
+     "open": 20.015383,
+     "high": 20.016284,
+     "low": 20.00236,
+     "close": 20.010475,
+     "volume": 846.439,
+     "quote_volume": 16937.646,
+     "taker_buy_volume": 485.577
+    },
+    {
+     "open_time_ms": 1760003100000,
+     "open": 20.010475,
+     "high": 20.014227,
+     "low": 20.00016,
+     "close": 20.008008,
+     "volume": 1084.249,
+     "quote_volume": 21693.662,
+     "taker_buy_volume": 343.12
+    },
+    {
+     "open_time_ms": 1760003400000,
+     "open": 20.008008,
+     "high": 20.00869,
+     "low": 20.001586,
+     "close": 20.002172,
+     "volume": 1160.107,
+     "quote_volume": 23204.66,
+     "taker_buy_volume": 477.372
+    },
+    {
+     "open_time_ms": 1760003700000,
+     "open": 20.002172,
+     "high": 20.007449,
+     "low": 19.997284,
+     "close": 19.998013,
+     "volume": 1047.98,
+     "quote_volume": 20957.517,
+     "taker_buy_volume": 732.769
+    },
+    {
+     "open_time_ms": 1760004000000,
+     "open": 19.998013,
+     "high": 20.002961,
+     "low": 19.988732,
+     "close": 20.000028,
+     "volume": 1178.256,
+     "quote_volume": 23565.153,
+     "taker_buy_volume": 524.082
+    },
+    {
+     "open_time_ms": 1760004300000,
+     "open": 20.000028,
+     "high": 20.008091,
+     "low": 19.994135,
+     "close": 20.000072,
+     "volume": 1029.114,
+     "quote_volume": 20582.354,
+     "taker_buy_volume": 361.952
+    },
+    {
+     "open_time_ms": 1760004600000,
+     "open": 20.000072,
+     "high": 20.003922,
+     "low": 19.997254,
+     "close": 20.000128,
+     "volume": 919.485,
+     "quote_volume": 18389.817,
+     "taker_buy_volume": 438.437
+    },
+    {
+     "open_time_ms": 1760004900000,
+     "open": 20.000128,
+     "high": 20.003003,
+     "low": 19.990469,
+     "close": 19.993485,
+     "volume": 1041.433,
+     "quote_volume": 20821.875,
+     "taker_buy_volume": 550.608
+    },
+    {
+     "open_time_ms": 1760005200000,
+     "open": 19.993485,
+     "high": 20.003661,
+     "low": 19.98773,
+     "close": 19.997377,
+     "volume": 970.143,
+     "quote_volume": 19400.315,
+     "taker_buy_volume": 350.4
+    },
+    {
+     "open_time_ms": 1760005500000,
+     "open": 19.997377,
+     "high": 20.001845,
+     "low": 19.990456,
+     "close": 19.994179,
+     "volume": 1019.396,
+     "quote_volume": 20381.986,
+     "taker_buy_volume": 423.925
+    },
+    {
+     "open_time_ms": 1760005800000,
+     "open": 19.994179,
+     "high": 20.003004,
+     "low": 19.990231,
+     "close": 19.998721,
+     "volume": 1148.46,
+     "quote_volume": 22967.731,
+     "taker_buy_volume": 409.833
+    },
+    {
+     "open_time_ms": 1760006100000,
+     "open": 19.998721,
+     "high": 20.010032,
+     "low": 19.990779,
+     "close": 20.004232,
+     "volume": 942.507,
+     "quote_volume": 18854.129,
+     "taker_buy_volume": 335.889
+    },
+    {
+     "open_time_ms": 1760006400000,
+     "open": 20.004232,
+     "high": 20.018412,
+     "low": 19.996665,
+     "close": 20.010085,
+     "volume": 1167.461,
+     "quote_volume": 23360.993,
+     "taker_buy_volume": 807.466
+    },
+    {
+     "open_time_ms": 1760006700000,
+     "open": 20.010085,
+     "high": 20.01136,
+     "low": 20.001764,
+     "close": 20.008582,
+     "volume": 1151.244,
+     "quote_volume": 23034.76,
+     "taker_buy_volume": 429.824
+    },
+    {
+     "open_time_ms": 1760007000000,
+     "open": 20.008582,
+     "high": 20.011785,
+     "low": 19.997155,
+     "close": 20.006708,
+     "volume": 1076.907,
+     "quote_volume": 21545.364,
+     "taker_buy_volume": 387.898
+    },
+    {
+     "open_time_ms": 1760007300000,
+     "open": 20.006708,
+     "high": 20.013265,
+     "low": 20.003476,
+     "close": 20.005054,
+     "volume": 1196.806,
+     "quote_volume": 23942.168,
+     "taker_buy_volume": 834.042
+    },
+    {
+     "open_time_ms": 1760007600000,
+     "open": 20.005054,
+     "high": 20.012784,
+     "low": 19.999122,
+     "close": 20.001766,
+     "volume": 963.82,
+     "quote_volume": 19278.102,
+     "taker_buy_volume": 734.008
+    },
+    {
+     "open_time_ms": 1760007900000,
+     "open": 20.001766,
+     "high": 20.014298,
+     "low": 20.001669,
+     "close": 20.005217,
+     "volume": 1103.668,
+     "quote_volume": 22079.118,
+     "taker_buy_volume": 669.587
+    },
+    {
+     "open_time_ms": 1760008200000,
+     "open": 20.005217,
+     "high": 20.007886,
+     "low": 20.000618,
+     "close": 20.001814,
+     "volume": 825.653,
+     "quote_volume": 16514.558,
+     "taker_buy_volume": 561.303
+    },
+    {
+     "open_time_ms": 1760008500000,
+     "open": 20.001814,
+     "high": 20.011797,
+     "low": 19.992227,
+     "close": 20.003095,
+     "volume": 1034.786,
+     "quote_volume": 20698.923,
+     "taker_buy_volume": 509.91
+    },
+    {
+     "open_time_ms": 1760008800000,
+     "open": 20.003095,
+     "high": 20.008681,
+     "low": 19.999869,
+     "close": 20.001817,
+     "volume": 1033.228,
+     "quote_volume": 20666.437,
+     "taker_buy_volume": 688.931
+    },
+    {
+     "open_time_ms": 1760009100000,
+     "open": 20.001817,
+     "high": 20.010293,
+     "low": 19.999754,
+     "close": 20.001165,
+     "volume": 864.748,
+     "quote_volume": 17295.967,
+     "taker_buy_volume": 278.105
+    },
+    {
+     "open_time_ms": 1760009400000,
+     "open": 20.001165,
+     "high": 20.009041,
+     "low": 19.991441,
+     "close": 19.996979,
+     "volume": 1187.349,
+     "quote_volume": 23743.393,
+     "taker_buy_volume": 381.069
+    },
+    {
+     "open_time_ms": 1760009700000,
+     "open": 19.996979,
+     "high": 20.003724,
+     "low": 19.993096,
+     "close": 20.000622,
+     "volume": 863.552,
+     "quote_volume": 17271.577,
+     "taker_buy_volume": 621.686
+    },
+    {
+     "open_time_ms": 1760010000000,
+     "open": 20.000622,
+     "high": 20.001301,
+     "low": 19.991613,
+     "close": 20.000673,
+     "volume": 981.307,
+     "quote_volume": 19626.8,
+     "taker_buy_volume": 468.403
+    },
+    {
+     "open_time_ms": 1760010300000,
+     "open": 20.000673,
+     "high": 20.006358,
+     "low": 19.990319,
+     "close": 19.996437,
+     "volume": 926.621,
+     "quote_volume": 18529.118,
+     "taker_buy_volume": 636.923
+    },
+    {
+     "open_time_ms": 1760010600000,
+     "open": 19.996437,
+     "high": 20.004473,
+     "low": 19.995394,
+     "close": 20.003959,
+     "volume": 1083.408,
+     "quote_volume": 21672.449,
+     "taker_buy_volume": 543.988
+    },
+    {
+     "open_time_ms": 1760010900000,
+     "open": 20.003959,
+     "high": 20.014527,
+     "low": 19.996995,
+     "close": 20.005381,
+     "volume": 944.721,
+     "quote_volume": 18899.504,
+     "taker_buy_volume": 424.971
+    },
+    {
+     "open_time_ms": 1760011200000,
+     "open": 20.005381,
+     "high": 20.007769,
+     "low": 20.000981,
+     "close": 20.006666,
+     "volume": 827.752,
+     "quote_volume": 16560.558,
+     "taker_buy_volume": 486.773
+    },
+    {
+     "open_time_ms": 1760011500000,
+     "open": 20.006666,
+     "high": 20.018783,
+     "low": 20.002208,
+     "close": 20.014608,
+     "volume": 1102.935,
+     "quote_volume": 22074.812,
+     "taker_buy_volume": 853.0
+    },
+    {
+     "open_time_ms": 1760011800000,
+     "open": 20.014608,
+     "high": 20.015104,
+     "low": 20.008525,
+     "close": 20.010044,
+     "volume": 856.457,
+     "quote_volume": 17137.742,
+     "taker_buy_volume": 435.79
+    },
+    {
+     "open_time_ms": 1760012100000,
+     "open": 20.010044,
+     "high": 20.01229,
+     "low": 20.004018,
+     "close": 20.004248,
+     "volume": 847.328,
+     "quote_volume": 16950.159,
+     "taker_buy_volume": 349.334
+    },
+    {
+     "open_time_ms": 1760012400000,
+     "open": 20.004248,
+     "high": 20.00831,
+     "low": 20.003344,
+     "close": 20.007645,
+     "volume": 1015.56,
+     "quote_volume": 20318.964,
+     "taker_buy_volume": 544.754
+    },
+    {
+     "open_time_ms": 1760012700000,
+     "open": 20.007645,
+     "high": 20.01219,
+     "low": 19.995721,
+     "close": 20.00166,
+     "volume": 927.315,
+     "quote_volume": 18547.839,
+     "taker_buy_volume": 345.247
+    },
+    {
+     "open_time_ms": 1760013000000,
+     "open": 20.00166,
+     "high": 20.016312,
+     "low": 19.999964,
+     "close": 20.009362,
+     "volume": 1024.253,
+     "quote_volume": 20494.649,
+     "taker_buy_volume": 756.019
+    },
+    {
+     "open_time_ms": 1760013300000,
+     "open": 20.009362,
+     "high": 20.009485,
+     "low": 19.998912,
+     "close": 20.006201,
+     "volume": 1082.61,
+     "quote_volume": 21658.914,
+     "taker_buy_volume": 658.017
+    },
+    {
+     "open_time_ms": 1760013600000,
+     "open": 20.006201,
+     "high": 20.012013,
+     "low": 20.001178,
+     "close": 20.003676,
+     "volume": 894.607,
+     "quote_volume": 17895.429,
+     "taker_buy_volume": 483.037
+    },
+    {
+     "open_time_ms": 1760013900000,
+     "open": 20.003676,
+     "high": 20.010334,
+     "low": 19.991453,
+     "close": 19.998804,
+     "volume": 951.528,
+     "quote_volume": 19029.422,
+     "taker_buy_volume": 423.222
+    },
+    {
+     "open_time_ms": 1760014200000,
+     "open": 19.998804,
+     "high": 20.00304,
+     "low": 19.989895,
+     "close": 19.995904,
+     "volume": 945.209,
+     "quote_volume": 18900.308,
+     "taker_buy_volume": 585.203
+    },
+    {
+     "open_time_ms": 1760014500000,
+     "open": 19.995904,
+     "high": 20.001924,
+     "low": 19.990586,
+     "close": 19.998681,
+     "volume": 930.055,
+     "quote_volume": 18599.873,
+     "taker_buy_volume": 374.475
+    },
+    {
+     "open_time_ms": 1760014800000,
+     "open": 19.998681,
+     "high": 20.645321,
+     "low": 19.989902,
+     "close": 20.644388,
+     "volume": 3316.156,
+     "quote_volume": 68460.012,
+     "taker_buy_volume": 1672.179
+    },
+    {
+     "open_time_ms": 1760015100000,
+     "open": 20.644388,
+     "high": 20.739282,
+     "low": 20.636645,
+     "close": 20.734695,
+     "volume": 1150.47,
+     "quote_volume": 23854.644,
+     "taker_buy_volume": 486.187
+    },
+    {
+     "open_time_ms": 1760015400000,
+     "open": 20.734695,
+     "high": 20.742286,
+     "low": 20.726069,
+     "close": 20.738905,
+     "volume": 1115.294,
+     "quote_volume": 23129.976,
+     "taker_buy_volume": 423.472
+    },
+    {
+     "open_time_ms": 1760015700000,
+     "open": 20.738905,
+     "high": 20.742626,
+     "low": 20.736311,
+     "close": 20.740291,
+     "volume": 1122.937,
+     "quote_volume": 23290.041,
+     "taker_buy_volume": 444.461
+    },
+    {
+     "open_time_ms": 1760016000000,
+     "open": 20.740291,
+     "high": 20.745492,
+     "low": 20.738077,
+     "close": 20.739819,
+     "volume": 1022.638,
+     "quote_volume": 21209.327,
+     "taker_buy_volume": 510.092
+    },
+    {
+     "open_time_ms": 1760016300000,
+     "open": 20.739819,
+     "high": 20.754097,
+     "low": 20.729782,
+     "close": 20.74728,
+     "volume": 992.45,
+     "quote_volume": 20590.638,
+     "taker_buy_volume": 722.691
+    },
+    {
+     "open_time_ms": 1760016600000,
+     "open": 20.74728,
+     "high": 20.754477,
+     "low": 20.74149,
+     "close": 20.752634,
+     "volume": 918.042,
+     "quote_volume": 19051.79,
+     "taker_buy_volume": 303.76
+    },
+    {
+     "open_time_ms": 1760016900000,
+     "open": 20.752634,
+     "high": 20.755072,
+     "low": 20.74942,
+     "close": 20.754414,
+     "volume": 851.313,
+     "quote_volume": 17668.503,
+     "taker_buy_volume": 558.733
+    },
+    {
+     "open_time_ms": 1760017200000,
+     "open": 20.754414,
+     "high": 20.763709,
+     "low": 20.748325,
+     "close": 20.755375,
+     "volume": 800.603,
+     "quote_volume": 16616.816,
+     "taker_buy_volume": 506.722
+    },
+    {
+     "open_time_ms": 1760017500000,
+     "open": 20.755375,
+     "high": 20.769961,
+     "low": 20.753559,
+     "close": 20.760939,
+     "volume": 1121.237,
+     "quote_volume": 23277.933,
+     "taker_buy_volume": 738.319
+    }
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "metrics_i50_W6",
+   "symbol": "AAAUSDT",
+   "dataset": "main",
+   "i": 50,
+   "W": 6,
+   "expected": {
+    "ret_w": 0.0395954396026188,
+    "vol_ratio": 1.425677512581749,
+    "taker_imb": 0.18556797292654692,
+    "atr14": 0.35719285714285676
+   }
+  },
+  {
+   "name": "metrics_i50_W3",
+   "symbol": "AAAUSDT",
+   "dataset": "main",
+   "i": 50,
+   "W": 3,
+   "expected": {
+    "ret_w": 0.03973230644456072,
+    "vol_ratio": 2.0013684124826345,
+    "taker_imb": 0.2494387708880461,
+    "atr14": 0.35719285714285676
+   }
+  },
+  {
+   "name": "metrics_i49_W6",
+   "symbol": "AAAUSDT",
+   "dataset": "main",
+   "i": 49,
+   "W": 6,
+   "expected": {
+    "ret_w": -0.0009799426418893864,
+    "vol_ratio": 0.9320669453176025,
+    "taker_imb": 0.025000058173387796,
+    "atr14": 0.07518621428571493
+   }
+  },
+  {
+   "name": "metrics_i5_W6",
+   "symbol": "AAAUSDT",
+   "dataset": "main",
+   "i": 5,
+   "W": 6,
+   "expected": {
+    "ret_w": null,
+    "vol_ratio": null,
+    "taker_imb": -0.10770279770162794,
+    "atr14": null
+   }
+  },
+  {
+   "name": "metrics_i2_W6",
+   "symbol": "AAAUSDT",
+   "dataset": "main",
+   "i": 2,
+   "W": 6,
+   "expected": {
+    "ret_w": null,
+    "vol_ratio": null,
+    "taker_imb": null,
+    "atr14": null
+   }
+  },
+  {
+   "name": "metrics_gap",
+   "symbol": "CCCUSDT",
+   "dataset": "main",
+   "i": 49,
+   "W": 6,
+   "expected": {
+    "ret_w": null,
+    "vol_ratio": 1.3857392831900757,
+    "taker_imb": 0.1973699255347583,
+    "atr14": 0.03596392857142851
+   }
+  }
+ ],
+ "tiers": [
+  {
+   "q24": 0,
+   "expected": "lo"
+  },
+  {
+   "q24": 19900000.0,
+   "expected": "lo"
+  },
+  {
+   "q24": 20000000.0,
+   "expected": "mid"
+  },
+  {
+   "q24": 99900000.0,
+   "expected": "mid"
+  },
+  {
+   "q24": 100000000.0,
+   "expected": "hi"
+  },
+  {
+   "q24": 5000000000.0,
+   "expected": "hi"
+  }
+ ]
+}

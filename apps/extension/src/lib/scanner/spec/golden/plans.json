@@ -1,0 +1,146 @@
+{
+ "golden": "plans",
+ "spec": "swal.movers-spec.v1",
+ "spec_version": "2026-10-19.1",
+ "spec_sha": "c356eba4049d8ce98a893360cd1ec8de7cf7eb790858cf456972071df197004f",
+ "tolerance": {
+  "abs": 1e-09,
+  "rel": 1e-09
+ },
+ "cases": [
+  {
+   "name": "up_normal",
+   "note": "follow long above close, fade short below close",
+   "event": {
+    "ret": 0.04,
+    "close": 100.0,
+    "atr14": 1.0
+   },
+   "expected": {
+    "follow": {
+     "mode": "follow",
+     "direction": "long",
+     "entry": 100.25,
+     "stop": 98.75,
+     "t1": 101.75,
+     "t2": 103.25,
+     "stop_dist": 1.5
+    },
+    "fade": {
+     "mode": "fade",
+     "direction": "short",
+     "entry": 99.75,
+     "stop": 101.25,
+     "t1": 98.25,
+     "t2": 96.75,
+     "stop_dist": 1.5
+    }
+   }
+  },
+  {
+   "name": "down_normal",
+   "note": "follow short below close, fade long above close",
+   "event": {
+    "ret": -0.04,
+    "close": 100.0,
+    "atr14": 1.0
+   },
+   "expected": {
+    "follow": {
+     "mode": "follow",
+     "direction": "short",
+     "entry": 99.75,
+     "stop": 101.25,
+     "t1": 98.25,
+     "t2": 96.75,
+     "stop_dist": 1.5
+    },
+    "fade": {
+     "mode": "fade",
+     "direction": "long",
+     "entry": 100.25,
+     "stop": 98.75,
+     "t1": 101.75,
+     "t2": 103.25,
+     "stop_dist": 1.5
+    }
+   }
+  },
+  {
+   "name": "stop_floor",
+   "note": "1.5*atr = 0.06 < 0.3 % of 100: stop distance is the floor",
+   "event": {
+    "ret": 0.04,
+    "close": 100.0,
+    "atr14": 0.04
+   },
+   "expected": {
+    "follow": {
+     "mode": "follow",
+     "direction": "long",
+     "entry": 100.01,
+     "stop": 99.70997,
+     "t1": 100.31003000000001,
+     "t2": 100.61006,
+     "stop_dist": 0.30003
+    },
+    "fade": {
+     "mode": "fade",
+     "direction": "short",
+     "entry": 99.99,
+     "stop": 100.28997,
+     "t1": 99.69003,
+     "t2": 99.39005999999999,
+     "stop_dist": 0.29997
+    }
+   }
+  },
+  {
+   "name": "stop_cap_skip",
+   "note": "1.5*atr / entry > 5 %: both plans skipped",
+   "event": {
+    "ret": 0.04,
+    "close": 100.0,
+    "atr14": 4.0
+   },
+   "expected": {
+    "follow": null,
+    "fade": null
+   }
+  },
+  {
+   "name": "cap_only_one_side",
+   "note": "atr 3.33: follow stop is 4.95 % of entry (kept), fade is 5.04 % (skipped)",
+   "event": {
+    "ret": 0.04,
+    "close": 100.0,
+    "atr14": 3.33
+   },
+   "expected": {
+    "follow": {
+     "mode": "follow",
+     "direction": "long",
+     "entry": 100.8325,
+     "stop": 95.83749999999999,
+     "t1": 105.8275,
+     "t2": 110.82249999999999,
+     "stop_dist": 4.995
+    },
+    "fade": null
+   }
+  },
+  {
+   "name": "atr_missing",
+   "note": "no atr: no plans",
+   "event": {
+    "ret": 0.04,
+    "close": 100.0,
+    "atr14": null
+   },
+   "expected": {
+    "follow": null,
+    "fade": null
+   }
+  }
+ ]
+}
