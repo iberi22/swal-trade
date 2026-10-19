@@ -16,6 +16,7 @@
     type LegendRow,
   } from '../../lib/findings-view';
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
+  import { atrOf } from '../../lib/account/analysis-view';
   import { createPanelController, type PanelState } from '../../lib/account/panel-controller';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
@@ -93,6 +94,8 @@
   const legend = $derived<LegendRow[]>(findingsLegend(topFindings));
   const selectedFinding = $derived(topFindings.find((item) => item.id === selectedId) ?? topFindings[0] ?? null);
   let lastPrice = $state<number | null>(null);
+  /** ATR(14) de las velas cargadas, para el contexto relativo de la IA. */
+  let atr = $state<number | null>(null);
 
   // Modo del panel: posición / sin posición / no sé. Solo pregunta a la cuenta
   // mientras el panel se ve y hay una clave de solo lectura.
@@ -283,6 +286,7 @@
       try {
         rows = await fetchKlines(sym, tf);
         lastPrice = rows[rows.length - 1]?.close ?? null;
+        atr = atrOf(rows);
         if (!alive) return;
         handle.setCandles(rows);
         const analysis = analyze({ symbol: sym, timeframe: tf, candles: rows });
@@ -486,7 +490,17 @@
       />
     {/snippet}
     {#snippet analisis()}
-      <AnalysisTab />
+      <AnalysisTab
+        {symbol}
+        {timeframe}
+        {panel}
+        {settings}
+        {applySettings}
+        findings={topFindings}
+        {trend}
+        {lastPrice}
+        {atr}
+      />
     {/snippet}
     {#snippet ajustes()}
       <SettingsTab
