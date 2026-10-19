@@ -1,5 +1,8 @@
 <script lang="ts">
   import { browser } from 'wxt/browser';
+  import { onMount } from 'svelte';
+  import { HEALTH_KEY, parseHealth, type ScannerHealth } from '../../lib/scanner/background-runner';
+  import { hhmm } from '../../lib/scanner/view';
   import { MAX_PER_HOUR_RANGE, MIN_Q24_RANGE, type ScannerSettings } from '../../lib/scanner/settings';
 
   let {
@@ -11,6 +14,18 @@
   } = $props();
 
   let note = $state<string | null>(null);
+  let health = $state<ScannerHealth | null>(null);
+  const alarmsOk = typeof (browser as unknown as { alarms?: unknown }).alarms !== 'undefined';
+
+  onMount(() => {
+    void (async () => {
+      try {
+        health = parseHealth((await browser.storage.local.get(HEALTH_KEY))[HEALTH_KEY]);
+      } catch {
+        health = null;
+      }
+    })();
+  });
   const tiers = [
     { id: 'hi', label: 'Volumen alto (≥ 100 M)' },
     { id: 'mid', label: 'Volumen medio (≥ 20 M)' },
@@ -132,9 +147,21 @@
       />
     </label>
 
-    <label class="sc-check sc-disabled">
-      <input type="checkbox" disabled checked={false} />
-      <span>Vigilar con el panel cerrado · próximamente</span>
+    <label class="sc-check" class:sc-disabled={!alarmsOk}>
+      <input
+        type="checkbox"
+        data-testid="scanner-background"
+        disabled={!alarmsOk}
+        checked={alarmsOk && settings.backgroundMode}
+        onchange={(e) => onChange({ backgroundMode: (e.currentTarget as HTMLInputElement).checked })}
+      />
+      <span>Vigilar con el panel cerrado</span>
     </label>
+    {#if alarmsOk && settings.backgroundMode}
+      <p class="sc-note" data-testid="scanner-background-note">Revisa cada 5 min con datos públicos de Binance, aunque el panel esté cerrado</p>
+      {#if health && health.lastCycleAt}
+        <p class="sc-note" data-testid="scanner-background-health">Último ciclo: {hhmm(health.lastCycleAt)} · {health.cycles} ciclos · {health.errors} errores</p>
+      {/if}
+    {/if}
   </div>
 </details>

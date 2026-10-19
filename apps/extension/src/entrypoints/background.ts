@@ -12,6 +12,8 @@ import { createRouter, type KeyValueStore } from '../lib/background/router';
 import { createSignedClient } from '../lib/account/binance-signed';
 import { createIdbVault } from '../lib/account/idb-vault';
 import { chat } from '../lib/ai/llm-client';
+import { ALARM_NAME, createBackgroundScanner, desiredAlarm } from '../lib/scanner/background-runner';
+import { loadScannerSettings, SCANNER_SETTINGS_KEY } from '../lib/scanner/settings';
 
 function storageStore(area: 'local' | 'session'): KeyValueStore {
   const api = () => browser.storage[area];
@@ -73,6 +75,75 @@ const ready = (async () => {
     // sin sesión previa
   }
 })();
+
+type AlarmsApi = {
+  create(name: string, info: { when?: number; periodInMinutes?: number }): Promise<void> | void;
+  clear(name: string): Promise<boolean> | void;
+  onAlarm: { addListener(listener: (alarm: { name: string }) => void): void };
+};
+
+/**
+ * Vigilancia del escáner con el panel cerrado: una alarma cada 5 min solo si el
+ * usuario la activó. Sin `alarms` (o sin fiabilidad) se queda en modo panel.
+ */
+function setupScannerAlarm(): void {
+  const alarms = (browser as unknown as { alarms?: AlarmsApi }).alarms;
+  if (!alarms || typeof alarms.create !== 'function' || !alarms.onAlarm) return;
+  const storage = {
+    async get(key: string) {
+      return (await browser.storage.local.get(key))[key];
+    },
+    async set(key: string, value: unknown) {
+      await browser.storage.local.set({ [key]: value });
+    },
+  };
+  const scanner = createBackgroundScanner({
+    fetch: (url, init) => fetch(url, init),
+    storage,
+    setBadge: (text) => {
+      const action = (browser as unknown as { action?: { setBadgeText(d: { text: string }): unknown } }).action;
+      void Promise.resolve(action?.setBadgeText({ text })).catch(() => {});
+    },
+    notificationsAllowed: async () =>
+      (await (browser as unknown as { permissions?: { contains(p: { permissions: string[] }): Promise<boolean> } })
+        .permissions?.contains({ permissions: ['notifications'] })) === true,
+    notify: ({ title, message }) => {
+      const n = (browser as unknown as {
+        notifications?: { create(o: Record<string, unknown>): unknown };
+      }).notifications;
+      void Promise.resolve(
+        n?.create({ type: 'basic', iconUrl: browser.runtime.getURL('/icon/128.png' as never), title, message }),
+      ).catch(() => {});
+    },
+  });
+
+  const sync = async (): Promise<void> => {
+    try {
+      const settings = await loadScannerSettings(storage);
+      const want = desiredAlarm(settings, Date.now());
+      if (!want) {
+        await alarms.clear(ALARM_NAME);
+        return;
+      }
+      await alarms.create(want.name, { when: want.when, periodInMinutes: want.periodInMinutes });
+    } catch {
+      // sin alarmas: el escáner sigue solo con el panel abierto
+    }
+  };
+
+  alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === ALARM_NAME) void scanner.onAlarm();
+  });
+  try {
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[SCANNER_SETTINGS_KEY]) void sync();
+    });
+    browser.runtime.onInstalled.addListener(() => void sync());
+    browser.runtime.onStartup.addListener(() => void sync());
+  } catch {
+    // eventos no disponibles en este entorno
+  }
+}
 
 export default defineBackground(() => {
   const runtime = browser as typeof browser & {
@@ -158,6 +229,8 @@ export default defineBackground(() => {
     cache: storageStore('local'),
     session: storageStore('session'),
   });
+
+  setupScannerAlarm();
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isPrivilegedType((message as { type?: unknown } | null)?.type)) return;

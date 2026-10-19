@@ -17,6 +17,8 @@ import { btcSymbolFor, filterByVolume, scanSymbols, selectUniverse, validSymbol 
 import { hhmm, isMutedEvent, notificationText, type ScannerRowEvent } from './view';
 
 export const EVENTS_KEY = 'scanner.events';
+/** Latido del panel (ms epoch) tras cada ciclo; la vigilancia en segundo plano lo lee para no duplicar. */
+export const PANEL_ACTIVE_KEY = 'scanner.panelActive';
 export const UNIVERSE_TTL_MS = 3600 * 1000;
 export const EXCHANGE_TIMEOUT_MS = 15_000;
 export const TICKER_TIMEOUT_MS = 8_000;
@@ -481,6 +483,7 @@ export function createScannerRunner(deps: RunnerDeps): ScannerRunner {
     } finally {
       if (gen === generation) {
         cycling = false;
+        void Promise.resolve(deps.storage.set(PANEL_ACTIVE_KEY, localNow())).catch(() => {});
         emit({ scanning: false });
         schedule(retryUntil);
       }
