@@ -89,6 +89,10 @@ describe('normalizeSettings', () => {
       claudeBridgeToken: "",
       radarEnabled: true,
       radarPort: 47322,
+      rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+      ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+      domPositions: false,
+      acctMeta: { configured: false, kind: 'none', last4: '' },
     });
   });
 
@@ -114,6 +118,10 @@ describe('normalizeSettings', () => {
       claudeBridgeToken: "",
       radarEnabled: true,
       radarPort: 47322,
+      rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+      ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+      domPositions: false,
+      acctMeta: { configured: false, kind: 'none', last4: '' },
     });
   });
 
@@ -133,6 +141,10 @@ describe('normalizeSettings', () => {
       claudeBridgeToken: "",
       radarEnabled: true,
       radarPort: 47322,
+      rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+      ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+      domPositions: false,
+      acctMeta: { configured: false, kind: 'none', last4: '' },
     });
   });
 
@@ -191,17 +203,21 @@ describe('normalizeSettings', () => {
       host: 'https://evil.example',
     });
     expect(Object.keys(settings).sort()).toEqual([
+      'acctMeta',
+      'ai',
       'autoSync',
       'claudeBridgeEnabled',
       'claudeBridgePort',
       'claudeBridgeToken',
       'defaultTimeframe',
+      'domPositions',
       'explainWithAi',
       'hotkeyMap',
       'hotkeysEnabled',
       'paintOnChart',
       'radarEnabled',
       'radarPort',
+      'rules',
       'symbols',
     ]);
   });
@@ -234,6 +250,10 @@ describe('settingsFromStorage', () => {
       claudeBridgeToken: "",
       radarEnabled: true,
       radarPort: 47322,
+      rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+      ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+      domPositions: false,
+      acctMeta: { configured: false, kind: 'none', last4: '' },
     });
   });
 
@@ -251,6 +271,10 @@ describe('settingsFromStorage', () => {
       claudeBridgeToken: "",
       radarEnabled: true,
       radarPort: 47322,
+      rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+      ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+      domPositions: false,
+      acctMeta: { configured: false, kind: 'none', last4: '' },
     });
   });
 
@@ -274,5 +298,88 @@ describe('normalizeHotkeyMap', () => {
     const custom = normalizeHotkeyMap({ F1: '15m', F2: null, F3: 'ninguno', F4: 'invalido', F12: '1D', UNKNOWN: '1m' });
     expect([custom.F1, custom.F2, custom.F3, custom.F4, custom.F12]).toEqual(['15m', null, null, null, '1d']);
     expect((custom as Record<string, unknown>).UNKNOWN).toBeUndefined();
+  });
+});
+
+describe('rules / ai / domPositions / acctMeta', () => {
+  it('basura de cualquier tipo vuelve a los defaults', () => {
+    for (const junk of [null, 7, 'x', [], { rules: 5, ai: 'x', acctMeta: [] }]) {
+      const s = normalizeSettings(
+        junk && typeof junk === 'object' && !Array.isArray(junk)
+          ? junk
+          : { rules: junk, ai: junk, acctMeta: junk, domPositions: junk },
+      );
+      expect(s.rules).toEqual(DEFAULT_SETTINGS.rules);
+      expect(s.ai).toEqual(DEFAULT_SETTINGS.ai);
+      expect(s.acctMeta).toEqual(DEFAULT_SETTINGS.acctMeta);
+      expect(s.domPositions).toBe(false);
+    }
+  });
+
+  it('rules se acota', () => {
+    const r = normalizeSettings({
+      rules: { maxRiskPct: 99, maxLeverage: 500.4, dailyLossUsd: 1e9, revengeMinutes: 0 },
+    }).rules;
+    expect(r).toEqual({ maxRiskPct: 5, maxLeverage: 125, dailyLossUsd: 1e6, revengeMinutes: 1 });
+    const low = normalizeSettings({
+      rules: { maxRiskPct: 0, maxLeverage: 0, dailyLossUsd: 0, revengeMinutes: 9999 },
+    }).rules;
+    expect(low).toEqual({ maxRiskPct: 0.1, maxLeverage: 1, dailyLossUsd: 10, revengeMinutes: 240 });
+    expect(normalizeSettings({ rules: { maxRiskPct: NaN, dailyLossUsd: -3, maxLeverage: '5' } }).rules).toEqual(
+      DEFAULT_SETTINGS.rules,
+    );
+    expect(normalizeSettings({ rules: { maxLeverage: 7.6 } }).rules.maxLeverage).toBe(8);
+  });
+
+  it('ai valida proveedor, modelo, redaction y consentimientos', () => {
+    const ai = normalizeSettings({
+      ai: {
+        provider: 'gemini',
+        model: 'anthropic/claude-3.5:free',
+        redaction: 'absolute',
+        consentedProviders: ['gemini', 'gemini', 'bogus', 3, 'local'],
+      },
+    }).ai;
+    expect(ai).toEqual({
+      provider: 'gemini',
+      model: 'anthropic/claude-3.5:free',
+      redaction: 'absolute',
+      consentedProviders: ['gemini', 'local'],
+    });
+    const bad = normalizeSettings({
+      ai: { provider: 'evil', model: 'bad model!', redaction: 'other', consentedProviders: 'openai' },
+    }).ai;
+    expect(bad).toEqual(DEFAULT_SETTINGS.ai);
+    expect(normalizeSettings({ ai: { model: 'a'.repeat(81) } }).ai.model).toBe('');
+    expect(normalizeSettings({ ai: { model: 'a'.repeat(80) } }).ai.model).toHaveLength(80);
+  });
+
+  it('domPositions solo con true explícito', () => {
+    expect(normalizeSettings({ domPositions: true }).domPositions).toBe(true);
+    expect(normalizeSettings({ domPositions: 'true' }).domPositions).toBe(false);
+    expect(normalizeSettings({ domPositions: 1 }).domPositions).toBe(false);
+  });
+
+  it('acctMeta valida tipo y last4', () => {
+    expect(normalizeSettings({ acctMeta: { configured: true, kind: 'hmac', last4: 'aB12' } }).acctMeta).toEqual({
+      configured: true,
+      kind: 'hmac',
+      last4: 'aB12',
+    });
+    expect(normalizeSettings({ acctMeta: { configured: 'yes', kind: 'rsa', last4: 'abcde' } }).acctMeta).toEqual(
+      DEFAULT_SETTINGS.acctMeta,
+    );
+    expect(normalizeSettings({ acctMeta: { last4: '12-4' } }).acctMeta.last4).toBe('');
+  });
+
+  it('ida y vuelta por settingsFromStorage', () => {
+    const custom = normalizeSettings({
+      rules: { maxRiskPct: 2, maxLeverage: 20, dailyLossUsd: 50, revengeMinutes: 30 },
+      ai: { provider: 'local', model: 'llama3:8b', redaction: 'absolute', consentedProviders: ['local'] },
+      domPositions: true,
+      acctMeta: { configured: true, kind: 'ed25519', last4: 'wxyz' },
+    });
+    const stored = JSON.parse(JSON.stringify({ [SETTINGS_KEY]: custom }));
+    expect(settingsFromStorage(stored)).toEqual(custom);
   });
 });
