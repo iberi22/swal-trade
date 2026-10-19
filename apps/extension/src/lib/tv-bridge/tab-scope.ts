@@ -31,10 +31,18 @@ export function pickActiveTabId(tabs: readonly ScopedTab[] | null | undefined): 
   return chosen && typeof chosen.id === 'number' ? chosen.id : null;
 }
 
-/** Pestaña activa de Binance Futures del navegador (null si no hay ninguna). */
+/**
+ * Pestaña activa de Binance Futures de la VENTANA del panel (null si no hay
+ * ninguna). Se consulta con `currentWindow: true` para no cruzar ventanas: con
+ * dos ventanas abiertas en futures, la pestaña activa de la otra ventana no
+ * debe mandar sobre el dibujo que enseña este panel. `currentWindow` no necesita
+ * el permiso `tabs`.
+ */
 export async function resolveActiveBinanceTabId(): Promise<number | null> {
   try {
-    const tabs = (await browser.tabs?.query({ url: FUTURES_TAB_PATTERN })) ?? [];
+    const tabsApi = browser.tabs;
+    if (!tabsApi?.query) return null;
+    const tabs = (await tabsApi.query({ url: FUTURES_TAB_PATTERN, currentWindow: true })) ?? [];
     return pickActiveTabId(tabs as ScopedTab[]);
   } catch {
     return null;

@@ -5,6 +5,7 @@ import { calculatePositionSizeWithFees } from '../sizing';
 import { DEFAULT_PRESETS } from './presets';
 import {
   FROM_CARD_NOTE,
+  displayRiskPct,
   exactSizingFromLoad,
   feeInclusiveRiskUsd,
   publishSizingLoad,
@@ -42,6 +43,7 @@ const unchanged = (load: ReturnType<typeof sizingLoadFromTicket>) => ({
   stopStr: String(load.stop),
   direction: load.direction,
   capital: load.capital,
+  riskPct: displayRiskPct(load),
 });
 
 describe('sizingLoadFromTicket', () => {
@@ -145,5 +147,46 @@ describe('sizingLoadFromTicket', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.riskPct).toBe(load.riskPct);
     expect(seen[0]?.riskUsd).toBe(load.riskUsd);
+  });
+});
+
+describe('carga exacta y edición del riesgo', () => {
+  /** Tarjeta de margen: 3 % de 1.000 a 10x son 3 unidades de 100 con stop en 99. */
+  const marginLoad = () => sizingLoadFromTicket(ticket(marketPreset({ size: { basis: 'margin', pct: 3 }, leverage: 10 })));
+
+  it('bajar el riesgo de 3 % a 0,1 % anula la cantidad exacta del ticket', () => {
+    const load = marginLoad();
+    expect(load.quantity).toBe(3);
+    expect(load.riskUsd).toBeCloseTo(3.2985, 10);
+    // Mientras no se toque nada, se enseña la cifra exacta del ticket.
+    expect(exactSizingFromLoad(load, unchanged(load))).toEqual({ quantity: 3, lossUsd: load.riskUsd });
+    // Volver a escribir el riesgo que enseña el campo tampoco la anula.
+    expect(exactSizingFromLoad(load, { ...unchanged(load), riskPct: displayRiskPct(load) })).not.toBeNull();
+    // Cualquier otro riesgo escribe una carga nueva: la cifra del ticket ya no vale.
+    expect(exactSizingFromLoad(load, { ...unchanged(load), riskPct: 0.1 })).toBeNull();
+    expect(exactSizingFromLoad(load, { ...unchanged(load), riskPct: 1 })).toBeNull();
+    // El capital y los precios siguen anulándola.
+    expect(exactSizingFromLoad(load, { ...unchanged(load), capital: 500 })).toBeNull();
+  });
+
+  it('con 0,1 % el panel recalcula con comisiones y el paso del contrato: 1 USD de presupuesto', () => {
+    const load = marginLoad();
+    const r = calculatePositionSizeWithFees({
+      capital: load.capital,
+      riskPct: 0.1,
+      direction: load.direction,
+      entry: load.entry,
+      stop: load.stop,
+      entryFeeRate: load.entryFeeRate,
+      exitFeeRate: load.exitFeeRate,
+      stepSize: 0.0001,
+    });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    // Presupuesto 1 USD, no los 3,2985 del ticket: la cantidad cae de 3 a 0,9095.
+    expect(r.lossBudgetUsd).toBe(1);
+    expect(r.quantity).toBe(0.9095);
+    expect(r.quantity).toBeLessThan(load.quantity);
+    expect(r.lossUsd).toBeLessThanOrEqual(1 + 1e-9);
   });
 });

@@ -5,17 +5,18 @@
     calculatePositionSize,
     calculatePositionSizeWithFees,
     defaultScaleEntries,
+    formatQuantity,
     planScaleIn,
     DEFAULT_SIZING_PREFERENCES,
     invalidationPriceFromFinding,
     normalizeSizingPreferences,
-    roundToDecimals,
     SIZING_STORAGE_KEY,
     TAKER_FEE_RATE,
     type SizingDirection,
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
   import {
+    displayRiskPct,
     exactSizingFromLoad,
     parseSizingLoad,
     subscribeSizingLoad,
@@ -61,8 +62,10 @@
       if (!load) return;
       direction = load.direction;
       // El campo enseña el % con 4 decimales; la cantidad y la pérdida que se
-      // ven abajo salen del payload EXACTO (ver `exactSizingFromLoad`).
-      riskPct = roundToDecimals(load.riskPct, 4);
+      // ven abajo salen del payload EXACTO (ver `exactSizingFromLoad`). En
+      // cuanto se toca el riesgo, la cifra exacta deja de valer y el panel
+      // recalcula con lo escrito.
+      riskPct = displayRiskPct(load);
       entryStr = String(load.entry);
       stopStr = String(load.stop);
       userEditedEntry = true;
@@ -127,10 +130,13 @@
   /**
    * Cifras exactas del ticket mientras los campos sigan igual que al cargarlo.
    * Recalcular desde el % redondeado cambiaba 3 -> 3,0014; el payload trae la
-   * cantidad y la pérdida reales.
+   * cantidad y la pérdida reales. Cambiar capital, riesgo, entrada o stop anula
+   * la carga exacta: las cifras pasan a salir de lo escrito.
    */
   const exact = $derived(
-    fromCard && cardLoad ? exactSizingFromLoad(cardLoad, { entryStr, stopStr, direction, capital }) : null,
+    fromCard && cardLoad
+      ? exactSizingFromLoad(cardLoad, { entryStr, stopStr, direction, capital, riskPct })
+      : null,
   );
   const shownQuantity = $derived(exact ? exact.quantity : result?.valid ? result.quantity : null);
   const shownLossUsd = $derived(exact ? exact.lossUsd : result?.valid ? result.lossUsd : null);
@@ -201,7 +207,7 @@
     </label>
   </div>
 
-  {#if cardNote || cardTranchesNote}
+  {#if exact && (cardNote || cardTranchesNote)}
     <p class="from-card" data-testid="sizing-from-card">
       {cardNote}{#if cardTranchesNote} · {cardTranchesNote}{/if}
     </p>
@@ -216,7 +222,7 @@
       <div class="metrics-grid" data-testid="sizing-results">
         <div class="metric"><span class="m-title">Distancia stop</span><span class="m-val">{pctFmt.format(result.distancePct)} %</span></div>
         <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{shownLossUsd !== null ? usdFmt.format(shownLossUsd) : usdFmt.format(result.lossUsd)} USD</span></div>
-        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{priceFmt.format(shownQuantity ?? result.quantity)}</span></div>
+        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{formatQuantity(shownQuantity ?? result.quantity)}</span></div>
         <div class="metric"><span class="m-title">Nocional</span><span class="m-val">{usdFmt.format(result.notionalUsd)} USD</span></div>
         <div class="metric"><span class="m-title">Apalancamiento mín.</span><span class="m-val">{result.minLeverage}×</span></div>
       </div>
@@ -239,7 +245,7 @@
           {#if scalePlan && scalePlan.valid}
             <ul class="sz-lines" data-testid="scale-in-tranches">
               {#each scalePlan.tranches as t, i}
-                <li>Tramo {i + 1} ({Math.round(scalePlan.weights[i] * 100)} %): {priceFmt.format(t.price)} · {priceFmt.format(t.qty)}</li>
+                <li>Tramo {i + 1} ({Math.round(scalePlan.weights[i] * 100)} %): {priceFmt.format(t.price)} · {formatQuantity(t.qty)}</li>
               {/each}
             </ul>
             <p class="sz-line" data-testid="scale-in-avg">Media si se llenan todos: {priceFmt.format(scalePlan.avgByFill[scalePlan.avgByFill.length - 1])}</p>

@@ -15,6 +15,7 @@ import type { PositionDrawing } from '../drawing/types';
 import {
   FROM_CARD_NOTE,
   FROM_DRAWING_NOTE,
+  displayRiskPct,
   exactSizingFromLoad,
   parseSizingLoad,
   sizingLoadFromTicket,
@@ -69,6 +70,7 @@ const unchanged = (load: SizingLoad) => ({
   stopStr: String(load.stop),
   direction: load.direction,
   capital: load.capital,
+  riskPct: displayRiskPct(load),
 });
 
 describe('contrato compartido del dimensionador', () => {
@@ -132,5 +134,7 @@ describe('contrato compartido del dimensionador', () => {
     expect(exactSizingFromLoad(load, { ...unchanged(load), stopStr: '98.5' })).toBeNull();
     expect(exactSizingFromLoad(load, { ...unchanged(load), direction: 'short' })).toBeNull();
     expect(exactSizingFromLoad(load, { ...unchanged(load), capital: 2000 })).toBeNull();
+    // El riesgo también: si no, bajar el riesgo seguía enseñando la cantidad vieja.
+    expect(exactSizingFromLoad(load, { ...unchanged(load), riskPct: 0.1 })).toBeNull();
   });
 });

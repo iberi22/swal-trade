@@ -1,5 +1,5 @@
 import type { SizingDirection } from '../sizing';
-import { TAKER_FEE_RATE } from '../sizing';
+import { roundToDecimals, TAKER_FEE_RATE } from '../sizing';
 import type { TradeTicket } from './types';
 
 /**
@@ -90,13 +90,29 @@ export interface SizingDisplayState {
   stopStr: string;
   direction: SizingDirection;
   capital: number;
+  /** Riesgo (%) que hay escrito en el campo del panel (es el que se enseña, ver `displayRiskPct`). */
+  riskPct: number;
+}
+
+/** Decimales con los que el panel enseña el riesgo. */
+export const RISK_DISPLAY_DECIMALS = 4;
+
+/**
+ * Riesgo (%) que escribe el panel al cargar una cifra: el payload trae el riesgo
+ * EXACTO (0,32985 %) y el campo solo puede enseñar 4 decimales. La cifra exacta
+ * de cantidad y pérdida sigue saliendo del payload, no de este número.
+ */
+export function displayRiskPct(load: SizingLoad): number {
+  return roundToDecimals(load.riskPct, RISK_DISPLAY_DECIMALS);
 }
 
 /**
  * Cifras exactas que el dimensionador debe ENSEÑAR cuando sus campos siguen
  * siendo los del payload. Devuelve null en cuanto el usuario cambia entrada,
- * stop, dirección o capital: entonces manda el cálculo con las tarifas del
- * payload (a toda precisión), no una cifra vieja.
+ * stop, dirección, capital o riesgo: entonces manda el cálculo con las tarifas
+ * del payload a partir de los valores escritos, no una cifra vieja. Sin la
+ * comprobación del riesgo, bajar el riesgo de 3 % a 0,1 % seguía enseñando la
+ * cantidad del ticket (3 unidades con un presupuesto de 1 USD).
  */
 export function exactSizingFromLoad(
   load: SizingLoad,
@@ -106,6 +122,7 @@ export function exactSizingFromLoad(
   if (current.direction !== load.direction) return null;
   if (current.entryStr !== String(load.entry) || current.stopStr !== String(load.stop)) return null;
   if (current.capital !== load.capital) return null;
+  if (Math.abs(current.riskPct - displayRiskPct(load)) > 1e-9) return null;
   return { quantity: load.quantity, lossUsd: load.riskUsd };
 }
 
