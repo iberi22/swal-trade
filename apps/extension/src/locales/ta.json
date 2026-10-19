@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "மொழி",
+  "settings.language.auto": "தானியங்கி (உலாவியின் மொழி)",
+  "settings.language.hint": "பலகத்தின் மொழி. மாற்றம் உடனே செயல்படும்."
+}

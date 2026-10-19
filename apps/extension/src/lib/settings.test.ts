@@ -12,6 +12,7 @@ import {
   settingsToInputs,
   symbolAllowed,
 } from './settings';
+import { LOCALES } from './i18n/locales';
 
 describe('normalizeSymbolList', () => {
   it('acepta una lista o un texto separado por comas y espacios', () => {
@@ -93,6 +94,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -122,6 +124,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -145,6 +148,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -214,6 +218,7 @@ describe('normalizeSettings', () => {
       'explainWithAi',
       'hotkeyMap',
       'hotkeysEnabled',
+      'locale',
       'paintOnChart',
       'radarEnabled',
       'radarPort',
@@ -254,6 +259,7 @@ describe('settingsFromStorage', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -275,6 +281,7 @@ describe('settingsFromStorage', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -381,5 +388,24 @@ describe('rules / ai / domPositions / acctMeta', () => {
     });
     const stored = JSON.parse(JSON.stringify({ [SETTINGS_KEY]: custom }));
     expect(settingsFromStorage(stored)).toEqual(custom);
+  });
+});
+
+describe('locale', () => {
+  it('por defecto es auto', () => {
+    expect(normalizeSettings({}).locale).toBe('auto');
+    expect(DEFAULT_SETTINGS.locale).toBe('auto');
+  });
+  it('acepta auto y cualquiera de los 20 códigos', () => {
+    expect(normalizeSettings({ locale: 'auto' }).locale).toBe('auto');
+    for (const l of LOCALES) expect(normalizeSettings({ locale: l.code }).locale).toBe(l.code);
+  });
+  it('un valor desconocido vuelve a auto', () => {
+    for (const bad of ['xx', 'pt', 'EN', '', 7, null, {}, ['es']]) {
+      expect(normalizeSettings({ locale: bad }).locale).toBe('auto');
+    }
+  });
+  it('ida y vuelta por settingsFromStorage', () => {
+    expect(settingsFromStorage({ [SETTINGS_KEY]: { locale: 'ar' } }).locale).toBe('ar');
   });
 });
