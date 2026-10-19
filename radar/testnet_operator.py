@@ -21,6 +21,9 @@ Refuses to run unless the bot reports a testnet exchange. Python stdlib only.
                                        empty means NO movers alerts are traded; core alerts ignore this list)
   OPERATOR_SYMBOL_COOLDOWN_H default 4   (hours before the same symbol can be entered again)
   OPERATOR_MAX_PER_HOUR default 3     (new entries per rolling hour)
+  OPERATOR_MOVERS_PROFILE default plan  ('hold1h': movers 'fade after a drop' alerts are entered at market as soon as
+                       they appear (pending is enough), with an 8% disaster stop and closed by this operator after
+                       60 minutes — exactly the measured cell 'move30_hold1h'; other movers alerts are not traded)
   OPERATOR_TP_R        default unset  (if set, payload carries take_profit_r = 1.0; see below)
 
 Extra guards, all journaled once per alert id as 'skipped: ...': a 'negative' cell_grade is never traded; the
@@ -83,6 +86,63 @@ def select_candidates(alerts, seen_ids, open_symbols, now, max_age_s, max_open):
         slots -= 1
         out.append(a)
     return out
+
+
+HOLD_STOP_PCT = 8.0    # disaster stop of the measured 'move30_hold1h' cell
+HOLD_MINUTES = 60      # time exit of that cell
+
+
+def is_hold_candidate(a):
+    """Movers alert for the measured 'buy the dip, hold 1h' cell: fade after a drop, i.e. long on a fade kind."""
+    return (a.get('source', 'core') == 'movers' and 'mv_fade_' in str(a.get('kind', ''))
+            and str(a.get('direction', '')).lower() == 'long')
+
+
+def select_hold_candidates(alerts, seen_ids, open_symbols, now, max_age_s, max_open):
+    """Same filters as select_candidates but for the hold profile: the study enters at the next bar's open, so a
+    fresh PENDING alert (created within max_age_s) is enough; it does not wait for the radar to trigger it."""
+    out = []
+    slots = max_open - len(open_symbols)
+    taken = set(open_symbols)
+    for a in sorted(alerts, key=lambda x: x.get('id', 0)):
+        if slots <= 0:
+            break
+        if not is_hold_candidate(a) or a.get('status') not in ('pending', 'triggered'):
+            continue
+        if a.get('id') in seen_ids or a.get('taken_by_user'):
+            continue
+        t = parse_ts(a.get('created_at'))
+        if t is None or now - t > max_age_s:
+            continue
+        sym = bot_symbol(a.get('symbol', ''))
+        if sym in taken:
+            continue
+        taken.add(sym)
+        slots -= 1
+        out.append(a)
+    return out
+
+
+def due_time_exits(holds, now):
+    """holds {symbol: (alert_id, exit_at)} -> [(symbol, alert_id)] whose time exit is due (and removes them)."""
+    due = []
+    for sym, (aid, exit_at) in list(holds.items()):
+        if now >= exit_at:
+            due.append((sym, aid))
+            del holds[sym]
+    return due
+
+
+def rebuild_holds(records):
+    """Open holds from the journal: entries carrying hold_exit_at whose alert has no later 'time exit' line."""
+    holds, closed = {}, set()
+    for r in records:
+        if str(r.get('result', '')).startswith('time exit'):
+            closed.add(r.get('alert_id'))
+    for r in records:
+        if is_entry(r) and isinstance(r.get('hold_exit_at'), (int, float)) and r.get('alert_id') not in closed:
+            holds[bot_symbol(r.get('symbol', ''))] = (r['alert_id'], r['hold_exit_at'])
+    return holds
 
 
 def csv_set(value, upper=False):
@@ -244,6 +304,7 @@ def main():
     symbols = csv_set(benv.get('SYMBOLS', ''), upper=True)
     cooldown_s, max_hour = float(e('OPERATOR_SYMBOL_COOLDOWN_H', '4')) * 3600, int(e('OPERATOR_MAX_PER_HOUR', '3'))
     tp_r = 1.0 if e('OPERATOR_TP_R') else None
+    hold_profile = e('OPERATOR_MOVERS_PROFILE', 'plan').lower() == 'hold1h'
     day_path = os.path.join(os.path.dirname(journal), 'testnet-operator-day.json')
     fut = benv['BINANCE_FUTURES_URL'].rstrip('/')
 
@@ -260,6 +321,7 @@ def main():
             except ValueError:
                 pass
     last_entry, entries = rebuild_state(records)
+    holds = rebuild_holds(records)
     pending = {}
 
     def write(rec):
@@ -282,10 +344,29 @@ def main():
             day_eq = day_start_equity(day_path, equity, now)
             alerts = http_json(f"{radar}/v1/alerts?status=active&limit=100", {'X-Radar-Token': radar_token}).get('alerts', [])
             alerts = [x for x in alerts if not ignored(x, sources, kinds)]
-            for a in select_candidates(alerts, seen, open_syms, now, max_age, max_open):
-                s = size_signal(equity, float(a['entry']), float(a['stop']), risk, cap, maxlev)
+            for sym, aid in due_time_exits(holds, now):
+                res = 'time exit: not open'
+                if sym in open_syms:
+                    try:
+                        http_json(f'{bot}/control/close-position', auth, {'symbol': sym, 'reason': f'time exit {HOLD_MINUTES}m'})
+                        res = 'time exit sent'
+                    except Exception as x:  # noqa: BLE001
+                        res = f'time exit error: {type(x).__name__}'
+                write({'t': now, 'alert_id': aid, 'result': res})
+                print(res, sym, flush=True)
+            if hold_profile:
+                plan_alerts = [x for x in alerts if x.get('source', 'core') != 'movers']
+                hold_alerts = select_hold_candidates(alerts, seen, open_syms, now, max_age, max_open)
+                candidates = select_candidates(plan_alerts, seen, open_syms | {bot_symbol(h['symbol']) for h in hold_alerts},
+                                               now, max_age, max_open) + hold_alerts
+            else:
+                candidates = select_candidates(alerts, seen, open_syms, now, max_age, max_open)
+            for a in candidates:
+                hold = hold_profile and is_hold_candidate(a)
+                stop_for_size = float(a['entry']) * (1 - HOLD_STOP_PCT / 100) if hold else float(a['stop'])
+                s = size_signal(equity, float(a['entry']), stop_for_size, risk, cap, maxlev)
                 rec = {'t': now, 'alert_id': a['id'], 'kind': a['kind'], 'tf': a['tf'], 'direction': a['direction'],
-                       'symbol': a['symbol'], 'entry': a['entry'], 'stop': a['stop'], 'sizing': s}
+                       'symbol': a['symbol'], 'entry': a['entry'], 'stop': round(stop_for_size, 8), 'sizing': s}
                 skip = gate(a, now, symbols, last_entry, entries, equity, day_eq, fetch_price, cooldown_s, max_hour)
                 if skip:
                     rec['result'] = skip
@@ -298,6 +379,9 @@ def main():
                         last_entry[sym] = now
                         entries.append(now)
                         pending[a['id']] = (sym, now)
+                        if hold:
+                            rec['hold_exit_at'] = now + HOLD_MINUTES * 60
+                            holds[sym] = (a['id'], rec['hold_exit_at'])
                     except Exception as x:  # noqa: BLE001
                         rec['result'] = f'error: {type(x).__name__}'
                 seen.add(a['id'])

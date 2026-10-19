@@ -163,3 +163,52 @@ class GuardTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HoldProfileTests(unittest.TestCase):
+    NOW = 1_800_000_000.0
+
+    def alert(self, i, kind='mv_fade_30m_t5_hi', direction='long', status='pending', symbol='SOLUSDT', age=60, source='movers'):
+        from datetime import datetime, timezone
+        ts = datetime.fromtimestamp(self.NOW - age, timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        return {'id': i, 'source': source, 'kind': kind, 'direction': direction, 'status': status, 'symbol': symbol,
+                'created_at': ts, 'triggered_at': None, 'entry': 100.0, 'stop': 98.0, 'taken_by_user': False}
+
+    def test_only_fade_long_movers_are_hold_candidates(self):
+        self.assertTrue(op.is_hold_candidate(self.alert(1)))
+        self.assertFalse(op.is_hold_candidate(self.alert(2, direction='short')))
+        self.assertFalse(op.is_hold_candidate(self.alert(3, kind='mv_follow_30m_t5_hi')))
+        self.assertFalse(op.is_hold_candidate(self.alert(4, source='core')))
+
+    def test_pending_fresh_alerts_are_selected_without_waiting_for_a_trigger(self):
+        got = op.select_hold_candidates([self.alert(1), self.alert(2, age=900), self.alert(3, status='expired')],
+                                        set(), set(), self.NOW, 360, 2)
+        self.assertEqual([a['id'] for a in got], [1])
+
+    def test_one_symbol_and_open_cap_and_seen(self):
+        two_same = [self.alert(1), self.alert(2)]
+        self.assertEqual([a['id'] for a in op.select_hold_candidates(two_same, set(), set(), self.NOW, 360, 2)], [1])
+        self.assertEqual(op.select_hold_candidates([self.alert(1)], {1}, set(), self.NOW, 360, 2), [])
+        self.assertEqual(op.select_hold_candidates([self.alert(1)], set(), {'SOLUSDT'}, self.NOW, 360, 2), [])
+        self.assertEqual(op.select_hold_candidates([self.alert(1)], set(), {'A', 'B'}, self.NOW, 360, 2), [])
+
+    def test_sizing_uses_the_8_percent_disaster_stop(self):
+        s = op.size_signal(5000, 100.0, 100.0 * (1 - op.HOLD_STOP_PCT / 100), 0.25, 1500, 5)
+        self.assertEqual(s['stop_loss_pct'], 8.0)
+        self.assertAlmostEqual(s['amount_usdt'], 156.25, places=2)  # 12.5 USD risk / 8%
+
+    def test_time_exits_fire_once_when_due(self):
+        holds = {'SOLUSDT': (1, self.NOW + 10), 'ETHUSDT': (2, self.NOW - 5)}
+        self.assertEqual(op.due_time_exits(holds, self.NOW), [('ETHUSDT', 2)])
+        self.assertEqual(op.due_time_exits(holds, self.NOW), [])
+        self.assertEqual(list(holds), ['SOLUSDT'])
+        self.assertEqual(op.due_time_exits(holds, self.NOW + 11), [('SOLUSDT', 1)])
+
+    def test_holds_survive_a_restart_unless_already_exited(self):
+        recs = [
+            {'t': 1, 'alert_id': 1, 'symbol': 'SOLUSDC', 'sizing': {'x': 1}, 'result': 'Injected LONG', 'hold_exit_at': self.NOW + 5},
+            {'t': 2, 'alert_id': 2, 'symbol': 'ETHUSDT', 'sizing': {'x': 1}, 'result': 'Injected LONG', 'hold_exit_at': self.NOW + 9},
+            {'t': 3, 'alert_id': 2, 'result': 'time exit sent'},
+            {'t': 4, 'alert_id': 3, 'symbol': 'BTCUSDT', 'sizing': {'x': 1}, 'result': 'skipped: daily stop', 'hold_exit_at': self.NOW},
+        ]
+        self.assertEqual(op.rebuild_holds(recs), {'SOLUSDT': (1, self.NOW + 5)})
