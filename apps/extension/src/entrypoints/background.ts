@@ -30,6 +30,19 @@ function storageStore(area: 'local' | 'session'): KeyValueStore {
   };
 }
 
+/** Idiomas del navegador: el panel resuelve 'auto' con la misma lista. */
+function uiLanguages(): string[] {
+  const out: string[] = [];
+  try {
+    const ui = browser.i18n?.getUILanguage?.();
+    if (ui) out.push(ui);
+  } catch {
+    // sin API de i18n
+  }
+  if (typeof navigator !== 'undefined' && Array.isArray(navigator.languages)) out.push(...navigator.languages);
+  return out;
+}
+
 const STORAGE_KEY = 'marketContext';
 
 type SidePanelApi = {
@@ -228,6 +241,7 @@ export default defineBackground(() => {
     loadSettings: () => loadSettings(),
     cache: storageStore('local'),
     session: storageStore('session'),
+    uiLanguages: () => uiLanguages(),
   });
 
   setupScannerAlarm();
