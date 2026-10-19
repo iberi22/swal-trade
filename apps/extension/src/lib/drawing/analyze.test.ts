@@ -150,13 +150,15 @@ describe('analyzeDrawing · costes', () => {
 });
 
 describe('analyzeDrawing · tamaño al riesgo de la regla', () => {
-  it('usa maxRiskPct del capital y redondea con los helpers de sizing, comisiones incluidas', () => {
+  it('usa maxRiskPct del capital con comisiones y deja la cantidad a toda precisión (sin redondear)', () => {
     const a = run();
     expect(a.size.riskUsd).toBe(10); // 1 % de 1.000
-    expect(a.size.qty).toBe(4.7642); // 10 / (2 + 0,05 + 0,049) con taker/taker
+    // 10 / (2 + 0,05 + 0,049) con taker/taker, SIN redondear hacia arriba.
+    expect(a.size.qty).toBe(4.76417341);
     expect(a.size.notionalUsd).toBe(476.42);
     expect(a.size.minLeverage).toBe(1);
     expect(a.size.marginUsd).toBe(476.42);
+    // La pérdida con comisiones no supera el presupuesto (antes 4,7642 → 10,000037).
     expect(a.size.lossUsd).toBe(10);
     expect(a.size.lossPct).toBe(1);
     expect(a.size.lossIncludesFees).toBe(true);

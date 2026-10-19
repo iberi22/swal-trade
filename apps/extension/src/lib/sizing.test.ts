@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePositionSize,
+  calculatePositionSizeWithFees,
   defaultScaleEntries,
+  floorToStep,
   planScaleIn,
   invalidationPriceFromFinding,
   normalizeSizingPreferences,
+  TAKER_FEE_RATE,
   TAKER_ROUND_TRIP_FEE_RATE,
   type SizingInput,
 } from './sizing';
@@ -217,5 +220,71 @@ describe('planScaleIn (escalonar en 3 tramos)', () => {
     expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 90 })).toEqual({ entry2: 96, entry3: 92 });
     expect(defaultScaleEntries({ direction: 'short', entry: 100, stop: 110 })).toEqual({ entry2: 104, entry3: 108 });
     expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 105 })).toBeNull();
+  });
+});
+
+describe('calculatePositionSizeWithFees (riesgo con comisiones)', () => {
+  const base = {
+    capital: 1000,
+    riskPct: 1,
+    direction: 'long' as const,
+    entry: 100000,
+    stop: 99000,
+    entryFeeRate: TAKER_FEE_RATE,
+    exitFeeRate: TAKER_FEE_RATE,
+  };
+
+  it('keeps the loss at the stop within the risk budget once fees are included', () => {
+    const r = calculatePositionSizeWithFees(base);
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    // Presupuesto 10 USD: qty = 10 / (1000 + 100000·0,0005 + 99000·0,0005) = 10 / 1099,5
+    expect(r.lossBudgetUsd).toBe(10);
+    expect(r.quantity).toBeCloseTo(10 / 1099.5, 12);
+    expect(r.lossUsd).toBeLessThanOrEqual(10 + 1e-9);
+    expect(r.lossUsd).toBe(10);
+    expect(r.notionalUsd).toBeCloseTo(909.5, 6);
+    expect(r.minLeverage).toBe(1);
+    // Comisión de ida (50·qty) + vuelta (49,5·qty) ≈ 0,90 USD
+    expect(r.feeUsd).toBe(0.9);
+  });
+
+  it('floors the quantity to the contract step so it never spends more than the budget', () => {
+    const r = calculatePositionSizeWithFees({ ...base, stepSize: 0.0001 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.quantity).toBe(0.009);
+    expect(r.quantity).toBe(floorToStep(10 / 1099.5, 0.0001));
+    expect(r.lossUsd).toBeLessThanOrEqual(10 + 1e-9);
+  });
+
+  it('returns full precision when no stepSize is given instead of flooring to 6 decimals', () => {
+    const r = calculatePositionSizeWithFees(base);
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    const raw = 10 / 1099.5;
+    // Sin paso de contrato la cantidad conserva toda la precisión: no se recorta al
+    // suelo de 6 decimales que aplica floorToStep sin argumento.
+    expect(r.quantity).not.toBe(floorToStep(raw, undefined));
+    expect(r.quantity).toBeCloseTo(raw, 12);
+  });
+
+  it('honours an exact lossBudgetUsd instead of deriving it from a rounded riskPct', () => {
+    const r = calculatePositionSizeWithFees({ ...base, lossBudgetUsd: 25 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.lossBudgetUsd).toBe(25);
+    expect(r.quantity).toBeCloseTo(25 / 1099.5, 12);
+    expect(r.lossUsd).toBeLessThanOrEqual(25 + 1e-9);
+  });
+
+  it('rejects a negative fee and propagates base validation errors', () => {
+    const badFee = calculatePositionSizeWithFees({ ...base, entryFeeRate: -0.001 });
+    expect(badFee.valid).toBe(false);
+    if (!badFee.valid) expect(badFee.reason).toBe('invalid_input');
+
+    const wrongSide = calculatePositionSizeWithFees({ ...base, direction: 'long', stop: 100500 });
+    expect(wrongSide.valid).toBe(false);
+    if (!wrongSide.valid) expect(wrongSide.reason).toBe('wrong_side');
   });
 });

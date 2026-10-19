@@ -77,6 +77,14 @@ export interface FeeAwareSizingInput extends SizingInput {
   entryFeeRate: number;
   /** Comisión de salida como tasa, aplicada al precio del stop. */
   exitFeeRate: number;
+  /** Paso de cantidad del par (stepSize). Sin paso, la cantidad va con toda la precisión. */
+  stepSize?: number;
+  /**
+   * Presupuesto de riesgo exacto en USD (capital × riesgo, sin redondear). Si no
+   * llega, se calcula con `capital` y `riskPct`. Lo usa quien ya tiene el riesgo
+   * exacto de un ticket y no quiere arrastrar un porcentaje redondeado.
+   */
+  lossBudgetUsd?: number;
 }
 
 export type FeeAwareSizingResult =
@@ -102,6 +110,12 @@ export type FeeAwareSizingResult =
  * stop·feeSalida). Es un helper aparte: `calculatePositionSize` conserva su
  * contrato (tamaño por distancia de precio) para quien muestra las comisiones
  * por separado.
+ *
+ * La cantidad NUNCA se redondea hacia arriba: un redondeo hacia arriba gasta más
+ * que el presupuesto (0,0091 unidades con un stop de 1.000 USD perdían 10,00545
+ * con un presupuesto de 10). Sin `stepSize` se devuelve la cantidad con toda la
+ * precisión; con `stepSize` se redondea HACIA ABAJO al paso del contrato. Así la
+ * pérdida con comisiones no supera el presupuesto.
  */
 export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAwareSizingResult {
   const { entryFeeRate, exitFeeRate } = input;
@@ -112,9 +126,15 @@ export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAw
   if (!base.valid) return base;
   const { capital, riskPct, entry, stop } = input;
   const priceDiff = Math.abs(entry - stop);
-  const lossBudgetUsd = roundToDecimals(capital * (riskPct / 100), 2);
+  const exactBudgetUsd =
+    Number.isFinite(input.lossBudgetUsd) && (input.lossBudgetUsd as number) > 0
+      ? (input.lossBudgetUsd as number)
+      : capital * (riskPct / 100);
+  const lossBudgetUsd = roundToDecimals(exactBudgetUsd, 2);
   const lossPerUnit = priceDiff + entry * entryFeeRate + stop * exitFeeRate;
-  const quantity = roundToDecimals(lossBudgetUsd / lossPerUnit, 4);
+  const rawQuantity = lossBudgetUsd / lossPerUnit;
+  const step = input.stepSize;
+  const quantity = step && Number.isFinite(step) && step > 0 ? floorToStep(rawQuantity, step) : rawQuantity;
   const notionalUsd = roundToDecimals(quantity * entry, 2);
   const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
   const feeUsd = roundToDecimals(quantity * entry * entryFeeRate + quantity * stop * exitFeeRate, 2);

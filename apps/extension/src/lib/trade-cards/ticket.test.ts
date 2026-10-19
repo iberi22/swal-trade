@@ -24,11 +24,12 @@ function ok(r: ReturnType<typeof buildTicket>): TradeTicket {
 }
 
 describe('buildTicket sizing', () => {
-  it('risk basis includes round-trip fees: 1 % of 1000, entry 100 stop 99 -> qty 9,095, loss 10 with fees', () => {
+  it('risk basis includes round-trip fees: 1 % of 1000, entry 100 stop 99 -> qty 9,095043 (floor a 6), loss 10 with fees', () => {
     const t = ok(buildTicket({ ...base, preset: marketPreset() }));
     expect(t.orderType).toBe('MARKET');
     expect(t.stop).toBe(99);
-    expect(t.entries).toEqual([{ price: 100, qty: 9.095, weightPct: 100 }]);
+    // La cantidad no se redondea hacia arriba: se pisa al sexto decimal (antes 9,095).
+    expect(t.entries).toEqual([{ price: 100, qty: 9.095043, weightPct: 100 }]);
     expect(t.lossAtStopUsd).toBe(10);
     expect(t.lossIncludesFees).toBe(true);
     expect(t.lossAtStopPctOfCapital).toBe(1);
@@ -49,7 +50,7 @@ describe('buildTicket sizing', () => {
     }));
     expect(t.entries[0]?.price).toBe(100);
     expect(t.fees.entryRate).toBe(0.0002);
-    expect(t.entries[0]?.qty).toBe(9.3502); // 10 / (1 + 0,02 + 0,0495)
+    expect(t.entries[0]?.qty).toBe(9.350163); // 10 / (1 + 0,02 + 0,0495), pisado a 6 decimales
     expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
     expect(t.lossIncludesFees).toBe(true);
   });

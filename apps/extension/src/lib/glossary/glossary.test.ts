@@ -103,6 +103,52 @@ describe('glossary entries', () => {
   });
 });
 
+describe('glossary prose: no afirma frecuencias ni velocidades no medidas', () => {
+  /** Sin tildes y en minusculas, como el resto de comprobaciones. */
+  const plain = (text: string): string =>
+    text
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase();
+
+  /**
+   * Frases que dan por hecho la frecuencia o la rapidez del precio
+   * (`con frecuencia`, `rara vez`, `suele rellenarse rápido`...) sin una
+   * medición detras. La prosa debe atribuirlo a lo que los traders esperan o
+   * decir que no está medido.
+   */
+  const UNMEASURED: ReadonlyArray<{ re: RegExp; label: string }> = [
+    { re: /\brara vez\b/, label: 'rara vez' },
+    { re: /\bpoco frecuente/, label: 'poco frecuente' },
+    { re: /\bcon frecuencia\b/, label: 'con frecuencia' },
+    { re: /\bhabitual/, label: 'habitual*' },
+    { re: /\ba menudo\b/, label: 'a menudo' },
+    { re: /\bfrecuente/, label: 'frecuente*' },
+    { re: /\bvarias veces\b/, label: 'varias veces' },
+    { re: /\bmuchas veces\b/, label: 'muchas veces' },
+    { re: /\bnormalmente\b/, label: 'normalmente' },
+    { re: /\btiende a\b/, label: 'tiende a' },
+    { re: /\bsuele rellenarse\b/, label: 'suele rellenarse' },
+    { re: /\bsuele perder vigencia\b/, label: 'suele perder vigencia' },
+    { re: /\bsuelen llenarse\b/, label: 'suelen llenarse' },
+    { re: /\bse repiten\b/, label: 'se repiten' },
+    { re: /\bcon rapidez\b/, label: 'con rapidez' },
+  ];
+
+  it('ninguna frase de prosa presenta frecuencia o rapidez del precio como hecho', () => {
+    const offenders: string[] = [];
+    for (const entry of GLOSSARY) {
+      for (const field of PROSE_FIELDS) {
+        const text = plain(messages[`glossary.${entry.id}.${field}`] ?? '');
+        for (const { re, label } of UNMEASURED) {
+          if (re.test(text)) offenders.push(`${entry.id}.${field}: "${label}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('entryForText', () => {
   it('matches ignoring case, accents and surrounding punctuation', () => {
     expect(entryForText('PDH')?.id).toBe('prevDayHigh');

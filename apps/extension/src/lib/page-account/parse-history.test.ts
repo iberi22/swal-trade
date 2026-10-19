@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { englishHistoryFixture, historyCards, historyFixture } from './fixtures';
+import { englishHistoryFixture, historyCards, historyFixture, n } from './fixtures';
 import { parsePositionHistory, type ClosedPosition } from './parse-history';
+import type { TextNode } from './tree';
 
 const TZ = -300;
 const btcOpened = Date.UTC(2026, 9, 19, 4, 45, 54);
@@ -91,6 +92,51 @@ describe('parsePositionHistory', () => {
     });
     expect(new Set(reversed.map((row) => row.key))).toEqual(new Set(rows.map((row) => row.key)));
     expect([...bySymbol(reversed).keys()]).toEqual(['HBARUSDC', '1000PEPEUSDC', 'BTCUSDC']);
+  });
+});
+
+describe('parsePositionHistory with both dates in one text node', () => {
+  const span = (text: string): TextNode => n('span', text);
+  const row = (texts: string[]): TextNode => n('div', undefined, texts.map(span));
+
+  /** La tarjeta real pinta apertura y cierre en nodos distintos, pero un solo
+   *  nodo con «fecha Abierto | fecha Cerrado» debe leerse igual. */
+  function singleNodeCard(dates: string): TextNode {
+    return n('div', undefined, [
+      row(['BTCUSDC', 'Perp.', '30x', 'Cruzado Short', 'Cerrado']),
+      row([dates]),
+      row(['PnL realizado (USDC)', '+1.01 USDC']),
+      row(['ROI', '+9.25%']),
+      row(['Precio de entrada', '82,644.1']),
+    ]);
+  }
+
+  it('asocia la primera fecha a la apertura y la segunda al cierre', () => {
+    const rows = parsePositionHistory(
+      n('div', undefined, [singleNodeCard('10/18/2026 23:45:54 Abierto | 10/19/2026 10:21:28 Cerrado')]),
+      { tzOffsetMinutes: TZ },
+    );
+    expect(rows).toHaveLength(1);
+    const btc = rows[0] as ClosedPosition;
+    // Antes las dos fechas salían como cierre y la tarjeta se descartaba.
+    expect(btc.symbol).toBe('BTCUSDC');
+    expect(btc.side).toBe('short');
+    expect(btc.status).toBe('closed');
+    expect(btc.openedAtMs).toBe(btcOpened);
+    expect(btc.closedAtMs).toBe(btcClosed);
+    expect(btc.durationMs).toBe(btcClosed - btcOpened);
+    expect(btc.entry).toBe(82_644.1);
+  });
+
+  it('también funciona con las etiquetas al revés (cierre primero, apertura después)', () => {
+    const rows = parsePositionHistory(
+      n('div', undefined, [singleNodeCard('10/19/2026 10:21:28 Cerrado | 10/18/2026 23:45:54 Abierto')]),
+      { tzOffsetMinutes: TZ },
+    );
+    expect(rows).toHaveLength(1);
+    const btc = rows[0] as ClosedPosition;
+    expect(btc.closedAtMs).toBe(btcClosed);
+    expect(btc.openedAtMs).toBe(btcOpened);
   });
 });
 

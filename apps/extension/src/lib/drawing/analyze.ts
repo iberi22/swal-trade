@@ -113,7 +113,7 @@ function sizeAtRule(input: {
   const marginUsd = r2(notionalUsd / minLeverage);
   const lossPct = r4((lossUsd / capital) * 100);
   return {
-    qty: roundToDecimals(qty, 8),
+    qty: floorToStep(qty, 1e-8),
     notionalUsd,
     marginUsd,
     minLeverage,
@@ -314,6 +314,7 @@ export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysisResul
       drawing,
       symbol: drawing.symbol,
       side,
+      capital,
       geometry: { riskPct, rewardPct, rr, stopAtr1h, targetAtr1h, entryDistancePct, entryMode },
       costs: { entryFeePct, exitFeePct, totalFeePct, feeShareOfRisk, netRr },
       size,

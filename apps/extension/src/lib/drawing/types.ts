@@ -76,6 +76,8 @@ export interface DrawingAnalysis {
   drawing: PositionDrawing;
   symbol: string;
   side: DrawingSide;
+  /** Capital de referencia con el que se calculó el tamaño (el del panel). */
+  capital: number;
   geometry: {
     /** Distancia stop como % de la entrada (riesgo bruto). */
     riskPct: number;

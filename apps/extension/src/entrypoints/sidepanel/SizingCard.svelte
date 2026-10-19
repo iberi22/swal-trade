@@ -9,12 +9,19 @@
     DEFAULT_SIZING_PREFERENCES,
     invalidationPriceFromFinding,
     normalizeSizingPreferences,
+    roundToDecimals,
     SIZING_STORAGE_KEY,
     TAKER_FEE_RATE,
     type SizingDirection,
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
-  import { subscribeSizingLoad, TRANCHES_NOTE } from '../../lib/trade-cards/sizing-bridge';
+  import {
+    exactSizingFromLoad,
+    parseSizingLoad,
+    subscribeSizingLoad,
+    TRANCHES_NOTE,
+    type SizingLoad,
+  } from '../../lib/trade-cards/sizing-bridge';
 
   let { lastPrice = null, finding = null, compact = false }: { lastPrice?: number | null; finding?: Finding | null; compact?: boolean } = $props();
 
@@ -34,6 +41,8 @@
   let cardTranchesNote = $state('');
   let cardEntryFeeRate = $state(TAKER_FEE_RATE);
   let cardExitFeeRate = $state(TAKER_FEE_RATE);
+  /** Payload validado de la tarjeta o del dibujo (contrato `SizingLoad`). */
+  let cardLoad = $state<SizingLoad | null>(null);
 
   onMount(() => {
     void browser.storage.local?.get(SIZING_STORAGE_KEY).then((stored) => {
@@ -44,15 +53,22 @@
       loaded = true;
     }).catch(() => { loaded = true; });
 
-    // Tarjetas de operación: «Cargar en el dimensionador».
-    return subscribeSizingLoad((load) => {
+    // Tarjetas de operación y dibujos: «Cargar en el dimensionador».
+    return subscribeSizingLoad((incoming) => {
+      // Misma validación que usan los tests de contrato: un payload sin tarifas
+      // o sin riesgo no se pinta (antes salía «La comisión no es válida»).
+      const load = parseSizingLoad(incoming);
+      if (!load) return;
       direction = load.direction;
-      riskPct = load.riskPct;
+      // El campo enseña el % con 4 decimales; la cantidad y la pérdida que se
+      // ven abajo salen del payload EXACTO (ver `exactSizingFromLoad`).
+      riskPct = roundToDecimals(load.riskPct, 4);
       entryStr = String(load.entry);
       stopStr = String(load.stop);
       userEditedEntry = true;
       userEditedStop = true;
       fromCard = true;
+      cardLoad = load;
       cardNote = load.note;
       cardEntryFeeRate = load.entryFeeRate;
       cardExitFeeRate = load.exitFeeRate;
@@ -108,6 +124,16 @@
         : calculatePositionSize({ capital, riskPct, direction, entry: numEntry, stop: numStop })
       : null,
   );
+  /**
+   * Cifras exactas del ticket mientras los campos sigan igual que al cargarlo.
+   * Recalcular desde el % redondeado cambiaba 3 -> 3,0014; el payload trae la
+   * cantidad y la pérdida reales.
+   */
+  const exact = $derived(
+    fromCard && cardLoad ? exactSizingFromLoad(cardLoad, { entryStr, stopStr, direction, capital }) : null,
+  );
+  const shownQuantity = $derived(exact ? exact.quantity : result?.valid ? result.quantity : null);
+  const shownLossUsd = $derived(exact ? exact.lossUsd : result?.valid ? result.lossUsd : null);
 
   let e2Str = $state('');
   let e3Str = $state('');
@@ -189,8 +215,8 @@
     {#if result.valid}
       <div class="metrics-grid" data-testid="sizing-results">
         <div class="metric"><span class="m-title">Distancia stop</span><span class="m-val">{pctFmt.format(result.distancePct)} %</span></div>
-        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{usdFmt.format(result.lossUsd)} USD</span></div>
-        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{priceFmt.format(result.quantity)}</span></div>
+        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{shownLossUsd !== null ? usdFmt.format(shownLossUsd) : usdFmt.format(result.lossUsd)} USD</span></div>
+        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{priceFmt.format(shownQuantity ?? result.quantity)}</span></div>
         <div class="metric"><span class="m-title">Nocional</span><span class="m-val">{usdFmt.format(result.notionalUsd)} USD</span></div>
         <div class="metric"><span class="m-title">Apalancamiento mín.</span><span class="m-val">{result.minLeverage}×</span></div>
       </div>

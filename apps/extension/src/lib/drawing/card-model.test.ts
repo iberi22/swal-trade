@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LevelRow } from '../context/levels';
 import type { RulesSettings } from '../settings';
 import { DRAWING_HONEST_LINE, analyzeDrawing } from './analyze';
+import { FROM_DRAWING_NOTE, feeInclusiveRiskUsd } from '../trade-cards/sizing-bridge';
 import {
   DRAWING_EMPTY_HINT,
   DRAWING_MAX_SHOWN,
@@ -270,6 +271,13 @@ describe('niveles, alcance y funding', () => {
     );
     expect(fundingText(noRate)).toBe('sin dato de funding');
   });
+
+  it('no afirma «cada 8 h»: el intervalo de funding depende del contrato', () => {
+    const text = fundingText(analysis());
+    expect(text).not.toContain('cada 8 h');
+    expect(text).toContain('por intervalo de funding');
+    expect(text).toContain('% del riesgo por intervalo de funding');
+  });
 });
 
 describe('ticket y carga al dimensionador', () => {
@@ -290,9 +298,31 @@ describe('ticket y carga al dimensionador', () => {
     expect(text).toContain('Entrada: 100 · stop (taker)');
   });
 
-  it('carga dirección, entrada y stop en el dimensionador', () => {
-    const tool = toolFromAnalysis(analysis({ id: 's', side: 'short', stop: 102, target: 94 }));
-    expect(tool.load).toEqual({ direction: 'short', entry: 100, stop: 102 });
+  it('carga el contrato completo del dimensionador: dirección, precios, riesgo exacto y cantidad', () => {
+    const a = analysis({ id: 's', side: 'short', stop: 102, target: 94 });
+    const tool = toolFromAnalysis(a);
+    // Antes el dibujo cargaba solo { direction, entry, stop }; el panel lo trataba
+    // como «La comisión no es válida». Ahora lleva el mismo contrato que la tarjeta.
+    expect(tool.load).toMatchObject({
+      direction: 'short',
+      entry: 100,
+      stop: 102,
+      quantity: a.size.qty,
+      capital: 1000,
+      note: FROM_DRAWING_NOTE,
+    });
+    expect(tool.load.entryFeeRate).toBeGreaterThan(0);
+    expect(tool.load.exitFeeRate).toBeGreaterThan(0);
+    expect(tool.load.riskUsd).toBe(
+      feeInclusiveRiskUsd({
+        quantity: a.size.qty,
+        entry: 100,
+        stop: 102,
+        entryFeeRate: tool.load.entryFeeRate,
+        exitFeeRate: tool.load.exitFeeRate,
+      }),
+    );
+    expect(tool.load.riskPct).toBe(a.size.lossPct);
     expect(tool.sideLabel).toBe('Corto');
   });
 

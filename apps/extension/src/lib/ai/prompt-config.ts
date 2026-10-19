@@ -130,18 +130,22 @@ function neutralize(text: string): string {
   return text.replace(PREF_MARKER_RE, '[marcador eliminado]');
 }
 
+/**
+ * Los TRES campos editables (rol, estilo y preferencias libres) viajan dentro
+ * del bloque delimitado: nada editable queda fuera del bloque que el marco
+ * declara como datos. Los delimitadores falsos se neutralizan en los tres, y el
+ * marco fijo sigue siendo lo ultimo del prompt.
+ */
 export function buildSystemPrompt(config: PromptConfig, uiLocale: unknown): string {
   const safe = normalizePromptConfig(config);
-  const role = safe.role || DEFAULT_ROLE;
-  const style = safe.style || DEFAULT_STYLE;
-  const language = resolvePromptLanguage(safe.language, uiLocale);
-  const parts: string[] = [role, `Estilo: ${style}`];
+  const role = neutralize(safe.role || DEFAULT_ROLE);
+  const style = neutralize(safe.style || DEFAULT_STYLE);
   const extra = neutralize(safe.extra);
-  if (extra) {
-    parts.push([PREF_HEADER, PREF_OPEN, extra, PREF_CLOSE].join('\n'));
-  }
-  parts.push(`Responde en ${languageName(language)}.`);
-  return `${parts.join('\n\n')}\n\n${SAFETY_FRAME}`;
+  const language = resolvePromptLanguage(safe.language, uiLocale);
+  const editable: string[] = [`Rol: ${role}`, `Estilo: ${style}`];
+  if (extra) editable.push(`Preferencias libres:\n${extra}`);
+  const block = [[PREF_HEADER, PREF_OPEN, ...editable, PREF_CLOSE].join('\n'), `Responde en ${languageName(language)}.`];
+  return `${block.join('\n\n')}\n\n${SAFETY_FRAME}`;
 }
 
 export type PromptConfigImport =

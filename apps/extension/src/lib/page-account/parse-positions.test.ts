@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { openPositionsEnQuoteShort, openPositionsEs, historyFixture } from './fixtures';
-import { parseOpenPositions, toPositionView } from './parse-positions';
+import { openPositionsEnQuoteShort, openPositionsEs, historyFixture, n } from './fixtures';
+import { POSITION_SKIP_TEXT, parseOpenPositions, positionViewFrom, toPositionView } from './parse-positions';
 import type { PagePosition } from './parse-positions';
+import type { TextNode } from './tree';
 
 describe('parseOpenPositions (Spanish table)', () => {
   const positions = parseOpenPositions(openPositionsEs());
@@ -62,6 +63,69 @@ describe('parseOpenPositions (English header, quote size)', () => {
   });
 });
 
+describe('lado de la posición: texto explícito y lado desconocido', () => {
+  const labels = [
+    'Symbol',
+    'Size',
+    'PNL (ROI %)',
+    'Entry Price',
+    'Break Even Price',
+    'Mark Price',
+    'Liq. Price',
+  ];
+
+  /** Tabla mínima con la misma forma que las capturas reales. */
+  function table(rows: string[][]): TextNode {
+    return n('div', undefined, [
+      n(
+        'div',
+        undefined,
+        labels.map((label) => n('div', undefined, [n('span', label)])),
+        { role: 'row' },
+      ),
+      n(
+        'div',
+        undefined,
+        rows.map((cells) =>
+          n('div', undefined, cells.map((text) => n('div', undefined, [n('span', text)]))),
+        ),
+      ),
+    ]);
+  }
+
+  it('el texto explícito manda sobre el signo del tamaño base', () => {
+    // El tamaño dice corto (-0,004 BTC), pero la fila se pinta «Cross Long».
+    const [row] = parseOpenPositions(
+      table([['BTCUSDC Perp. Cross Long', '-0.004 BTC', '+1.00 USDC', '82,644.1', '82,300.0', '82,100.0', '95,000.0']]),
+    );
+    expect(row?.sizeBase).toBe(-0.004);
+    expect(row?.side).toBe('long');
+  });
+
+  it('el texto explícito manda sobre la liquidación frente a la entrada', () => {
+    // Liq por debajo de la entrada sugeriría largo; la fila dice «Cruzado Short».
+    const [row] = parseOpenPositions(
+      table([['ETHUSDC Perp. Cruzado Short', '1,500.00 USDC', '-12.00 USDC', '3,000.0', '3,010.0', '3,050.0', '2,900.0']]),
+    );
+    expect(row?.liq).toBe(2900);
+    expect(row?.side).toBe('short');
+  });
+
+  it('sin texto, sin tamaño base y sin desnivel de liquidación el lado es DESCONOCIDO', () => {
+    // Un importe positivo en la moneda de cotización NO es una dirección.
+    const [row] = parseOpenPositions(
+      table([['FOOUSDC Perp. 10x', '1,500.00 USDC', '-12.00 USDC', '3,000.0', '3,010.0', '3,050.0', '3,000.0']]),
+    );
+    expect(row?.sizeBase).toBeNull();
+    expect(row?.sizeQuote).toEqual({ value: 1500, asset: 'USDC' });
+    expect(row?.side).toBeNull();
+    // El panel lo dice en vez de inventar un largo, y la fila no se mapea.
+    expect(positionViewFrom(row as PagePosition)).toEqual({ ok: false, reason: 'no_side' });
+    expect(toPositionView(row as PagePosition)).toBeNull();
+    expect(POSITION_SKIP_TEXT.no_side).toBe('lado desconocido');
+  });
+});
+
 describe('toPositionView', () => {
   it('maps the PEPE row, deriving base size from notional / mark', () => {
     const [pepe] = parseOpenPositions(openPositionsEs());
@@ -109,6 +173,16 @@ describe('toPositionView', () => {
     expect(toPositionView({ ...base, entry: null })).toBeNull();
     expect(toPositionView({ ...base, mark: 0 })).toBeNull();
     expect(toPositionView({ ...base, sizeQuote: null })).toBeNull();
+  });
+
+  it('dice el motivo del descarte en vez de devolver una fila a medias', () => {
+    const base = parseOpenPositions(openPositionsEs())[0] as PagePosition;
+    expect(positionViewFrom({ ...base, side: null })).toEqual({ ok: false, reason: 'no_side' });
+    expect(positionViewFrom({ ...base, leverage: null })).toEqual({ ok: false, reason: 'no_leverage' });
+    expect(positionViewFrom({ ...base, entry: null })).toEqual({ ok: false, reason: 'no_prices' });
+    expect(positionViewFrom({ ...base, sizeQuote: null, sizeBase: null })).toEqual({ ok: false, reason: 'no_size' });
+    expect(positionViewFrom({ ...base, mark: 0 })).toEqual({ ok: false, reason: 'no_prices' });
+    expect(positionViewFrom(null as unknown as PagePosition)).toEqual({ ok: false, reason: 'no_prices' });
   });
 });
 
