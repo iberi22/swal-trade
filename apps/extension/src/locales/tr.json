@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "Dil",
+  "settings.language.auto": "Otomatik (tarayıcı dili)",
+  "settings.language.hint": "Panel dili. Değişiklik hemen uygulanır."
+}

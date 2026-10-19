@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "भाषा",
+  "settings.language.auto": "स्वचालित (ब्राउज़र की भाषा)",
+  "settings.language.hint": "पैनल की भाषा। बदलाव तुरंत लागू होता है।"
+}

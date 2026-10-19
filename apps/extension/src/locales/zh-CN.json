@@ -1,0 +1,6 @@
+{
+  "app.name": "SWAL Trade",
+  "settings.language.title": "语言",
+  "settings.language.auto": "自动（浏览器语言）",
+  "settings.language.hint": "面板语言。更改会立即生效。"
+}

@@ -4,6 +4,8 @@
   import { normalizeSymbolList, HOTKEY_KEYS, type ExtensionSettings } from '../../lib/settings';
   import { NEWS_REFRESH_MS } from '../../lib/news';
   import { TIMEFRAMES, type Timeframe } from '../../lib/types';
+  import { LOCALES, isLocaleCode } from '../../lib/i18n/locales';
+  import { t } from '../../lib/i18n/i18n.svelte';
   import CredentialsAi from './CredentialsAi.svelte';
   import CredentialsBinance from './CredentialsBinance.svelte';
   import RulesSettings from './RulesSettings.svelte';
@@ -70,6 +72,30 @@
     {/if}
   {/if}
 </div>
+
+<section class="settings" aria-label={t('settings.language.title')} data-testid="language-section">
+  <div class="settings-body">
+    <label class="field">
+      <span>{t('settings.language.title')}</span>
+      <select
+        disabled={!settingsLoaded}
+        value={settings.locale}
+        onchange={(event) => {
+          const value = (event.currentTarget as HTMLSelectElement).value;
+          if (value === 'auto' || isLocaleCode(value)) {
+            applySettings({ ...settings, locale: value });
+          }
+        }}
+      >
+        <option value="auto">{t('settings.language.auto')}</option>
+        {#each LOCALES as loc (loc.code)}
+          <option value={loc.code}>{loc.nativeName}</option>
+        {/each}
+      </select>
+      <small class="hint">{t('settings.language.hint')}</small>
+    </label>
+  </div>
+</section>
 
 <section class="settings" aria-label="Ajustes">
   <div class="settings-body">

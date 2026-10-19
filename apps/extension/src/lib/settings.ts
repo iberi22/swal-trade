@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
+import { isLocaleCode, type LocaleCode } from './i18n/locales';
 import { TIMEFRAMES, type Timeframe } from './types';
 
 export const HOTKEY_KEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'] as const;
@@ -72,6 +73,8 @@ export interface ExtensionSettings {
   /** Lee posiciones del DOM de Binance. Necesita un `true` explícito. */
   domPositions: boolean;
   acctMeta: AcctMeta;
+  /** Idioma del panel: 'auto' sigue al navegador. */
+  locale: 'auto' | LocaleCode;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -91,6 +94,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
   domPositions: false,
   acctMeta: { configured: false, kind: 'none', last4: '' },
+  locale: 'auto',
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -249,6 +253,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     ai: normalizeAi(record.ai),
     domPositions: record.domPositions === true,
     acctMeta: normalizeAcctMeta(record.acctMeta),
+    locale: isLocaleCode(record.locale) ? record.locale : 'auto',
   };
 }
 
