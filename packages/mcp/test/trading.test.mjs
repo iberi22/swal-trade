@@ -1829,3 +1829,21 @@ test("the liquidation estimate is read after the leverage is set, not before", a
   // earlier one is the account snapshot the guard ran against.
   assert.ok(risk > leverage, `positionRisk at ${risk} must come after setLeverage at ${leverage}: ${steps.join(", ")}`);
 });
+
+test("place_order treats 'No need to change margin type' (-4046) as already ISOLATED", async () => {
+  const exchange = makeExchange({ marginTypeFailures: [{ code: -4046, msg: "No need to change margin type." }] });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const body = JSON.parse(textOf(await client.callTool({ name: "place_order", arguments: placeArgs })));
+    assert.equal(body.sent, true);
+    assert.equal(body.marginMode, "ISOLATED");
+  });
+});
+
+test("place_order still fails when the margin type cannot change because a position is open (-4048)", async () => {
+  const exchange = makeExchange({ marginTypeFailures: [{ code: -4048, msg: "Margin type cannot be changed if there exists position." }] });
+  await withClient({ env: tradeEnvFile(), fetchFn: exchange.fetchFn, now: () => NOW }, async (client) => {
+    const result = await callOrCatch(client, "place_order", placeArgs);
+    assert.match(errorText(result), /-4048|margin/i);
+  });
+  assert.equal(exchange.post("/fapi/v1/order").length, 0);
+});
