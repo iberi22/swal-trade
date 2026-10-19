@@ -597,13 +597,129 @@ test('with an open position the sizing form is gone and the position card shows'
 
     const card = page.getByTestId('position-card');
     await expect(card).toBeVisible();
-    await expect(card).toContainText('LARGO · 0.1 BTCUSDT');
+    await expect(card).toContainText('LARGO · 0.1 BTCUSDT · 5x · cruzado');
     await expect(card).toContainText('SIN STOP');
+    // Reglas: sin stop es crítica y va primero, con prefijo y sin depender del color.
+    await expect(page.getByTestId('rules-list')).toContainText('!! Sin stop');
     await expect(card).toContainText('Liquidación a 23.8 %');
     await expect(page.getByTestId('sizing-card')).toHaveCount(0);
     await expect(page.getByTestId('mode-notice')).toHaveCount(0);
     const requests = await page.evaluate(() => (window as unknown as { __acctRequests: string[] }).__acctRequests);
     expect(requests[0]).toBe('BTCUSDT');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('manual position works without credentials, runs the rules and can be removed', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.getByTestId('sizing-card')).toHaveCount(1);
+    await expect(page.getByTestId('position-card')).toHaveCount(0);
+
+    await page.getByTestId('manual-open').click();
+    await expect(page.getByTestId('manual-form')).toBeVisible();
+    // Dato malo: se queda en el formulario con una frase corta.
+    await page.getByTestId('manual-save').click();
+    await expect(page.getByTestId('manual-error')).toBeVisible();
+
+    await page.locator('input[name=entry]').fill('100');
+    await page.locator('input[name=size]').fill('0.5');
+    await page.locator('input[name=leverage]').fill('5');
+    await page.getByTestId('manual-save').click();
+
+    const card = page.getByTestId('position-card');
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('LARGO · 0.5 BTCUSDT · 5x');
+    await expect(card).toContainText('MANUAL');
+    await expect(card).toContainText('SIN STOP');
+    await expect(page.getByTestId('rules-list')).toContainText('!! Sin stop');
+    await expect(page.getByTestId('sizing-card')).toHaveCount(0);
+
+    // Sobrevive a una recarga (storage.session) y se puede quitar.
+    await page.reload();
+    await expect(page.getByTestId('position-card')).toContainText('MANUAL');
+    await page.getByTestId('manual-remove').click();
+    await expect(page.getByTestId('position-card')).toHaveCount(0);
+    await expect(page.getByTestId('sizing-card')).toHaveCount(1);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+/** Simula las respuestas del background a los mensajes acct:* (sin secretos). */
+const MOCK_CREDENTIALS_SCRIPT = `
+(() => {
+  const runtime = window.chrome && window.chrome.runtime;
+  if (!runtime) return;
+  const original = runtime.sendMessage.bind(runtime);
+  window.__acctSent = [];
+  runtime.sendMessage = (message, ...rest) => {
+    const type = message && message.type;
+    if (type === 'acct:meta') return Promise.resolve({ configured: false, kind: 'none', last4: '' });
+    if (type === 'acct:gen-ed25519') {
+      return Promise.resolve({ publicPem: '-----BEGIN PUBLIC KEY-----\\nfake-visible-marker-a\\n-----END PUBLIC KEY-----' });
+    }
+    if (type === 'acct:set-key') { window.__acctSent.push(message.kind); return Promise.resolve({ ok: true }); }
+    if (type === 'acct:snapshot') return Promise.resolve({ error: 'no_key' });
+    if (type === 'acct:test') return Promise.resolve(window.__testReply || { ok: false, error: 'clock' });
+    return original(message, ...rest);
+  };
+})();
+`;
+
+test('settings tab: credential sections, password inputs, key generation and error mapping', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_CREDENTIALS_SCRIPT);
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('cred-binance')).toBeVisible();
+    await expect(page.getByTestId('cred-ai')).toBeVisible();
+    await expect(page.getByTestId('rules-settings')).toBeVisible();
+
+    const keyInput = page.locator('input[name=binance-api-key]');
+    await expect(keyInput).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=binance-hmac-key]')).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=binance-hmac-secret]')).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=ai-key]')).toHaveAttribute('type', 'password');
+    await expect(page.getByTestId('cred-hmac')).not.toHaveAttribute('open', '');
+
+    await page.getByRole('button', { name: 'Generar clave' }).click();
+    await expect(page.getByTestId('cred-pem')).toContainText('BEGIN PUBLIC KEY');
+
+    await keyInput.fill('fakevisiblemarkera');
+    await page.getByTestId('cred-binance').getByRole('button', { name: 'Guardar clave' }).click();
+    await expect(keyInput).toHaveValue('');
+    await expect(page.getByTestId('cred-binance-status')).toContainText('termina en kera');
+
+    // Error mapeado a una frase en español.
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-error')).toContainText('reloj');
+
+    // Clave con permiso de Futuros: aviso visible y solo rutas de lectura.
+    await page.evaluate(() => {
+      (window as unknown as { __testReply: unknown }).__testReply = {
+        ok: true,
+        restrictions: { ipRestrict: false, enableReading: true, tradingEnabled: true },
+      };
+    });
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-ip')).toContainText('Restricción de IP: no');
+    await expect(page.getByTestId('cred-trading-note')).toContainText('La extensión solo usa rutas de lectura.');
+
+    // Retiros: rechazo claro.
+    await page.evaluate(() => {
+      (window as unknown as { __testReply: unknown }).__testReply = { ok: false, error: 'key_has_trading_or_withdraw' };
+    });
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-error')).toContainText('Esta clave puede retirar fondos. Créala sin permiso de retiros.');
+
+    // IA: el consentimiento nombra al proveedor y los campos.
+    await expect(page.getByTestId('ai-consent-text')).toContainText('OpenCode');
+    await expect(page.getByTestId('ai-consent-text')).toContainText('sin importes en USD ni cantidades');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();

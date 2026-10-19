@@ -1,4 +1,19 @@
 <script lang="ts">
+  import { browser } from 'wxt/browser';
+  import { evaluateRules } from '../../lib/account/rules';
+  import {
+    manualStorageKey,
+    manualToPositionView,
+    parseStoredManual,
+    withManualPosition,
+    type ManualPosition as ManualData,
+  } from '../../lib/account/manual-position';
+  import {
+    buildRuleInput,
+    rememberInitialStop,
+    type InitialStopStore,
+  } from '../../lib/account/position-view-model';
+  import { fetchKlines } from '../../lib/market-feed';
   import { positionFor, sectionsForMode, type PanelState } from '../../lib/account/panel-controller';
   import {
     TOP_ONE_LINERS,
@@ -12,11 +27,13 @@
   } from '../../lib/findings-view';
   import { relativeTime, type NewsItem } from '../../lib/news';
   import type { ExtensionSettings } from '../../lib/settings';
-  import type { AnalysisResult, Finding, Timeframe } from '../../lib/types';
+  import type { AnalysisResult, Candle, Finding, Timeframe } from '../../lib/types';
   import ExplainCard from './ExplainCard.svelte';
+  import ManualPosition from './ManualPosition.svelte';
   import MarketPulse from './MarketPulse.svelte';
   import PositionCard from './PositionCard.svelte';
   import RadarCard from './RadarCard.svelte';
+  import RulesList from './RulesList.svelte';
   import SizingCard from './SizingCard.svelte';
 
   let {
@@ -63,8 +80,110 @@
     applySettings: (next: ExtensionSettings) => void;
   } = $props();
 
-  const sections = $derived(sectionsForMode(panel.mode, symbol));
-  const position = $derived(positionFor(panel.snapshot, symbol));
+  // Posición escrita a mano (sin credenciales): vive en storage.session y, si el
+  // panel no sabe si hay posición, se trata como una de snapshot con fuente `manual`.
+  let manual = $state<ManualData | null>(null);
+  let showManualForm = $state(false);
+  let candles = $state<Candle[]>([]);
+  let initialStop = $state<number | null>(null);
+
+  const session = () => browser.storage?.session;
+
+  const initialStopStore: InitialStopStore = {
+    async get(key) {
+      const value = (await session()?.get(key))?.[key];
+      return typeof value === 'number' ? value : null;
+    },
+    async set(key, price) {
+      await session()?.set({ [key]: price });
+    },
+  };
+
+  $effect(() => {
+    const sym = symbol;
+    let alive = true;
+    showManualForm = false;
+    manual = null;
+    void session()
+      ?.get(manualStorageKey(sym))
+      .then((stored) => {
+        if (alive) manual = parseStoredManual(stored?.[manualStorageKey(sym)], sym);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  });
+
+  function saveManual(value: ManualData) {
+    manual = value;
+    showManualForm = false;
+    void session()?.set({ [manualStorageKey(value.symbol)]: value }).catch(() => {});
+  }
+
+  function removeManual() {
+    manual = null;
+    void session()?.remove(manualStorageKey(symbol)).catch(() => {});
+  }
+
+  const manualView = $derived(manual ? manualToPositionView(manual, lastPrice) : null);
+  const effectivePanel = $derived(withManualPosition(panel, manualView, symbol, nowMs));
+  const isManual = $derived(effectivePanel !== panel);
+  const sections = $derived(sectionsForMode(effectivePanel.mode, symbol));
+  const position = $derived(positionFor(effectivePanel.snapshot, symbol));
+
+  // Velas para el ATR: solo se piden con posición abierta.
+  $effect(() => {
+    if (effectivePanel.mode !== 'position') return;
+    const sym = symbol;
+    const tf = timeframe;
+    let alive = true;
+    const load = () =>
+      void fetchKlines(sym, tf, 100)
+        .then((rows) => {
+          if (alive) candles = rows;
+        })
+        .catch(() => {
+          if (alive) candles = [];
+        });
+    load();
+    const handle = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(handle);
+    };
+  });
+
+  $effect(() => {
+    const p = position;
+    const salt = manual && isManual ? String(manual.savedMs) : '';
+    if (!p) {
+      initialStop = null;
+      return;
+    }
+    let alive = true;
+    void rememberInitialStop(initialStopStore, p, salt).then((value) => {
+      if (alive) initialStop = value;
+    });
+    return () => {
+      alive = false;
+    };
+  });
+
+  const ruleResults = $derived(
+    position && effectivePanel.snapshot
+      ? evaluateRules(
+          buildRuleInput({
+            position,
+            snapshot: effectivePanel.snapshot,
+            candles,
+            rules: settings.rules,
+            initialStopPrice: initialStop,
+            now: nowMs,
+          }),
+        )
+      : [],
+  );
   const topViews = $derived(views.slice(0, TOP_ONE_LINERS));
   const moreViews = $derived(views.slice(TOP_ONE_LINERS));
   const rawById = $derived(
@@ -103,11 +222,27 @@
 {/snippet}
 
 {#if sections.notice}
-  <p class="mode-notice" data-testid="mode-notice" data-mode={panel.mode}>{sections.notice}</p>
+  <p class="mode-notice" data-testid="mode-notice" data-mode={effectivePanel.mode}>{sections.notice}</p>
+{/if}
+
+{#if effectivePanel.mode === 'unknown'}
+  {#if showManualForm}
+    <ManualPosition {symbol} {lastPrice} onSave={saveManual} onCancel={() => (showManualForm = false)} />
+  {:else}
+    <button type="button" class="btn small" data-testid="manual-open" onclick={() => (showManualForm = true)}>Tengo una posición</button>
+  {/if}
 {/if}
 
 {#if sections.position}
-  <PositionCard {position} stale={panel.stale} />
+  <PositionCard
+    {position}
+    snapshot={effectivePanel.snapshot}
+    {nowMs}
+    stale={effectivePanel.stale}
+    manual={isManual}
+    onRemoveManual={removeManual}
+  />
+  <RulesList results={ruleResults} />
 {:else if sections.sizing}
   <SizingCard {lastPrice} finding={selectedFinding} compact />
 {/if}
