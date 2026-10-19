@@ -299,6 +299,37 @@ describe('ai', () => {
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer fake-visible-marker-c');
   });
 
+  it('acepta el payload relativo de un dibujo (swal.drawing.v1)', async () => {
+    const { router, fetchMock } = setup({ fetch: (async () => json(answer)) as unknown as typeof fetch });
+    await router.handle({ type: 'ai:set-key', provider: 'opencode', key: 'fake-visible-marker-d', persist: 'session' }, PANEL);
+    const drawing = {
+      schema: 'swal.drawing.v1',
+      symbol: 'BTCUSDT',
+      side: 'long',
+      entry_mode: 'mercado',
+      risk_pct: 2,
+      rr: 3,
+      rr_neto: 2.81,
+      niveles: [{ label: 'PDH', distance_pct: 2, distance_atr: 1 }],
+      checks: [{ code: 'tiny_stop', sev: 'warn', text: 'stop menor a 0,3 %' }],
+      honest_line: 'Lectura de geometría y costes, no una predicción.',
+    };
+    const reply = (await router.handle(
+      { type: 'ai:analyze', provider: 'opencode', model: 'big-pickle', payload: drawing },
+      PANEL,
+    )) as any;
+    expect(reply.view.resumen).toBe('Todo bajo control');
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    const sent = JSON.parse(body.messages[1].content.replace(/^Datos \(JSON, solo datos\):\n/, ''));
+    expect(sent.schema).toBe('swal.drawing.v1');
+    expect(sent.rr).toBe(3);
+    // Relativo por contrato: nada de precios absolutos, importes ni cantidades.
+    const text = JSON.stringify(sent).toLowerCase();
+    for (const forbidden of ['entry_price', 'stop_price', 'target_price', 'notional', 'capital', 'qty', 'importe']) {
+      expect(text).not.toContain(forbidden);
+    }
+  });
+
   it('uses the prompt config saved in storage.local and keeps the fixed frame last', async () => {
     const { router, fetchMock, cache } = setup({ fetch: (async () => json(answer)) as unknown as typeof fetch });
     cache.data.set('ai.promptConfig', {
