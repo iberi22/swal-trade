@@ -1,0 +1,303 @@
+{
+ "golden": "cooldown",
+ "spec": "swal.movers-spec.v1",
+ "spec_version": "2026-10-19.1",
+ "spec_sha": "c356eba4049d8ce98a893360cd1ec8de7cf7eb790858cf456972071df197004f",
+ "tolerance": {
+  "abs": 1e-09,
+  "rel": 1e-09
+ },
+ "steps": [
+  {
+   "name": "new",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1759999800000,
+     "close_time_ms": 1760000100000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "new",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move30",
+      "move": "up",
+      "threshold": 3,
+      "window_min": 30,
+      "open_time_ms": 1759999800000,
+      "close_time_ms": 1760000100000,
+      "market_wide": false
+     },
+     "prev_threshold": null
+    }
+   ]
+  },
+  {
+   "name": "suppressed same level",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1760000100000,
+     "close_time_ms": 1760000400000,
+     "market_wide": false
+    }
+   ],
+   "expected": []
+  },
+  {
+   "name": "escalate to T5 -> update",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 5,
+     "window_min": 30,
+     "open_time_ms": 1760000400000,
+     "close_time_ms": 1760000700000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "update",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move30",
+      "move": "up",
+      "threshold": 5,
+      "window_min": 30,
+      "open_time_ms": 1760000400000,
+      "close_time_ms": 1760000700000,
+      "market_wide": false
+     },
+     "prev_threshold": 3
+    }
+   ]
+  },
+  {
+   "name": "same T5 again",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 5,
+     "window_min": 30,
+     "open_time_ms": 1760000700000,
+     "close_time_ms": 1760001000000,
+     "market_wide": false
+    }
+   ],
+   "expected": []
+  },
+  {
+   "name": "lower T3 after T5",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1760001000000,
+     "close_time_ms": 1760001300000,
+     "market_wide": false
+    }
+   ],
+   "expected": []
+  },
+  {
+   "name": "escalate to T7 -> update",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 7,
+     "window_min": 30,
+     "open_time_ms": 1760001300000,
+     "close_time_ms": 1760001600000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "update",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move30",
+      "move": "up",
+      "threshold": 7,
+      "window_min": 30,
+      "open_time_ms": 1760001300000,
+      "close_time_ms": 1760001600000,
+      "market_wide": false
+     },
+     "prev_threshold": 5
+    }
+   ]
+  },
+  {
+   "name": "other move key is independent",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "down",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1760001600000,
+     "close_time_ms": 1760001900000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "new",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move30",
+      "move": "down",
+      "threshold": 3,
+      "window_min": 30,
+      "open_time_ms": 1760001600000,
+      "close_time_ms": 1760001900000,
+      "market_wide": false
+     },
+     "prev_threshold": null
+    }
+   ]
+  },
+  {
+   "name": "other signal key is independent",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move15",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 15,
+     "open_time_ms": 1760001900000,
+     "close_time_ms": 1760002200000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "new",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move15",
+      "move": "up",
+      "threshold": 3,
+      "window_min": 15,
+      "open_time_ms": 1760001900000,
+      "close_time_ms": 1760002200000,
+      "market_wide": false
+     },
+     "prev_threshold": null
+    }
+   ]
+  },
+  {
+   "name": "same bar T3 and T5: only the highest, as new",
+   "events": [
+    {
+     "symbol": "BBBUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1760002200000,
+     "close_time_ms": 1760002500000,
+     "market_wide": false
+    },
+    {
+     "symbol": "BBBUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 5,
+     "window_min": 30,
+     "open_time_ms": 1760002200000,
+     "close_time_ms": 1760002500000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "new",
+     "event": {
+      "symbol": "BBBUSDT",
+      "signal": "move30",
+      "move": "up",
+      "threshold": 5,
+      "window_min": 30,
+      "open_time_ms": 1760002200000,
+      "close_time_ms": 1760002500000,
+      "market_wide": false
+     },
+     "prev_threshold": null
+    }
+   ]
+  },
+  {
+   "name": "479 min after first: still cooling",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 7,
+     "window_min": 30,
+     "open_time_ms": 1760028300000,
+     "close_time_ms": 1760028600000,
+     "market_wide": false
+    }
+   ],
+   "expected": []
+  },
+  {
+   "name": "480 min after first: new again",
+   "events": [
+    {
+     "symbol": "AAAUSDT",
+     "signal": "move30",
+     "move": "up",
+     "threshold": 3,
+     "window_min": 30,
+     "open_time_ms": 1760028600000,
+     "close_time_ms": 1760028900000,
+     "market_wide": false
+    }
+   ],
+   "expected": [
+    {
+     "type": "new",
+     "event": {
+      "symbol": "AAAUSDT",
+      "signal": "move30",
+      "move": "up",
+      "threshold": 3,
+      "window_min": 30,
+      "open_time_ms": 1760028600000,
+      "close_time_ms": 1760028900000,
+      "market_wide": false
+     },
+     "prev_threshold": null
+    }
+   ]
+  }
+ ]
+}

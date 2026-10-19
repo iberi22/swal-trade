@@ -1,0 +1,27 @@
+{
+  "spec": "swal.movers-spec.v1",
+  "version": "2026-10-19.1",
+  "bar_minutes": 5,
+  "tf_label": "5m",
+  "signals": {
+    "move30": {"window_min": 30},
+    "move15": {"window_min": 15},
+    "fast2": {"window_min": 2, "bar_minutes": 1, "measured": false}
+  },
+  "thresholds_pct": [3, 5, 7],
+  "vol_tiers": [
+    {"id": "hi", "min_q24": 100000000},
+    {"id": "mid", "min_q24": 20000000},
+    {"id": "lo", "min_q24": 0}
+  ],
+  "vol_baseline_bars": 24,
+  "atr_period": 14,
+  "entry_atr": 0.25,
+  "stop_atr": 1.5,
+  "min_stop_frac": 0.003,
+  "max_stop_frac": 0.05,
+  "market_wide_breadth": 0.30,
+  "cooldown_min": 480,
+  "max_events_per_bar": 10,
+  "cost_round_trip": 0.0008
+}
