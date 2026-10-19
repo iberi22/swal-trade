@@ -70,6 +70,69 @@ jobs:
       - name: Compilación a WebAssembly
         run: cargo build -p synapse-core --target wasm32-unknown-unknown --features wasm --release
 
+  mcp:
+    name: mcp (pruebas y paquete)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Pruebas del MCP
+        run: cd packages/mcp && npm ci --ignore-scripts && npm test
+      - name: Paquete instalable
+        run: cd packages/mcp && node scripts/verify-pack.mjs
+
+  extension:
+    name: extension (pruebas y build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Pruebas de la extension
+        run: cd apps/extension && npm ci --ignore-scripts && npx wxt prepare && npx vitest run
+      - name: Build de la extension
+        run: cd apps/extension && npm run build
+
+  docs:
+    name: docs (referencias y afirmaciones de seguridad)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Referencias rotas
+        run: node scripts/check-docs.mjs
+      - name: Afirmaciones de seguridad
+        run: node scripts/check-security-claims.mjs
+      - name: Pruebas de los verificadores
+        run: node --test scripts/*.test.mjs
+
+  e2e:
+    name: e2e (sitio, extension y MCP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Dependencias del navegador
+        run: cd e2e && npm ci && npx playwright install --with-deps chromium
+      - name: e2e completo
+        run: ./e2e/run-all.sh
+
   security:
     name: security (gitleaks, historial completo)
     runs-on: ubuntu-latest

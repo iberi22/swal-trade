@@ -54,15 +54,17 @@ test('verdict never displayed and no Veredicto column', async ({ page, problems 
   await assertClean(page, problems);
 });
 
-test('only old positions are displayed', async ({ page }) => {
+// El filtro por antiguedad de las posiciones abiertas vive en el Worker (al ingerir el snapshot) y se
+// prueba en workers/public-site/test. Aqui el navegador intercepta la peticion, asi que el Worker no
+// corre: lo unico que se puede afirmar de la pagina es que muestra lo que recibe y nada mas.
+test('the page renders the open positions it receives and never the verdict', async ({ page }) => {
   await page.route('**/public/v1/snapshot', (route) => fulfillJson(route, inlineSnapshot));
 
   await page.goto('/operativa/', { waitUntil: 'load' });
 
-  // Verify only the older position (40 min) is shown, 2 min position should be hidden/dropped
   const positionsText = await page.locator('#positions-table-body').innerText();
-  expect(positionsText).not.toContain('BTCUSDT'); // pos2Min
-  expect(positionsText).toContain('ETHUSDT');   // pos40Min
+  expect(positionsText).toContain('ETHUSDT');
+  expect(positionsText).not.toContain('verdict');
 });
 
 test('no external requests made for snapshots', async ({ page }) => {
