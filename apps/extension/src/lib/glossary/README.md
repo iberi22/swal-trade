@@ -11,7 +11,13 @@ it can be translated.
 | `entries.ts` | `GLOSSARY` (structure only, no prose), `entryById`, `entryForText`, `termsInText`, `normalizeTerm`. |
 | `glossary.es.json` | All Spanish text, flat dotted keys. |
 | `glossary.test.ts` | Vitest: unique aliases, valid `related`, prose keys present, `statRef` ids exist, every level kind and every analysis-core `kind` has an entry. |
-| `stats.json` | Measured reaction rates (produced elsewhere, not authored here). |
+| `stats.json` | **Optional.** Measured reaction rates, schema `swal.glossary-stats.v1` (produced elsewhere, not authored here). Absent is valid: the UI then says «sin datos suficientes». |
+| `text.ts` | Prose access: `glossaryText`, `entryText`, `uiText`, `categoryText`, `registerGlossaryCatalog` (ready for future locales). |
+| `stats.ts` | Loads/validates `stats.json` (`parseStatsFile`), `statFor(entry, side?, stats?)`, `statLine(stat)`, `noStatLine()`, `formatPct`, `formatLift`. |
+| `context-line.ts` | `trendContext(entry, 'up'|'down'|'range'|null)` and `trendFromRegimen(...)`; pure. |
+| `tooltip.ts` | `tooltipFor(entryId, opts)` / `tooltipForEntry` and `detailFor(entry, opts)`: the exact lines the UI may show. |
+| `learn.ts` | `learnEntries(query, category)`, `learnCategories()` for the Aprender tab. |
+| `learn-nav.ts` | `openInLearn(id)` / `onOpenInLearn(listener)`: the tooltip's «Ver en Aprender» channel. |
 | `../../../scripts/glossary-check.mjs` | Content linter (no dependencies). |
 
 ## Data model
@@ -69,6 +75,56 @@ placeholders `{rate} {low} {high} {baseline} {lift} {n}` (UI also uses
 - Forbidden words (checked by `glossary-check.mjs`, accent and case
   insensitive): comprar, vender, entra, senal de compra/venta, garantiz*,
   siempre, seguro; and "win rate" / "tasa de acierto" outside `glossary.stats.*`.
+
+## `stats.json` (optional, measured)
+
+Loaded with `import.meta.glob('./stats.json', { eager: true })`, so a missing
+file is not a build error. `parseStatsFile` checks the schema and drops
+malformed rows instead of showing doubtful figures.
+
+```json
+{
+  "schema": "swal.glossary-stats.v1",
+  "window_days": 90,
+  "pairs": ["BTCUSDT", "ETHUSDT"],
+  "stats": [
+    {
+      "type": "level",          // 'level' | 'pattern' (must match statRef.type)
+      "id": "prevDayHigh",      // LevelKind or analysis-core kind
+      "direction": "long",      // optional: 'long' | 'short'
+      "rate": 58.1,             // percentages, already 0-100
+      "ci_low": 55.2,           // must satisfy ci_low <= rate <= ci_high
+      "ci_high": 61.0,
+      "baseline": 50,           // what chance alone would give, in %
+      "lift_pp": 8.1,           // rate - baseline, in percentage points
+      "n": 1234,                // integer sample size
+      "grade": "promising"      // promising | no_evidence | negative | none
+    }
+  ]
+}
+```
+
+`grade: "none"` means «measured, but not enough data»: only `n` is required and
+the UI prints `glossary.stats.none`. `statFor` picks the row whose `direction`
+matches (the caller's `side` first, then `statRef.direction`), falling back to
+the row without direction.
+
+Hard rule: every figure shown to the user (rate, interval, baseline, lift, n)
+comes from this file through the `glossary.stats.*` templates. Formatting
+(`58,1 %`, `+8,1 pp`) is the only thing `stats.ts` does; no arithmetic.
+
+## UI rules (tooltips and Aprender)
+
+- `Term.svelte` shows: title, short, read, the `trendContext` line, the measured
+  line (or `glossary.ui.insufficient`), the fixed `glossary.ui.past_frequency`
+  note when a measurement exists, and «Ver en Aprender».
+- `AutoLink.svelte` wraps matched terms from a plain string with
+  `termsInText`; it never uses `{@html}`.
+- The trend comes from the MarketPulse regimen (15m/1h/4h, 1h preferred); with
+  no regimen the context line is omitted, never invented.
+- No tooltip text may contain «comprar», «vender» or «garantiz*», and no `%`
+  other than the definitional prose or the `stats.json` figures
+  (`tooltip.test.ts` enforces both).
 
 ## Adding a term
 

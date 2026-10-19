@@ -33,6 +33,7 @@
   import { browserLanguages, initI18n } from '../../lib/i18n/i18n.svelte';
   import AnalysisTab from './AnalysisTab.svelte';
   import OperationTab from './OperationTab.svelte';
+  import LearnTab from './LearnTab.svelte';
   import ScannerTab from './ScannerTab.svelte';
   import SettingsTab from './SettingsTab.svelte';
   import SidepanelFooter from './SidepanelFooter.svelte';
@@ -511,6 +512,9 @@
         {lastPrice}
         {atr}
       />
+    {/snippet}
+    {#snippet aprender()}
+      <LearnTab />
     {/snippet}
     {#snippet ajustes()}
       <SettingsTab
