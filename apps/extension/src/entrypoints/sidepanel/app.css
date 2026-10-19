@@ -674,3 +674,136 @@ select {
   box-sizing: border-box;
 }
 
+/* Pestaña Análisis (prefijo an-): tarjetas, filas de métricas y botones. */
+.an-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: hsl(var(--surface));
+  border-radius: var(--radius);
+  padding: 0.65rem 0.7rem;
+}
+
+.an-card h2 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+.an-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: hsl(var(--muted-foreground));
+}
+
+.an-note.an-honesty {
+  color: hsl(var(--subtle-foreground));
+}
+
+.an-error {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: hsl(var(--foreground));
+  background: hsl(var(--surface-strong));
+  border-radius: calc(var(--radius) - 0.3rem);
+  padding: 0.4rem 0.55rem;
+}
+
+.an-btn {
+  align-self: flex-start;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.2rem);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.an-btn:disabled {
+  background: hsl(var(--surface-strong));
+  color: hsl(var(--subtle-foreground));
+  cursor: default;
+}
+
+.an-btn.an-ghost {
+  background: hsl(var(--surface-strong));
+  color: hsl(var(--foreground));
+}
+
+.an-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.an-progress {
+  width: 100%;
+  height: 0.35rem;
+  accent-color: hsl(var(--primary));
+}
+
+.an-rows {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.6rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.an-rows dt {
+  color: hsl(var(--muted-foreground));
+}
+
+.an-rows dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.an-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.an-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.an-field input {
+  width: 6rem;
+  background: hsl(var(--background));
+  border: 0;
+  border-radius: calc(var(--radius) - 0.35rem);
+  padding: 0.25rem 0.4rem;
+}
+
+.an-pre {
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.5rem;
+  background: hsl(var(--background));
+  border-radius: calc(var(--radius) - 0.3rem);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.an-consent {
+  background: hsl(var(--surface-strong));
+  border-radius: calc(var(--radius) - 0.2rem);
+  padding: 0.55rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}

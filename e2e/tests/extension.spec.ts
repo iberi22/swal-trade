@@ -565,7 +565,7 @@ test('panel has three tabs, keyboard navigation and sections collapsed by defaul
     await page.getByRole('tab', { name: 'Operación' }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText('Análisis con IA — próximamente')).toBeVisible();
+    await expect(page.getByTestId('history-card')).toBeVisible();
     await page.keyboard.press('End');
     await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'true');
     await page.reload();
@@ -666,6 +666,66 @@ const MOCK_CREDENTIALS_SCRIPT = `
     if (type === 'acct:set-key') { window.__acctSent.push(message.kind); return Promise.resolve({ ok: true }); }
     if (type === 'acct:snapshot') return Promise.resolve({ error: 'no_key' });
     if (type === 'acct:test') return Promise.resolve(window.__testReply || { ok: false, error: 'clock' });
+/**
+ * Mock de la pestaña Análisis: cuenta con una posición larga, historial de Binance
+ * (income y userTrades con números como texto) y respuesta de `ai:analyze`.
+ * `window.__aiRequests` guarda lo que el panel mandaría al background; `__aiMode` cambia la respuesta.
+ */
+const MOCK_ANALYSIS_SCRIPT = `
+(() => {
+  const chromeApi = window.chrome;
+  if (!chromeApi || !chromeApi.runtime) return;
+  // El estrangulador del historial espera 1800 ms (income) y 300 ms (trades) entre peticiones: aquí sobran.
+  const realSetTimeout = window.setTimeout.bind(window);
+  window.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms === 1800 || ms === 300 ? 0 : ms, ...rest);
+  if (chromeApi.permissions) chromeApi.permissions.contains = async () => true;
+  const runtime = chromeApi.runtime;
+  const original = runtime.sendMessage.bind(runtime);
+  window.__aiRequests = [];
+  window.__aiMode = 'ok';
+  window.__acctGets = [];
+  const HOUR = 3600000;
+  const base = Date.now() - 48 * HOUR;
+  const fills = [];
+  const income = [];
+  for (let i = 0; i < 3; i++) {
+    const t = base + i * 4 * HOUR;
+    fills.push({ symbol: 'BTCUSDT', id: 100 + i * 2, orderId: 900 + i, side: 'BUY', price: '100.0', qty: '1.000', realizedPnl: '0', quoteQty: '100', commission: '0.05', commissionAsset: 'USDT', time: t, positionSide: 'BOTH', maker: false, buyer: true });
+    fills.push({ symbol: 'BTCUSDT', id: 101 + i * 2, orderId: 910 + i, side: 'SELL', price: i === 1 ? '98.0' : '103.0', qty: '1.000', realizedPnl: i === 1 ? '-2.0' : '3.0', quoteQty: '103', commission: '0.05', commissionAsset: 'USDT', time: t + HOUR, positionSide: 'BOTH', maker: false, buyer: false });
+    income.push({ symbol: 'BTCUSDT', incomeType: 'REALIZED_PNL', income: i === 1 ? '-2.0' : '3.0', asset: 'USDT', info: 'REALIZED_PNL', time: t + HOUR, tranId: 7000 + i, tradeId: '1' });
+  }
+  const inWindow = (rows, p) => rows.filter((r) => r.time >= p.startTime && r.time <= p.endTime);
+  runtime.sendMessage = (message, ...rest) => {
+    if (message && message.type === 'acct:snapshot') {
+      const now = Date.now();
+      const positions = message.symbol === 'BTCUSDT' ? [{
+        symbol: 'BTCUSDT', side: 'long', size: 0.1, entry: 100, mark: 105, liq: 80,
+        leverage: 5, marginType: 'cross', uPnl: 0.5, breakEven: null, notional: 10.5,
+        stop: { price: 97, kind: 'algo' }, firstFillMs: now - 60 * 60000,
+      }] : [];
+      return Promise.resolve({
+        snapshot: { fetchedAt: now, equity: 1000, dailyPnl: null, positions, fundingRate: 0.0001, nextFundingMs: now + 3600000 },
+        source: 'api', fetchedAt: now,
+      });
+    }
+    if (message && message.type === 'acct:get') {
+      window.__acctGets.push(message.path);
+      if (message.path === '/fapi/v1/income') return Promise.resolve({ data: inWindow(income, message.params) });
+      if (message.path === '/fapi/v1/userTrades') return Promise.resolve({ data: inWindow(fills, message.params) });
+      return Promise.resolve({ error: 'http_404' });
+    }
+    if (message && message.type === 'ai:analyze') {
+      window.__aiRequests.push(message);
+      if (window.__aiMode === 'rate_limit') return Promise.resolve({ view: null, reason: 'rate_limit' });
+      return Promise.resolve({ view: {
+        resumen: 'Tu posición tiene stop y margen a la liquidación.',
+        lectura: ['El stop está a 3 % del precio.'],
+        opciones: [{ accion: 'Revisar el tamaño', coste: 'menos exposición', no_aplica_si: 'ya es pequeña' }],
+        preguntas: [], faltan: [],
+        flag: window.__aiMode === 'flag' ? 'Esta respuesta afirma algo que no podemos respaldar.' : undefined,
+        disclaimer: 'Explicación educativa. No es una recomendación de compra o venta.',
+      } });
+    }
     return original(message, ...rest);
   };
 })();
@@ -720,6 +780,170 @@ test('settings tab: credential sections, password inputs, key generation and err
     // IA: el consentimiento nombra al proveedor y los campos.
     await expect(page.getByTestId('ai-consent-text')).toContainText('OpenCode');
     await expect(page.getByTestId('ai-consent-text')).toContainText('sin importes en USD ni cantidades');
+/** Guarda ajustes en storage.local y recarga el panel para que los lea. */
+async function seedSettings(page: import('@playwright/test').Page, settings: Record<string, unknown>) {
+  await page.evaluate(
+    (value) =>
+      new Promise<void>((resolve) => {
+        const api = (window as unknown as {
+          chrome: { storage: { local: { set(v: unknown, cb: () => void): void } } };
+        }).chrome;
+        api.storage.local.set({ settings: value }, resolve);
+      }),
+    settings,
+  );
+  await page.reload();
+}
+
+const KEY_META = { acctMeta: { configured: true, kind: 'ed25519', last4: 'abcd' } };
+
+test('analysis tab without a key points to Ajustes and has nothing to export', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await openTab(page, 'Análisis');
+    await expect(page.getByTestId('history-no-key')).toContainText('Ajustes');
+    await expect(page.getByRole('button', { name: /Cargar historial/ })).toHaveCount(0);
+    await expect(page.getByTestId('metrics-card')).toContainText('Aún no hay historial');
+    await expect(page.getByTestId('metrics-card')).toContainText('no predicen el futuro');
+    await expect(page.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Exportar JSON' })).toBeDisabled();
+    // La IA nunca arranca sola: sin clave ni modelo, los botones están apagados y no hay respuesta.
+    await expect(page.getByTestId('ai-position')).toBeDisabled();
+    await expect(page.getByTestId('ai-answer')).toHaveCount(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('analysis tab loads a mocked history, shows sin evidencia for n<30 and exports a CSV', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_ANALYSIS_SCRIPT);
+  try {
+    const { page } = panel;
+    await seedSettings(page, KEY_META);
+    await openTab(page, 'Análisis');
+    await page.getByRole('button', { name: 'Cargar historial (6 meses)' }).click();
+
+    const card = page.getByTestId('metrics-card');
+    await expect(card).toContainText('Operaciones (n)');
+    await expect(card.locator('dt', { hasText: 'Operaciones (n)' }).locator('+ dd')).toHaveText('3');
+    await expect(page.getByTestId('metrics-grade')).toContainText('sin evidencia');
+    await expect(card).toContainText('Ganadoras');
+    await expect(card).toContainText('IC 95 %');
+    await expect(card).not.toContainText(/probabilidad/i);
+    await expect(page.getByTestId('metrics-partial')).toHaveCount(0);
+    const paths = await page.evaluate(() => (window as unknown as { __acctGets: string[] }).__acctGets);
+    expect(paths).toContain('/fapi/v1/income');
+    expect(paths).toContain('/fapi/v1/userTrades');
+
+    const [csv] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Exportar CSV' }).click(),
+    ]);
+    expect(csv.suggestedFilename()).toMatch(/^swal-historial-\d{4}-\d{2}-\d{2}\.csv$/);
+    const path = await csv.path();
+    const text = await readFile(path!, 'utf8');
+    expect(text.split('\n')[0]).toContain('simbolo,lado,apertura_iso');
+    expect(text.trim().split('\n')).toHaveLength(4);
+
+    const [json] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Exportar JSON' }).click(),
+    ]);
+    expect(json.suggestedFilename()).toMatch(/\.json$/);
+    expect(JSON.parse(await readFile((await json.path())!, 'utf8')).n).toBe(3);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('AI card asks for consent before the first ai:analyze, then answers as plain text', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_ANALYSIS_SCRIPT);
+  try {
+    const { page } = panel;
+    await seedSettings(page, {
+      ...KEY_META,
+      ai: { provider: 'opencode', model: 'qwen-test-free', redaction: 'relative', consentedProviders: [] },
+    });
+    await openTab(page, 'Análisis');
+    const aiRequests = () => page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
+
+    // Aviso de modelo gratuito antes de enviar nada.
+    await expect(page.getByTestId('ai-free-warning')).toContainText('pueden usar lo que envías para entrenar');
+    const button = page.getByRole('button', { name: 'Analizar mi posición' });
+    await expect(button).toBeEnabled();
+    await button.click();
+
+    // Sin consentimiento previo: pantalla con el proveedor y los campos, y todavía ninguna petición.
+    const consent = page.getByTestId('ai-consent');
+    await expect(consent).toBeVisible();
+    await expect(consent).toContainText('OpenCode');
+    await expect(consent).toContainText('riesgo en % del capital');
+    expect(await aiRequests()).toBe(0);
+
+    await page.getByTestId('ai-consent-accept').click();
+    const answer = page.getByTestId('ai-answer');
+    await expect(answer).toContainText('Tu posición tiene stop');
+    await expect(answer).toContainText('Revisar el tamaño');
+    await expect(page.getByTestId('ai-disclaimer')).toContainText('No es una recomendación de compra o venta');
+    await expect(page.getByTestId('ai-flag')).toHaveCount(0);
+    expect(await aiRequests()).toBe(1);
+
+    const stored = await page.evaluate(
+      () =>
+        new Promise<{ settings?: { ai?: { consentedProviders?: string[] } } }>((resolve) => {
+          const api = (window as unknown as {
+            chrome: { storage: { local: { get(k: string, cb: (v: unknown) => void): void } } };
+          }).chrome;
+          api.storage.local.get('settings', (value) => resolve(value as never));
+        }),
+    );
+    expect(stored.settings?.ai?.consentedProviders).toContain('opencode');
+
+    // Con el consentimiento dado, el siguiente clic manda directo; el error se explica en español.
+    await page.evaluate(() => ((window as unknown as { __aiMode: string }).__aiMode = 'rate_limit'));
+    await button.click();
+    await expect(page.getByTestId('ai-consent')).toHaveCount(0);
+    await expect(page.getByTestId('ai-error')).toContainText('limitó las peticiones');
+    expect(await aiRequests()).toBe(2);
+
+    // La bandera de promesa se muestra y la respuesta nunca se interpreta como HTML.
+    await page.evaluate(() => ((window as unknown as { __aiMode: string }).__aiMode = 'flag'));
+    await button.click();
+    await expect(page.getByTestId('ai-flag')).toContainText('no podemos respaldar');
+    expect(await page.locator('[data-testid="ai-answer"] script, [data-testid="ai-answer"] img').count()).toBe(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('"Ver lo que se envía" shows the exact JSON and relative mode carries no USD amounts', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_ANALYSIS_SCRIPT);
+  try {
+    const { page } = panel;
+    await seedSettings(page, {
+      ...KEY_META,
+      ai: { provider: 'opencode', model: 'qwen-test', redaction: 'relative', consentedProviders: [] },
+    });
+    await openTab(page, 'Análisis');
+    const details = page.getByTestId('ai-preview');
+    await details.locator('summary').click();
+    const pre = page.getByTestId('ai-preview-position');
+    await expect(pre).toBeVisible();
+    const text = (await pre.textContent()) ?? '';
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    expect(payload.schema).toBe('swal.position.v1');
+    expect(payload.redaction).toBe('relative');
+    expect(payload.stop).toBe('present');
+    // Ni precios, ni capital, ni nocional, ni cantidad.
+    expect(text.replace('BTCUSDT', 'SYMBOL')).not.toMatch(/precios|"equity"|notional|usd|"size"|"entry"|"mark"/i);
+    for (const value of ['105', '1000', '10.5', '97"', '80']) expect(text).not.toContain(`:${value.replace('"', '')}`);
+    // Ver el texto no envía nada.
+    const sent = await page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
+    expect(sent).toBe(0);
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();

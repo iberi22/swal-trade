@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="index,follow">
   <title>Privacidad de la extensión SWAL Trade</title>
-  <meta name="description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance y titulares en trade.swal.network. Sin claves, sin seguimiento y sin cuenta.">
+  <meta name="description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance, titulares y, solo si lo configuras, una clave de solo lectura que no sale del navegador. Sin seguimiento.">
   <link rel="canonical" href="https://trade.swal.network/extension-privacy/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="SWAL Trade">
   <meta property="og:title" content="Privacidad de la extensión SWAL Trade">
-  <meta property="og:description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance y titulares en trade.swal.network. Sin claves, sin seguimiento y sin cuenta.">
+  <meta property="og:description" content="Qué sale del navegador con la extensión SWAL Trade: velas públicas de Binance, titulares y, solo si lo configuras, una clave de solo lectura que no sale del navegador. Sin seguimiento.">
   <meta property="og:url" content="https://trade.swal.network/extension-privacy/">
   <meta property="og:locale" content="es_CO">
   <meta name="twitter:card" content="summary">
@@ -44,10 +44,10 @@
     <p class="eyebrow">Extensión de navegador · versión 0.1.0</p>
     <h1>Privacidad de la extensión</h1>
     <p class="lead">Este aviso cubre solo la extensión SWAL Trade para Chrome y Firefox. Describe qué sale del navegador. La política del sitio está en <a href="/privacy/">/privacy/</a>.</p>
-    <p>La extensión explica patrones sobre el gráfico del símbolo que tienes abierto en Binance Futures o TradingView. No es un servicio de señales. No abre ni cierra operaciones y no promete resultados. Lo medimos en BTC y ETH (1 minuto a 4 horas, regla de cierre, con comisiones y corrección estadística, 2026-10) y ningún patrón superó al azar.</p>
+    <p>La extensión explica patrones sobre el gráfico del símbolo que tienes abierto en Binance Futures o TradingView y, solo si tú lo configuras, te ayuda a gestionar el riesgo de tu propia posición. No es un servicio de señales. No abre ni cierra operaciones y no promete resultados. Lo medimos en BTC y ETH (1 minuto a 4 horas, regla de cierre, con comisiones y corrección estadística, 2026-10) y ningún patrón superó al azar.</p>
 
     <h2>Qué sale del navegador</h2>
-    <p>Solo estas peticiones. La extensión no añade claves, cabeceras de autenticación ni una cookie propia. El símbolo y la temporalidad van en la URL porque el dato de mercado público se pide así.</p>
+    <p>Solo estas peticiones. Sin una clave de solo lectura configurada, la extensión no añade claves, cabeceras de autenticación ni una cookie propia. El símbolo y la temporalidad van en la URL porque el dato de mercado público se pide así.</p>
     <table>
       <thead>
         <tr><th>Destino</th><th>Qué lleva la URL</th><th>Cuándo</th></tr>
@@ -83,22 +83,47 @@
           <td>nada propio: es el índice público de miedo y codicia</td>
           <td>como mucho una vez por hora; el valor se guarda en el almacenamiento de la extensión</td>
         </tr>
+        <tr>
+          <td><code>GET https://fapi.binance.com/fapi/v1/time</code>, <code>/fapi/v2/positionRisk</code>, <code>/fapi/v3/account</code>, <code>/fapi/v1/openOrders</code>, <code>/fapi/v1/openAlgoOrders</code>, <code>/fapi/v1/userTrades</code>, <code>/fapi/v1/income</code>, <code>/fapi/v1/premiumIndex</code></td>
+          <td>peticiones firmadas con tu clave de solo lectura (la clave viaja solo en la cabecera hacia Binance); el símbolo y rangos de fechas</td>
+          <td>solo si configuras una clave: cada pocos segundos mientras el panel se ve (posición) y al pulsar «Cargar historial» (hasta unos 6 meses)</td>
+        </tr>
+        <tr>
+          <td><code>GET https://api.binance.com/sapi/v1/account/apiRestrictions</code></td>
+          <td>petición firmada que comprueba que la clave no tiene retiros habilitados</td>
+          <td>al configurar la clave</td>
+        </tr>
+        <tr>
+          <td>El proveedor de IA que elijas (OpenCode, OpenRouter, OpenAI, Anthropic, Gemini o un Ollama local en tu equipo)</td>
+          <td>la carga útil que ves en «Ver lo que se envía», con tu propia clave de ese proveedor</td>
+          <td>solo cuando pulsas «Analizar mi posición» o «Analizar mi historial», tras aceptar una pantalla de consentimiento</td>
+        </tr>
       </tbody>
     </table>
     <p>Como en cualquier conexión HTTPS o websocket, Binance, trade.swal.network y alternative.me ven la dirección IP de esa conexión. La extensión no le pone un identificador de usuario, no la guarda en una cuenta y no la cruza con una identidad. No hay analítica ni píxeles de seguimiento.</p>
-    <p>Si enciendes «Explicaciones con IA» en la tarjeta Explicación del panel, la extensión envía el símbolo, la temporalidad y los patrones detectados (con sus niveles) a <code>POST https://trade.swal.network/api/explain</code>. Nunca envía datos de tu cuenta: no lee balances, órdenes ni claves. El interruptor arranca apagado, la respuesta se pinta como texto y el servicio limita las peticiones por dirección IP.</p>
+    <p>Si enciendes «Explicaciones con IA» en la tarjeta Explicación del panel, la extensión envía el símbolo, la temporalidad y los patrones detectados (con sus niveles) a <code>POST https://trade.swal.network/api/explain</code>. Esa explicación nunca incluye datos de tu cuenta. El interruptor arranca apagado, la respuesta se pinta como texto y el servicio limita las peticiones por dirección IP.</p>
 
     <p><strong>Puente local con Claude Code (opcional):</strong> si activas el puente local en los Ajustes de la extensión para permitir que un agente local de IA (Claude Code vía el servidor MCP swal-trade) lea y dibuje niveles en el gráfico abierto, la comunicación ocurre exclusivamente de forma local en tu máquina a través de <code>ws://127.0.0.1</code> y un token secreto de emparejamiento. Esos datos nunca salen a los servidores de SWAL ni a internet: todo permanece en tu ordenador.</p>
 
     <p><strong>Radar local (opcional):</strong> si el servicio local swal-radar está activo en tu máquina, la extensión consulta <code>http://127.0.0.1</code> para leer las alertas de entrada y sus resultados medidos. Esos datos se procesan únicamente en tu máquina y nunca salen a internet ni a los servidores de SWAL.</p>
 
+    <h2>Clave de solo lectura, historial e IA propia (opcional)</h2>
+    <p>Si pegas una clave de API de solo lectura, o generas una dentro de la extensión, el panel lee tu posición abierta, tus órdenes de stop, tu capital y el historial de futuros de los últimos meses para mostrar reglas de riesgo y métricas. La extensión comprueba que la clave no tenga retiros habilitados y la rechaza si los tiene. Solo existen rutas de lectura: la extensión no puede abrir, cerrar ni cancelar órdenes.</p>
+    <ul>
+      <li><strong>La clave no sale del navegador</strong> salvo dentro de las peticiones firmadas a Binance de la tabla. Se guarda en la bóveda de la extensión (IndexedDB de su origen); una clave Ed25519 generada aquí no es exportable. Nunca llega a servidores de SWAL.</li>
+      <li><strong>El historial y las métricas se calculan en tu navegador</strong> y se quedan en el IndexedDB de la extensión. Puedes exportarlos a CSV o JSON; el archivo se guarda en tu equipo y no se sube a ningún sitio.</li>
+      <li><strong>La IA es tuya y es opcional.</strong> Elegir un proveedor y pegar tu clave no envía nada. Solo al pulsar un botón, y tras aceptar una pantalla que nombra al proveedor y los campos, la extensión envía una carga útil pequeña a ese proveedor y solo a él. Por defecto lleva solo cifras relativas (porcentajes, R, apalancamiento, banderas): nada de importes en USD, cantidades, capital, ids ni fechas absolutas. Puedes ver el texto exacto en «Ver lo que se envía». No pasa por servidores de SWAL.</li>
+      <li><strong>Lo que hace el proveedor con esos datos queda fuera de nuestro control.</strong> Los modelos gratuitos (<code>-free</code>) pueden usar lo que envías para entrenar; el panel lo avisa. La respuesta del modelo se muestra como texto y nunca como código.</li>
+      <li>Una clave con futuros habilitados, aunque la extensión solo use rutas de lectura, podría operar en Binance con otro programa. Usa una clave de solo lectura con IP restringida. Detalle de las garantías y de lo que no se garantiza: <a href="https://github.com/iberi22/swal-trade/blob/main/docs/SECURITY_MODEL.md" rel="noopener">SECURITY_MODEL.md</a>.</li>
+    </ul>
+
     <h2>Qué no sale</h2>
     <ul>
-      <li>No pedimos ni enviamos claves de API, balances, órdenes, posiciones ni datos de cuenta. Con el interruptor encendido, la extensión crea dibujos bloqueados sobre el propio gráfico de Binance; nunca lee la cuenta. El comando de pintado se envía a las pestañas abiertas de futuros de Binance.</li>
+      <li>Sin una clave de solo lectura configurada, no se lee ni se envía ningún dato de cuenta. Con una, la lectura va solo a Binance (tabla de arriba); ni la clave, ni los balances, ni las órdenes, ni las posiciones, ni el historial llegan a servidores de SWAL. Con el interruptor de pintar encendido, la extensión crea dibujos bloqueados sobre el propio gráfico de Binance; ese dibujo no lee la cuenta. El comando de pintado se envía a las pestañas abiertas de futuros de Binance.</li>
       <li>No leemos cookies, formularios ni el historial del navegador.</li>
       <li>El content script, en <code>binance.com/*/futures/*</code> y <code>tradingview.com/chart/*</code> (y, para pintar, el iframe del mismo origen <code>binance.com/static/chart/tradingview/*</code> donde Binance monta el gráfico), lee la URL, el control de temporalidad visible y, solo si la página no lo pinta, el valor de unas claves concretas de intervalo en <code>localStorage</code>. No enumera el almacenamiento. Ese valor se queda en el navegador, salvo el símbolo y la temporalidad que ya viajan en las peticiones de arriba.</li>
-      <li>Los ajustes (temporalidad por defecto, lista de símbolos y si el panel sigue a la página) se guardan en <code>storage.local</code> de la extensión. El último símbolo de la sesión, en <code>storage.session</code>. No se envían a SWAL.</li>
-      <li>Los hallazgos se calculan en el panel. No hay código remoto: la CSP de las páginas de la extensión es <code>script-src 'self'</code>.</li>
+      <li>Los ajustes (temporalidad por defecto, lista de símbolos, reglas de riesgo y si el panel sigue a la página) se guardan en <code>storage.local</code> de la extensión. El último símbolo de la sesión, en <code>storage.session</code>. No se envían a SWAL.</li>
+      <li>Los hallazgos y las métricas se calculan en el panel. No hay código remoto: la CSP de las páginas de la extensión es <code>script-src 'self'</code>.</li>
     </ul>
 
     <h2>Titulares</h2>
@@ -109,7 +134,7 @@
     <div class="warn">No es asesoría financiera; operar futuros con apalancamiento puede hacerte perder todo tu capital. Lee el <a href="/risk/">aviso de riesgo</a>.</div>
 
     <h2>In English</h2>
-    <p>This notice covers only the SWAL Trade browser extension (Chrome and Firefox). It explains chart patterns. It is not a signal service, it does not place orders, and it does not promise results. We measured BTC and ETH, from 1 minute to 4 hours, with a close rule, fees, and a multiplicity correction (2026-10): no pattern beat random.</p>
+    <p>This notice covers only the SWAL Trade browser extension (Chrome and Firefox). It explains chart patterns and, only if you set it up, helps you manage the risk of your own position. It is not a signal service, it does not place orders, and it does not promise results. We measured BTC and ETH, from 1 minute to 4 hours, with a close rule, fees, and a multiplicity correction (2026-10): no pattern beat random.</p>
     <p>What leaves the browser:</p>
     <ul>
       <li>Public candles: <code>GET https://fapi.binance.com/fapi/v1/klines</code> with the symbol, the timeframe, and a candle limit.</li>
@@ -117,8 +142,10 @@
       <li>Headlines, and only for BTC or ETH: <code>GET https://trade.swal.network/api/news?symbol=BTC|ETH&amp;limit=5</code>.</li>
       <li>Market pulse, only while the panel is open: the public order book <code>GET https://fapi.binance.com/fapi/v1/depth</code> every 15 s, public liquidations on <code>wss://fstream.binance.com/market/ws/&lt;symbol&gt;@forceOrder</code>, and the public Fear and Greed index <code>GET https://api.alternative.me/fng/?limit=1</code> at most once an hour.</li>
     </ul>
-    <p>The extension adds no API key, no auth header, and no cookie of its own. It does not read account data, balances, orders, forms, cookies, or browsing history. With the toggle on, the extension creates locked drawings directly on the page's chart, but it never reads the account; the paint command is delivered to open Binance futures tabs. The content scripts run on <code>binance.com/*/futures/*</code>, <code>tradingview.com/chart/*</code> and, for painting, the same-origin chart iframe <code>binance.com/static/chart/tradingview/*</code>. They read the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
-    <p>If you turn on &quot;AI explanations&quot; in the panel's Explanation card, the extension sends the symbol, the timeframe, and the detected patterns (with their levels) to <code>POST https://trade.swal.network/api/explain</code>. It never sends account data: it does not read balances, orders, or keys. The switch starts off, the answer is rendered as text, and the service rate-limits each IP address.</p>
+    <p>Without a read-only key configured, the extension adds no API key, no auth header, and no cookie of its own, and it reads no account data. It never reads forms, cookies, or browsing history. With the toggle on, the extension creates locked drawings directly on the page's chart, that drawing never reads the account; the paint command is delivered to open Binance futures tabs. The content scripts run on <code>binance.com/*/futures/*</code>, <code>tradingview.com/chart/*</code> and, for painting, the same-origin chart iframe <code>binance.com/static/chart/tradingview/*</code>. They read the chart URL, the visible timeframe control, and, only when the page does not show it, the value of a few known interval keys in <code>localStorage</code>. It does not enumerate storage. Settings stay in extension storage. Findings are computed in the panel. There is no analytics and no remote code.</p>
+    <p>If you turn on &quot;AI explanations&quot; in the panel's Explanation card, the extension sends the symbol, the timeframe, and the detected patterns (with their levels) to <code>POST https://trade.swal.network/api/explain</code>. That explanation never includes account data. The switch starts off, the answer is rendered as text, and the service rate-limits each IP address.</p>
+    <p><strong>Read-only key, history and your own AI (optional).</strong> If you paste a read-only API key, or generate one inside the extension, the panel reads your open position, your stop orders, your equity and your futures history of the last months to show risk rules and metrics, using signed <code>GET</code> requests to <code>fapi.binance.com</code> from a closed list of read paths (and one check at <code>api.binance.com/sapi/v1/account/apiRestrictions</code>). The extension rejects keys with withdrawals enabled and has no write routes: it cannot place, close, or cancel orders. The key never leaves the browser except inside those signed requests to Binance; it is stored in the extension's vault, and a key generated here is non-extractable. History and metrics are computed in your browser and stay in the extension's IndexedDB. CSV/JSON exports are saved on your computer and uploaded nowhere.</p>
+    <p>AI analysis is optional and yours: nothing is sent until you press a button and accept a consent screen naming the provider and the fields. Then a small payload goes to that provider only, with your own key, and never through SWAL servers. By default it holds only relative figures (percentages, R, leverage, flags): no USD amounts, quantities, equity, ids, or absolute timestamps, and you can read the exact text under &quot;See what is sent&quot;. What the provider does with it is outside our control, and free (<code>-free</code>) models may train on what you send; the panel warns you. The reply is shown as plain text, never as code. A key with futures enabled could trade on Binance from another program even though this extension has read routes only: use a read-only key with an IP allowlist. Details: <a href="https://github.com/iberi22/swal-trade/blob/main/docs/SECURITY_MODEL.md" rel="noopener">SECURITY_MODEL.md</a>.</p>
     <p><strong>Local Claude Code bridge (optional):</strong> If you enable the local bridge in the extension Settings to let a local AI agent (Claude Code via swal-trade MCP server) read and paint levels on the open chart, communication takes place exclusively on your local machine over <code>ws://127.0.0.1</code> using a pairing token. That data never leaves your computer or reaches SWAL servers.</p>
 
     <p><strong>Local radar (optional):</strong> If the local swal-radar service is active on your machine, the extension queries <code>http://127.0.0.1</code> to read entry alerts and measured outcomes. That data is processed solely on your computer and never leaves your machine or reaches SWAL servers.</p>
