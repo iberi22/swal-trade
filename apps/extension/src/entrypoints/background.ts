@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { parseRuntimeMessage } from '../lib/messages';
+import { isPrivilegedType, parseRuntimeMessage } from '../lib/messages';
 import { requestResolution, TIMEFRAME_TO_RESOLUTION } from '../lib/tv-paint-send';
 import type { Timeframe } from '../lib/types';
 import type { TvChartState } from '../lib/tv-paint';
@@ -8,6 +8,25 @@ import type { MarketContext } from '../lib/types';
 import { loadSettings, SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
 import { ClaudeBridgeClient, type BridgeChartState } from '../lib/claude-bridge';
 import { sendPaintCommand } from '../lib/tv-paint-send';
+import { createRouter, type KeyValueStore } from '../lib/background/router';
+import { createSignedClient } from '../lib/account/binance-signed';
+import { createIdbVault } from '../lib/account/idb-vault';
+import { chat } from '../lib/ai/llm-client';
+
+function storageStore(area: 'local' | 'session'): KeyValueStore {
+  const api = () => browser.storage[area];
+  return {
+    async get(key) {
+      return (await api()?.get(key))?.[key];
+    },
+    async set(key, value) {
+      await api()?.set({ [key]: value });
+    },
+    async remove(key) {
+      await api()?.remove(key);
+    },
+  };
+}
 
 const STORAGE_KEY = 'marketContext';
 
@@ -123,6 +142,28 @@ export default defineBackground(() => {
   } catch {
     // storage.onChanged no disponible en este entorno
   }
+
+  // Cuenta e IA: enrutador puro con guarda de remitente. No toca los mensajes
+  // de abajo (devuelve null y deja que los atienda el otro oyente).
+  const router = createRouter({
+    runtimeId: browser.runtime.id,
+    extensionUrl: browser.runtime.getURL('/'),
+    vault: createIdbVault(),
+    now: () => Date.now(),
+    fetch: (input, init) => fetch(input, init),
+    makeClient: (signer) =>
+      createSignedClient({ fetch: (input, init) => fetch(input, init), signer, now: () => Date.now() }),
+    chat: (request) => chat(request, { fetch: (input, init) => fetch(input, init) }),
+    loadSettings: () => loadSettings(),
+    cache: storageStore('local'),
+    session: storageStore('session'),
+  });
+
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!isPrivilegedType((message as { type?: unknown } | null)?.type)) return;
+    void router.handle(message, sender).then((reply) => sendResponse(reply));
+    return true;
+  });
 
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message && typeof message === 'object' && (message as { type?: unknown }).type === 'get-claude-bridge-status') {

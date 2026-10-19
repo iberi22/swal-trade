@@ -5,6 +5,47 @@ import { analysisCoreAlias } from './analysis-alias';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
+// Rutas de fapi: velas y libro (pulso) más las de solo lectura de la cuenta.
+// Chrome ignora las rutas en los permisos de host; lo que limita el alcance es
+// `connect-src` de la CSP.
+const FAPI_PATHS = [
+  '/fapi/v1/klines*',
+  '/fapi/v1/depth*',
+  '/fapi/v1/time*',
+  '/fapi/v2/positionRisk*',
+  '/fapi/v3/account*',
+  '/fapi/v1/openOrders*',
+  '/fapi/v1/openAlgoOrders*',
+  '/fapi/v1/userTrades*',
+  '/fapi/v1/income*',
+  '/fapi/v1/premiumIndex*',
+];
+
+// Se piden en tiempo de ejecucion: clave de lectura (sapi) y proveedores de IA.
+const OPTIONAL_HOSTS = [
+  'https://api.binance.com/sapi/v1/account/apiRestrictions*',
+  'https://opencode.ai/inference/*',
+  'https://openrouter.ai/api/*',
+  'https://api.openai.com/v1/*',
+  'https://api.anthropic.com/v1/*',
+  'https://generativelanguage.googleapis.com/*',
+];
+
+// En la CSP el `*` final no es comodin: la ruta sin el va como prefijo.
+const cspPath = (url: string) => url.replace(/\*$/, '');
+
+const CONNECT_SRC = [
+  ...FAPI_PATHS.map((path) => cspPath(`https://fapi.binance.com${path}`)),
+  'wss://fstream.binance.com',
+  'https://api.alternative.me/fng/',
+  'https://trade.swal.network/api/',
+  'http://127.0.0.1:*',
+  'ws://127.0.0.1:*',
+  ...OPTIONAL_HOSTS.map(cspPath),
+];
+
+const CSP = `script-src 'self'; object-src 'self'; connect-src ${CONNECT_SRC.join(' ')}`;
+
 /**
  * Permisos mínimos. `sidePanel` solo existe en Chromium; Firefox usa
  * `sidebar_action`, que WXT añade al ver el entrypoint sidepanel.
@@ -47,9 +88,8 @@ export default defineConfig({
       // El iframe de la pestaña Trading View. Es donde se pinta.
       'https://www.binance.com/static/chart/tradingview/*',
       'https://www.tradingview.com/chart/*',
-      'https://fapi.binance.com/fapi/v1/klines*',
+      ...FAPI_PATHS.map((path) => `https://fapi.binance.com${path}`),
       // Pulso de mercado: muros del libro e índice de miedo/codicia.
-      'https://fapi.binance.com/fapi/v1/depth*',
       'https://api.alternative.me/fng/*',
       'wss://fstream.binance.com/*',
       'https://trade.swal.network/api/news*',
@@ -61,11 +101,12 @@ export default defineConfig({
       // Radar local: lectura de alertas y estadísticas en localhost.
       'http://127.0.0.1/*',
     ],
+    optional_host_permissions: OPTIONAL_HOSTS,
     action: {
       default_title: '__MSG_actionTitle__',
     },
     content_security_policy: {
-      extension_pages: "script-src 'self'; object-src 'self'",
+      extension_pages: CSP,
     },
     ...(browser === 'firefox'
       ? {
