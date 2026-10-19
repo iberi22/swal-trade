@@ -3,6 +3,8 @@
   import { browser } from 'wxt/browser';
   import {
     calculatePositionSize,
+    defaultScaleEntries,
+    planScaleIn,
     DEFAULT_SIZING_PREFERENCES,
     invalidationPriceFromFinding,
     normalizeSizingPreferences,
@@ -57,6 +59,23 @@
   const numStop = $derived(parseFloat(stopStr));
   const hasInputs = $derived(Number.isFinite(numEntry) && numEntry > 0 && Number.isFinite(numStop) && numStop > 0);
   const result = $derived(hasInputs ? calculatePositionSize({ capital, riskPct, direction, entry: numEntry, stop: numStop }) : null);
+
+  let e2Str = $state('');
+  let e3Str = $state('');
+  let userEditedScale = $state(false);
+
+  $effect(() => {
+    if (userEditedScale) return;
+    const d = hasInputs ? defaultScaleEntries({ direction, entry: numEntry, stop: numStop }) : null;
+    e2Str = d ? String(d.entry2) : '';
+    e3Str = d ? String(d.entry3) : '';
+  });
+
+  const scalePlan = $derived(
+    hasInputs && parseFloat(e2Str) > 0 && parseFloat(e3Str) > 0
+      ? planScaleIn({ capital, riskPct, direction, entry1: numEntry, entry2: parseFloat(e2Str), entry3: parseFloat(e3Str), stop: numStop })
+      : null,
+  );
 
   const priceFmt = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 4 });
   const usdFmt = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -123,6 +142,36 @@
       <p class="summary-line" data-testid="sizing-summary">{result.summary}</p>
       <p class="fee-line">comisiones aprox. ~{usdFmt.format(result.feeUsd)} USD (taker 0,05 % al entrar y al salir)</p>
       {#if !compact}<p class="leverage-note">Más apalancamiento no cambia la pérdida si salta el stop; solo acerca la liquidación.</p>{/if}
+      <details class="fold" data-testid="scale-in">
+        <summary>Escalonar en 3 tramos</summary>
+        <div class="sz-body">
+          <div class="sz-inputs">
+            <label class="field">
+              <span class="label-text">Entrada 2</span>
+              <input type="number" step="any" aria-label="Entrada del tramo 2" value={e2Str} oninput={(e) => { userEditedScale = true; e2Str = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+            <label class="field">
+              <span class="label-text">Entrada 3</span>
+              <input type="number" step="any" aria-label="Entrada del tramo 3" value={e3Str} oninput={(e) => { userEditedScale = true; e3Str = (e.currentTarget as HTMLInputElement).value; }} />
+            </label>
+          </div>
+          {#if scalePlan && scalePlan.valid}
+            <ul class="sz-lines" data-testid="scale-in-tranches">
+              {#each scalePlan.tranches as t, i}
+                <li>Tramo {i + 1} ({Math.round(scalePlan.weights[i] * 100)} %): {priceFmt.format(t.price)} · {priceFmt.format(t.qty)}</li>
+              {/each}
+            </ul>
+            <p class="sz-line" data-testid="scale-in-avg">Media si se llenan todos: {priceFmt.format(scalePlan.avgByFill[scalePlan.avgByFill.length - 1])}</p>
+            <p class="sz-line">Punto de equilibrio con comisión: {priceFmt.format(scalePlan.breakEvenByFill[scalePlan.breakEvenByFill.length - 1])}</p>
+            <p class="sz-line" data-testid="scale-in-loss-all">Si se llenan todos y salta el stop: -{usdFmt.format(scalePlan.lossIfAllFillAndStop)} USD</p>
+            <p class="sz-line" data-testid="scale-in-loss-first">Si solo se llena el primero: -{usdFmt.format(scalePlan.lossIfOnlyFirstFillsAndStop)} USD</p>
+            {#each scalePlan.notes as n}<p class="sz-line">{n}</p>{/each}
+            <p class="sz-note" data-testid="scale-in-honest">{scalePlan.honestNote}</p>
+          {:else if scalePlan}
+            <p class="error-line" data-testid="scale-in-error">{scalePlan.error}</p>
+          {/if}
+        </div>
+      </details>
     {:else}
       <p class="error-line" data-testid="sizing-error">{result.error}</p>
     {/if}

@@ -1029,3 +1029,40 @@ select {
   display: flex;
   gap: 0.4rem;
 }
+
+.sz-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+}
+
+.sz-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.sz-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.sz-line {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.sz-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  background: hsl(var(--surface-strong));
+  padding: 0.35rem 0.5rem;
+  border-radius: calc(var(--radius) - 0.3rem);
+}
