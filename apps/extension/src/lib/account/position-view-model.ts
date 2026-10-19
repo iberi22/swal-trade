@@ -132,16 +132,26 @@ export interface PositionCardView {
   noStop: boolean;
 }
 
+export interface PositionCardOptions {
+  stale?: boolean;
+  manual?: boolean;
+  /** De dónde salió el dato (`página de Binance`, por ejemplo). */
+  sourceLabel?: string | null;
+  /** Aviso de antigüedad del dato de la página (`datos de la página de hace 75 s`). */
+  staleNote?: string | null;
+}
+
 /** Tarjeta de posición: 6 líneas como máximo. */
 export function positionCardView(
   position: PositionView,
   snapshot: AccountSnapshot | null,
   now: number,
-  opts: { stale?: boolean; manual?: boolean } = {},
+  opts: PositionCardOptions = {},
 ): PositionCardView {
   const side = position.side === 'long' ? 'LARGO' : 'CORTO';
   const margin = position.marginType === 'isolated' ? 'aislado' : 'cruzado';
   let header = `${side} · ${num(position.size, 6)} ${position.symbol} · ${num(position.leverage, 0)}x · ${margin}`;
+  if (opts.sourceLabel) header += ` · ${opts.sourceLabel}`;
   if (opts.manual) header += ' · MANUAL';
   if (opts.stale) header += ' · CADUCADO';
 
@@ -160,5 +170,7 @@ export function positionCardView(
     const eta = snapshot.nextFundingMs !== null ? ` · cobro en ${fundingCountdown(snapshot.nextFundingMs, now)}` : '';
     lines.push(`Funding ${snapshot.fundingRate > 0 ? '+' : ''}${num(snapshot.fundingRate * 100, 4)} %${eta}`);
   }
+  // El aviso de antigüedad va al final para no tapar el precio ni la liquidación.
+  if (opts.staleNote) lines.push(opts.staleNote);
   return { lines: lines.slice(0, 6), noStop: sd === null };
 }

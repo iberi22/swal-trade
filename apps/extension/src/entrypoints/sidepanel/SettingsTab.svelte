@@ -95,6 +95,26 @@
       tarjeta «Tu dibujo» de Operación enseña su análisis. No se crea ni se mueve ningún dibujo.
     </p>
   {/if}
+
+  <!-- Solo lectura de la página: ni clics ni escrituras, y nada sale del navegador. -->
+  <label class="field check paint-toggle">
+    <input
+      type="checkbox"
+      disabled={!settingsLoaded}
+      checked={settings.readPageAccount}
+      data-testid="settings-read-page-account"
+      onchange={(event) => {
+        applySettings({
+          ...settings,
+          readPageAccount: (event.currentTarget as HTMLInputElement).checked,
+        });
+      }}
+    />
+    <span>Leer mis posiciones e historial de la página de Binance (solo en este navegador)</span>
+  </label>
+  <p class="hint" data-testid="read-page-account-hint">
+    Lee el texto que ya ves en la página. No pulsa nada y no sale de tu navegador.
+  </p>
 </div>
 
 
