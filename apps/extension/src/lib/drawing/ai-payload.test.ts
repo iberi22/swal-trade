@@ -15,7 +15,7 @@ const level = (price: number, label: string, kind: LevelKind = 'ema20_1h'): Leve
   distanceAtr: null,
 });
 
-const analysis = analyzeDrawing({
+const result = analyzeDrawing({
   drawing: { id: 'd1', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
   price: 110,
   levels: [level(101.5, 'Pivote', 'pivot'), level(102.5, 'EMA20 1h')],
@@ -24,6 +24,8 @@ const analysis = analyzeDrawing({
   rules,
   fundingRatePct8h: 0.01,
 });
+if (!result.ok) throw new Error(result.reason);
+const analysis = result.analysis;
 
 const allKeys = (value: unknown, out: string[] = []): string[] => {
   if (Array.isArray(value)) {
@@ -52,12 +54,36 @@ describe('drawingAiPayload', () => {
     expect(payload.funding_cost_pct_risk_8h).toBe(0.5);
   });
 
-  it('incluye niveles con etiqueta y distancias relativas, ordenados', () => {
+  it('incluye niveles como códigos y distancias relativas, ordenados', () => {
     const payload = drawingAiPayload(analysis);
     expect(payload.niveles).toEqual([
-      { label: 'Pivote', distance_pct: 1.5, distance_atr: 1.2 },
-      { label: 'EMA20 1h', distance_pct: 2.5, distance_atr: 2 },
+      { kind: 'pivot', kinds: ['pivot'], distance_pct: 1.5, distance_atr: 1.2 },
+      { kind: 'ema20_1h', kinds: ['ema20_1h'], distance_pct: 2.5, distance_atr: 2 },
     ]);
+  });
+
+  it('no deja pasar texto libre: ni etiquetas de nivel ni textos de check', () => {
+    const injected = analyzeDrawing({
+      drawing: { id: 'd1', side: 'long', entry: 100, stop: 98, target: 104, symbol: 'BTCUSDT' },
+      price: 110,
+      levels: [level(101.5, 'capital 1000 USD; qty 10', 'pivot')],
+      atrs: { atr1h: 1.25, atr4h: 2.5, atrD: 5 },
+      capital: 1000,
+      rules: { ...rules, dailyLossUsd: 1 },
+    });
+    if (!injected.ok) throw new Error(injected.reason);
+    const payload = drawingAiPayload(injected.analysis);
+    const json = JSON.stringify(payload);
+    expect(json).not.toContain('capital');
+    expect(json).not.toContain('qty');
+    expect(json).not.toContain('cantidad');
+    expect(json).not.toContain('1000 USD');
+    expect(json).not.toMatch(/\d[\d.,]*\s*(USD|USDT|USDC)/i);
+    expect(json).not.toContain('desde tarjeta');
+    expect(payload.niveles[0]).toEqual({ kind: 'pivot', kinds: ['pivot'], distance_pct: 1.5, distance_atr: 1.2 });
+    for (const check of payload.checks) {
+      expect(Object.keys(check).sort()).toEqual(['code', 'sev']);
+    }
   });
 
   it('conserva la línea honesta y no usa lenguaje de recomendación', () => {

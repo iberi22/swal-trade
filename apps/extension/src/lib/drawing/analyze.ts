@@ -1,15 +1,17 @@
 import type { LevelRow } from '../context/levels';
 import { expectedRange } from '../context/levels';
-import { calculatePositionSize, floorToStep, roundToDecimals } from '../sizing';
+import { calculatePositionSizeWithFees, floorToStep, roundToDecimals } from '../sizing';
 import type {
   AnalyzeDrawingInput,
-  DrawingAnalysis,
+  DrawingAnalysisResult,
   DrawingCheck,
+  DrawingEntryMode,
   DrawingFilters,
   DrawingLevelContext,
   DrawingSide,
   DrawingSize,
 } from './types';
+import { validateDrawing } from './validate';
 
 /**
  * Análisis determinista de un dibujo Long/Short Position: geometría, costes,
@@ -53,6 +55,7 @@ function levelContext(level: LevelRow, entry: number, atr1h: number | null): Dra
   return {
     price: level.price,
     kind: level.kind,
+    kinds: [...level.kinds],
     label: level.label,
     distancePctFromEntry: r4((dist / entry) * 100),
     distanceAtrFromEntry: atr1h && atr1h > 0 ? r2(dist / atr1h) : null,
@@ -67,15 +70,16 @@ const emptySize = (riskUsd: number): DrawingSize => ({
   lossUsd: 0,
   lossPct: 0,
   riskUsd,
+  lossIncludesFees: false,
 });
 
 /**
  * Tamaño de la posición al riesgo de la regla (riesgo = maxRiskPct), con los
- * filtros de redondeo del contrato. `buildTicket` no acepta un stop explícito
- * (solo ATR, % o invalidación), así que se usa el helper previsto en el
- * contrato: `calculatePositionSize` y los helpers de `sizing.ts`. No duplica
- * fórmulas ni modifica el ticket. Si el mínimo del contrato obligara a
- * arriesgar más que la regla, devuelve 0 en lugar de inflar el tamaño.
+ * filtros de redondeo del contrato. Usa `calculatePositionSizeWithFees` para
+ * que la pérdida EN EL STOP (precio + comisiones) no supere la regla: con
+ * comisiones, la cantidad baja respecto al tamaño solo-por-precio. Si el
+ * mínimo del contrato obligara a arriesgar más que la regla, devuelve 0 en
+ * lugar de inflar el tamaño.
  */
 function sizeAtRule(input: {
   capital: number;
@@ -83,11 +87,13 @@ function sizeAtRule(input: {
   direction: DrawingSide;
   entry: number;
   stop: number;
+  entryFeeRate: number;
+  exitFeeRate: number;
   filters?: DrawingFilters;
 }): DrawingSize {
-  const { capital, riskPct, direction, entry, stop, filters } = input;
+  const { capital, riskPct, direction, entry, stop, entryFeeRate, exitFeeRate, filters } = input;
   const riskUsd = r2(capital * (riskPct / 100));
-  const base = calculatePositionSize({ capital, riskPct, direction, entry, stop });
+  const base = calculatePositionSizeWithFees({ capital, riskPct, direction, entry, stop, entryFeeRate, exitFeeRate });
   if (!base.valid) return emptySize(riskUsd);
 
   const step = filters?.stepSize;
@@ -102,7 +108,7 @@ function sizeAtRule(input: {
   if (belowMinQty || belowMinNotional) return emptySize(riskUsd);
 
   const notionalUsd = r2(qty * entry);
-  const lossUsd = r2(qty * Math.abs(entry - stop));
+  const lossUsd = r2(qty * Math.abs(entry - stop) + qty * entry * entryFeeRate + qty * stop * exitFeeRate);
   const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
   const marginUsd = r2(notionalUsd / minLeverage);
   const lossPct = r4((lossUsd / capital) * 100);
@@ -114,11 +120,16 @@ function sizeAtRule(input: {
     lossUsd,
     lossPct,
     riskUsd,
+    lossIncludesFees: true,
   };
 }
 
-export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysis {
-  const { drawing, capital, rules } = input;
+export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysisResult {
+  const drawing = input?.drawing;
+  if (!drawing) return { ok: false, reason: 'invalid_input' };
+  const validation = validateDrawing(drawing);
+  if (!validation.ok) return { ok: false, reason: validation.reason };
+  const { capital, rules } = input;
   const side = toSide(drawing.side);
   const dir = side === 'long' ? 1 : -1;
   const entry = drawing.entry;
@@ -139,7 +150,15 @@ export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysis {
   const entryDistanceRaw =
     Number.isFinite(price) && price > 0 ? ((entry - price) / price) * 100 : 0;
   const entryDistancePct = r4(entryDistanceRaw);
-  const entryMode = Math.abs(entryDistanceRaw) <= MARKET_ENTRY_PCT ? 'mercado' : 'límite';
+  // Maker solo si la entrada reposa del lado correcto (> 0,05 %). En un largo,
+  // una entrada por ENCIMA del precio sería una orden stop (taker), no límite.
+  const restsOnCorrectSide =
+    side === 'long' ? entryDistanceRaw < -MARKET_ENTRY_PCT : entryDistanceRaw > MARKET_ENTRY_PCT;
+  const entryMode: DrawingEntryMode = restsOnCorrectSide
+    ? 'límite'
+    : Math.abs(entryDistanceRaw) <= MARKET_ENTRY_PCT
+      ? 'mercado'
+      : 'stop';
 
   const entryFeePct = entryMode === 'límite' ? MAKER_ENTRY_FEE_PCT : TAKER_ENTRY_FEE_PCT;
   const exitFeePct = TAKER_EXIT_FEE_PCT;
@@ -153,6 +172,8 @@ export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysis {
     direction: side,
     entry,
     stop,
+    entryFeeRate: entryFeePct / 100,
+    exitFeeRate: exitFeePct / 100,
     filters: input.filters,
   });
 
@@ -242,6 +263,15 @@ export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysis {
   if (riskPct < TINY_STOP_PCT) {
     push('tiny_stop', 'warn', 'stop menor a 0,3 %: en nuestra medición, los costes se comen esos stops');
   }
+  if (entryMode === 'stop') {
+    push(
+      'entry_stop',
+      'info',
+      side === 'long'
+        ? 'entrada por encima del precio: sería una orden stop, comisión taker'
+        : 'entrada por debajo del precio: sería una orden stop, comisión taker',
+    );
+  }
   if (nearStop.length > 0) {
     push('stop_near_level', 'warn', 'stop pegado a un nivel visible: muchos traders ponen stops ahí');
   }
@@ -279,21 +309,24 @@ export function analyzeDrawing(input: AnalyzeDrawingInput): DrawingAnalysis {
   const summary = truncate(parts.join(' · '), 110);
 
   return {
-    drawing,
-    symbol: drawing.symbol,
-    side,
-    geometry: { riskPct, rewardPct, rr, stopAtr1h, targetAtr1h, entryDistancePct, entryMode },
-    costs: { entryFeePct, exitFeePct, totalFeePct, feeShareOfRisk, netRr },
-    size,
-    levels: { betweenEntryAndTarget, nearStop, beyondStop, targetNearLevel, targetNearLevelSide },
-    reach: { targetAtr4h, targetAtrD, smallestHorizon },
-    funding: {
-      ratePct8h: fundingRatePct8h !== null ? r4(fundingRatePct8h) : null,
-      pctOfRiskPer8h,
-      sidePays,
+    ok: true,
+    analysis: {
+      drawing,
+      symbol: drawing.symbol,
+      side,
+      geometry: { riskPct, rewardPct, rr, stopAtr1h, targetAtr1h, entryDistancePct, entryMode },
+      costs: { entryFeePct, exitFeePct, totalFeePct, feeShareOfRisk, netRr },
+      size,
+      levels: { betweenEntryAndTarget, nearStop, beyondStop, targetNearLevel, targetNearLevelSide },
+      reach: { targetAtr4h, targetAtrD, smallestHorizon },
+      funding: {
+        ratePct8h: fundingRatePct8h !== null ? r4(fundingRatePct8h) : null,
+        pctOfRiskPer8h,
+        sidePays,
+      },
+      rules: { maxLeverageBreached, dailyLossBreached, stopWiderThanDaily },
+      checks,
+      summary,
     },
-    rules: { maxLeverageBreached, dailyLossBreached, stopWiderThanDaily },
-    checks,
-    summary,
   };
 }
