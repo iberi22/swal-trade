@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePositionSize,
+  defaultScaleEntries,
+  planScaleIn,
   invalidationPriceFromFinding,
   normalizeSizingPreferences,
   TAKER_ROUND_TRIP_FEE_RATE,
@@ -116,5 +118,104 @@ describe('position sizing math (pure)', () => {
     });
     expect(normalizeSizingPreferences({ riskPct: 10 })).toMatchObject({ riskPct: 5 });
     expect(normalizeSizingPreferences({ riskPct: 0.01 })).toMatchObject({ riskPct: 0.1 });
+  });
+});
+
+describe('planScaleIn (escalonar en 3 tramos)', () => {
+  function prng(seed: number) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const isMultiple = (v: number, step: number) => Math.abs(v / step - Math.round(v / step)) < 1e-6;
+
+  it('keeps loss within R_max (with fees) and close to it over random geometries', () => {
+    const rnd = prng(12345);
+    for (let i = 0; i < 500; i++) {
+      const direction = rnd() < 0.5 ? 'long' : 'short';
+      const entry1 = 50 + rnd() * 90000;
+      const dist = entry1 * (0.005 + rnd() * 0.05);
+      const sign = direction === 'long' ? -1 : 1;
+      const stop = entry1 + sign * dist;
+      const e = defaultScaleEntries({ direction, entry: entry1, stop, tickSize: 0.01 })!;
+      const capital = 1000 + rnd() * 99000;
+      const riskPct = 0.5 + rnd() * 2;
+      const tickSize = 0.01;
+      const stepSize = 0.0001;
+      const r = planScaleIn({ capital, riskPct, direction, entry1: roundToTickTest(entry1), entry2: e.entry2, entry3: e.entry3, stop, tickSize, stepSize });
+      expect(r.valid).toBe(true);
+      if (!r.valid) continue;
+      const rMax = capital * riskPct / 100;
+      expect(r.lossIfAllFillAndStop).toBeLessThanOrEqual(rMax + 1e-9);
+      expect(r.lossIfAllFillAndStop).toBeGreaterThanOrEqual(0.97 * rMax);
+      expect(r.lossIfOnlyFirstFillsAndStop).toBeLessThan(r.lossIfAllFillAndStop);
+      expect(r.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
+      for (const t of r.tranches) {
+        expect(isMultiple(t.qty, stepSize)).toBe(true);
+        expect(isMultiple(t.price, tickSize)).toBe(true);
+      }
+      expect(r.honestNote).toContain('no mejora la esperanza');
+      expect(r.avgByFill).toHaveLength(r.tranches.length);
+    }
+    function roundToTickTest(p: number) { return Math.round(p / 0.01) * 0.01; }
+  });
+
+  it('rejects wrong ordering for long and short with a Spanish reason', () => {
+    const base = { capital: 1000, riskPct: 1 };
+    const l = planScaleIn({ ...base, direction: 'long', entry1: 100, entry2: 101, entry3: 98, stop: 95 });
+    expect(l.valid).toBe(false);
+    if (!l.valid) { expect(l.reason).toBe('wrong_order'); expect(l.error).toContain('entrada 1 > entrada 2'); }
+    expect(planScaleIn({ ...base, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 97 }).valid).toBe(false);
+    const s = planScaleIn({ ...base, direction: 'short', entry1: 100, entry2: 99, entry3: 102, stop: 105 });
+    expect(s.valid).toBe(false);
+    expect(planScaleIn({ ...base, direction: 'short', entry1: 100, entry2: 102, entry3: 104, stop: 105 }).valid).toBe(true);
+    expect(planScaleIn({ ...base, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 95 }).valid).toBe(true);
+  });
+
+  it('rejects invalid input and weights', () => {
+    const r = planScaleIn({ capital: 0, riskPct: 1, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 95 });
+    expect(r.valid).toBe(false);
+    const w = planScaleIn({ capital: 1000, riskPct: 1, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 95, weights: [0.5, 0.5, 0.5] });
+    expect(w.valid).toBe(false);
+  });
+
+  it('degrades to two tranches when a tranche is below the minimum, and says so', () => {
+    const r = planScaleIn({ capital: 1000, riskPct: 1, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 95, stepSize: 0.1, minQty: 1 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.degraded).toBe(true);
+    expect(r.tranches).toHaveLength(2);
+    expect(r.weights).toEqual([0.35, 0.65]);
+    expect(r.tranches.map((t) => t.price)).toEqual([100, 96]);
+    expect(r.notes.join(' ')).toContain('dos tramos');
+    expect(r.lossIfAllFillAndStop).toBeLessThanOrEqual(10 + 1e-9);
+  });
+
+  it('is invalid when even two tranches do not reach the minimum', () => {
+    const r = planScaleIn({ capital: 1000, riskPct: 1, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 95, minNotional: 100000 });
+    expect(r.valid).toBe(false);
+    if (!r.valid) expect(r.reason).toBe('too_small');
+  });
+
+  it('computes a known example', () => {
+    const r = planScaleIn({ capital: 1000, riskPct: 1, direction: 'long', entry1: 100, entry2: 98, entry3: 96, stop: 94, feeRate: 0 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    // media 0,25*100 + 0,35*98 + 0,4*96 = 97,7; distancia 3,7; Q = 10/3,7
+    expect(r.avgByFill[2]).toBeCloseTo(97.7, 2);
+    expect(r.avgByFill[0]).toBeCloseTo(100, 8);
+    expect(r.totalQty).toBeCloseTo(10 / 3.7, 3);
+    expect(r.breakEvenByFill[0]).toBeCloseTo(100, 8);
+  });
+
+  it('defaultScaleEntries uses 40 % and 80 % of the distance', () => {
+    expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 90 })).toEqual({ entry2: 96, entry3: 92 });
+    expect(defaultScaleEntries({ direction: 'short', entry: 100, stop: 110 })).toEqual({ entry2: 104, entry3: 108 });
+    expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 105 })).toBeNull();
   });
 });

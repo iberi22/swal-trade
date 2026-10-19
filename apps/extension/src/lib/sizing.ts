@@ -91,3 +91,181 @@ export function normalizeSizingPreferences(raw: unknown): SizingPreferences {
   const direction: SizingDirection = r.direction === 'short' ? 'short' : 'long';
   return { capital, riskPct, direction };
 }
+
+/* ---------- Escalonar en 3 tramos ---------- */
+
+export const SCALE_IN_WEIGHTS: readonly [number, number, number] = [0.25, 0.35, 0.4];
+export const SCALE_IN_DEGRADED_WEIGHTS: readonly [number, number] = [0.35, 0.65];
+export const SCALE_IN_HONEST_NOTE =
+  'Escalonar sube la probabilidad de acertar pero no mejora la esperanza: es una forma de acotar el riesgo, no una ventaja. Si se llenan los tres tramos y salta el stop pierdes el riesgo máximo.';
+
+export interface ScaleInInput {
+  capital: number;
+  riskPct: number;
+  direction: SizingDirection;
+  entry1: number;
+  entry2: number;
+  entry3: number;
+  stop: number;
+  weights?: readonly [number, number, number];
+  tickSize?: number;
+  stepSize?: number;
+  minQty?: number;
+  minNotional?: number;
+  feeRate?: number;
+}
+
+export interface ScaleInTranche {
+  price: number;
+  qty: number;
+  notional: number;
+}
+
+export type ScaleInResult =
+  | {
+      valid: true;
+      tranches: ScaleInTranche[];
+      weights: number[];
+      degraded: boolean;
+      /** Precio medio si solo se llena el primer tramo, los dos primeros, etc. */
+      avgByFill: number[];
+      /** Precio medio más la comisión de ida y vuelta, para cada caso de llenado. */
+      breakEvenByFill: number[];
+      riskMaxUsd: number;
+      lossIfAllFillAndStop: number;
+      lossIfOnlyFirstFillsAndStop: number;
+      totalQty: number;
+      totalNotionalUsd: number;
+      minLeverage: number;
+      notes: string[];
+      honestNote: string;
+    }
+  | { valid: false; error: string; reason: 'invalid_input' | 'wrong_order' | 'too_small' };
+
+/** Redondea hacia abajo a un múltiplo de `step` (tolerante al error de coma flotante). */
+export function floorToStep(value: number, step?: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (!step || !Number.isFinite(step) || step <= 0) return Math.floor(value * 1e6 + 1e-9) / 1e6;
+  const n = Math.floor(value / step + 1e-9);
+  const decimals = Math.min(12, Math.max(0, Math.ceil(-Math.log10(step)) + 2));
+  return roundToDecimals(n * step, decimals);
+}
+
+function roundToTick(price: number, tick?: number): number {
+  if (!tick || !Number.isFinite(tick) || tick <= 0) return price;
+  const decimals = Math.min(12, Math.max(0, Math.ceil(-Math.log10(tick)) + 2));
+  return roundToDecimals(Math.round(price / tick) * tick, decimals);
+}
+
+function significant(value: number, digits = 6): number {
+  return Number(value.toPrecision(digits));
+}
+
+/** Propone entrada 2 al 40 % y entrada 3 al 80 % de la distancia entrada-stop (profundidades medidas). */
+export function defaultScaleEntries(input: {
+  direction: SizingDirection;
+  entry: number;
+  stop: number;
+  tickSize?: number;
+}): { entry2: number; entry3: number } | null {
+  const { direction, entry, stop, tickSize } = input;
+  if (![entry, stop].every((n) => Number.isFinite(n) && n > 0)) return null;
+  if (direction === 'long' ? stop >= entry : stop <= entry) return null;
+  const at = (f: number) => {
+    const raw = entry + f * (stop - entry);
+    return tickSize ? roundToTick(raw, tickSize) : significant(raw);
+  };
+  return { entry2: at(0.4), entry3: at(0.8) };
+}
+
+function scaleInOrderOk(direction: SizingDirection, e1: number, e2: number, e3: number, stop: number): boolean {
+  return direction === 'long' ? stop < e3 && e3 < e2 && e2 < e1 : stop > e3 && e3 > e2 && e2 > e1;
+}
+
+export function planScaleIn(input: ScaleInInput): ScaleInResult {
+  const { capital, riskPct, direction, stop } = input;
+  const tick = input.tickSize;
+  const feeRate = input.feeRate ?? TAKER_ROUND_TRIP_FEE_RATE;
+  const weights = input.weights ?? SCALE_IN_WEIGHTS;
+  const bad = (error: string, reason: 'invalid_input' | 'wrong_order' | 'too_small') => ({ valid: false as const, error, reason });
+
+  if (![capital, riskPct, input.entry1, input.entry2, input.entry3, stop].every((n) => Number.isFinite(n) && n > 0)) {
+    return bad('Introduce valores numéricos positivos mayores que cero.', 'invalid_input');
+  }
+  if (!Number.isFinite(feeRate) || feeRate < 0) return bad('La comisión no es válida.', 'invalid_input');
+  if (weights.length !== 3 || !weights.every((w) => Number.isFinite(w) && w > 0) || Math.abs(weights[0] + weights[1] + weights[2] - 1) > 1e-9) {
+    return bad('Los pesos de los tramos deben ser positivos y sumar 1.', 'invalid_input');
+  }
+  const e1 = roundToTick(input.entry1, tick);
+  const e2 = roundToTick(input.entry2, tick);
+  const e3 = roundToTick(input.entry3, tick);
+  if (!scaleInOrderOk(direction, e1, e2, e3, stop)) {
+    return bad(
+      direction === 'long'
+        ? 'En largos el orden debe ser: entrada 1 > entrada 2 > entrada 3 > stop (cada tramo más abajo).'
+        : 'En cortos el orden debe ser: entrada 1 < entrada 2 < entrada 3 < stop (cada tramo más arriba).',
+      'wrong_order',
+    );
+  }
+
+  const riskMax = capital * (riskPct / 100);
+  const minQty = input.minQty ?? 0;
+  const minNotional = input.minNotional ?? 0;
+
+  const build = (prices: number[], ws: number[]): ScaleInTranche[] | null => {
+    const avg = prices.reduce((s, p, i) => s + ws[i] * p, 0);
+    const qTotal = riskMax / (Math.abs(stop - avg) + feeRate * avg);
+    const tranches = prices.map((price, i) => {
+      const qty = floorToStep(ws[i] * qTotal, input.stepSize);
+      return { price, qty, notional: qty * price };
+    });
+    const ok = tranches.every((t) => t.qty > 0 && t.qty >= minQty && t.notional >= minNotional);
+    return ok ? tranches : null;
+  };
+
+  const notes: string[] = [];
+  let ws: number[] = [...weights];
+  let tranches = build([e1, e2, e3], ws);
+  let degraded = false;
+  if (!tranches) {
+    ws = [...SCALE_IN_DEGRADED_WEIGHTS];
+    tranches = build([e1, e3], ws);
+    if (!tranches) {
+      return bad('El riesgo es demasiado pequeño para repartirlo en tramos con el mínimo del contrato.', 'too_small');
+    }
+    degraded = true;
+    notes.push('Algún tramo quedaba por debajo del mínimo del contrato: se usan dos tramos (35 % y 65 %) en la entrada 1 y la 3.');
+  }
+
+  const unitLoss = (p: number) => Math.abs(p - stop) + feeRate * p;
+  const avgByFill: number[] = [];
+  const breakEvenByFill: number[] = [];
+  let cumQty = 0;
+  let cumCost = 0;
+  for (const t of tranches) {
+    cumQty += t.qty;
+    cumCost += t.qty * t.price;
+    const avg = cumCost / cumQty;
+    avgByFill.push(avg);
+    breakEvenByFill.push(direction === 'long' ? avg * (1 + feeRate) : avg * (1 - feeRate));
+  }
+  const lossAll = tranches.reduce((s, t) => s + t.qty * unitLoss(t.price), 0);
+  const lossFirst = tranches[0].qty * unitLoss(tranches[0].price);
+  const totalNotional = cumCost;
+  return {
+    valid: true,
+    tranches,
+    weights: ws,
+    degraded,
+    avgByFill,
+    breakEvenByFill,
+    riskMaxUsd: riskMax,
+    lossIfAllFillAndStop: lossAll,
+    lossIfOnlyFirstFillsAndStop: lossFirst,
+    totalQty: cumQty,
+    totalNotionalUsd: totalNotional,
+    minLeverage: Math.max(1, Math.ceil(totalNotional / capital)),
+    notes,
+    honestNote: SCALE_IN_HONEST_NOTE,
+  };
+}

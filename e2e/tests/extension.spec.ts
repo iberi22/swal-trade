@@ -1041,3 +1041,41 @@ test('scanner tab lists a 6 % drop with no evidence, no levels and no probabilit
     await panel.close();
   }
 });
+
+test('sizing: escalonar en 3 tramos shows the tranches and the honest note, never a probability', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const card = page.getByTestId('sizing-card');
+    await expect(card).toHaveCount(1);
+    await card.getByLabel('Capital de la cuenta', { exact: true }).fill('1000');
+    await card.getByLabel('Riesgo por operación', { exact: true }).fill('1');
+    await card.getByLabel('Precio de entrada', { exact: true }).fill('100');
+    await card.getByLabel('Stop loss', { exact: true }).fill('90');
+
+    const fold = page.getByTestId('scale-in');
+    await expect(fold.locator('summary')).toHaveText('Escalonar en 3 tramos');
+    await expect(fold).not.toHaveAttribute('open', '');
+    await fold.locator('summary').click();
+
+    // Entradas por defecto: 40 % y 80 % de la distancia (96 y 92).
+    await expect(page.getByLabel('Entrada del tramo 2')).toHaveValue('96');
+    await expect(page.getByLabel('Entrada del tramo 3')).toHaveValue('92');
+    const lines = page.getByTestId('scale-in-tranches').locator('li');
+    await expect(lines).toHaveCount(3);
+    await expect(lines.nth(0)).toContainText('Tramo 1 (25 %): 100');
+    await expect(lines.nth(1)).toContainText('Tramo 2 (35 %): 96');
+    await expect(lines.nth(2)).toContainText('Tramo 3 (40 %): 92');
+    await expect(page.getByTestId('scale-in-loss-all')).toContainText('USD');
+    await expect(page.getByTestId('scale-in-loss-first')).toContainText('Si solo se llena el primero');
+    await expect(page.getByTestId('scale-in-honest')).toContainText('no mejora la esperanza');
+    await expect(page.getByTestId('scale-in-honest')).toContainText('pierdes el riesgo máximo');
+
+    const text = await fold.innerText();
+    expect(text).not.toMatch(/\d\s?%\s+de\s+(probabilidad|acierto)/i);
+    expect(text).not.toMatch(/tasa de acierto|winrate/i);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
