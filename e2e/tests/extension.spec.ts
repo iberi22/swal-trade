@@ -666,6 +666,66 @@ const MOCK_CREDENTIALS_SCRIPT = `
     if (type === 'acct:set-key') { window.__acctSent.push(message.kind); return Promise.resolve({ ok: true }); }
     if (type === 'acct:snapshot') return Promise.resolve({ error: 'no_key' });
     if (type === 'acct:test') return Promise.resolve(window.__testReply || { ok: false, error: 'clock' });
+    return original(message, ...rest);
+  };
+})();
+`;
+
+test('settings tab: credential sections, password inputs, key generation and error mapping', async () => {
+  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_CREDENTIALS_SCRIPT);
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('cred-binance')).toBeVisible();
+    await expect(page.getByTestId('cred-ai')).toBeVisible();
+    await expect(page.getByTestId('rules-settings')).toBeVisible();
+
+    const keyInput = page.locator('input[name=binance-api-key]');
+    await expect(keyInput).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=binance-hmac-key]')).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=binance-hmac-secret]')).toHaveAttribute('type', 'password');
+    await expect(page.locator('input[name=ai-key]')).toHaveAttribute('type', 'password');
+    await expect(page.getByTestId('cred-hmac')).not.toHaveAttribute('open', '');
+
+    await page.getByRole('button', { name: 'Generar clave' }).click();
+    await expect(page.getByTestId('cred-pem')).toContainText('BEGIN PUBLIC KEY');
+
+    await keyInput.fill('fakevisiblemarkera');
+    await page.getByTestId('cred-binance').getByRole('button', { name: 'Guardar clave' }).click();
+    await expect(keyInput).toHaveValue('');
+    await expect(page.getByTestId('cred-binance-status')).toContainText('termina en kera');
+
+    // Error mapeado a una frase en español.
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-error')).toContainText('reloj');
+
+    // Clave con permiso de Futuros: aviso visible y solo rutas de lectura.
+    await page.evaluate(() => {
+      (window as unknown as { __testReply: unknown }).__testReply = {
+        ok: true,
+        restrictions: { ipRestrict: false, enableReading: true, tradingEnabled: true },
+      };
+    });
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-ip')).toContainText('Restricción de IP: no');
+    await expect(page.getByTestId('cred-trading-note')).toContainText('La extensión solo usa rutas de lectura.');
+
+    // Retiros: rechazo claro.
+    await page.evaluate(() => {
+      (window as unknown as { __testReply: unknown }).__testReply = { ok: false, error: 'key_has_trading_or_withdraw' };
+    });
+    await page.getByRole('button', { name: 'Probar' }).click();
+    await expect(page.getByTestId('cred-error')).toContainText('Esta clave puede retirar fondos. Créala sin permiso de retiros.');
+
+    // IA: el consentimiento nombra al proveedor y los campos.
+    await expect(page.getByTestId('ai-consent-text')).toContainText('OpenCode');
+    await expect(page.getByTestId('ai-consent-text')).toContainText('sin importes en USD ni cantidades');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 /**
  * Mock de la pestaña Análisis: cuenta con una posición larga, historial de Binance
  * (income y userTrades con números como texto) y respuesta de `ai:analyze`.
@@ -731,55 +791,6 @@ const MOCK_ANALYSIS_SCRIPT = `
 })();
 `;
 
-test('settings tab: credential sections, password inputs, key generation and error mapping', async () => {
-  const panel = await openSidePanel(undefined, toBinanceKlines(), MOCK_CREDENTIALS_SCRIPT);
-  try {
-    const { page } = panel;
-    await openTab(page, 'Ajustes');
-    await expect(page.getByTestId('cred-binance')).toBeVisible();
-    await expect(page.getByTestId('cred-ai')).toBeVisible();
-    await expect(page.getByTestId('rules-settings')).toBeVisible();
-
-    const keyInput = page.locator('input[name=binance-api-key]');
-    await expect(keyInput).toHaveAttribute('type', 'password');
-    await expect(page.locator('input[name=binance-hmac-key]')).toHaveAttribute('type', 'password');
-    await expect(page.locator('input[name=binance-hmac-secret]')).toHaveAttribute('type', 'password');
-    await expect(page.locator('input[name=ai-key]')).toHaveAttribute('type', 'password');
-    await expect(page.getByTestId('cred-hmac')).not.toHaveAttribute('open', '');
-
-    await page.getByRole('button', { name: 'Generar clave' }).click();
-    await expect(page.getByTestId('cred-pem')).toContainText('BEGIN PUBLIC KEY');
-
-    await keyInput.fill('fakevisiblemarkera');
-    await page.getByTestId('cred-binance').getByRole('button', { name: 'Guardar clave' }).click();
-    await expect(keyInput).toHaveValue('');
-    await expect(page.getByTestId('cred-binance-status')).toContainText('termina en kera');
-
-    // Error mapeado a una frase en español.
-    await page.getByRole('button', { name: 'Probar' }).click();
-    await expect(page.getByTestId('cred-error')).toContainText('reloj');
-
-    // Clave con permiso de Futuros: aviso visible y solo rutas de lectura.
-    await page.evaluate(() => {
-      (window as unknown as { __testReply: unknown }).__testReply = {
-        ok: true,
-        restrictions: { ipRestrict: false, enableReading: true, tradingEnabled: true },
-      };
-    });
-    await page.getByRole('button', { name: 'Probar' }).click();
-    await expect(page.getByTestId('cred-ip')).toContainText('Restricción de IP: no');
-    await expect(page.getByTestId('cred-trading-note')).toContainText('La extensión solo usa rutas de lectura.');
-
-    // Retiros: rechazo claro.
-    await page.evaluate(() => {
-      (window as unknown as { __testReply: unknown }).__testReply = { ok: false, error: 'key_has_trading_or_withdraw' };
-    });
-    await page.getByRole('button', { name: 'Probar' }).click();
-    await expect(page.getByTestId('cred-error')).toContainText('Esta clave puede retirar fondos. Créala sin permiso de retiros.');
-
-    // IA: el consentimiento nombra al proveedor y los campos.
-    await expect(page.getByTestId('ai-consent-text')).toContainText('OpenCode');
-    await expect(page.getByTestId('ai-consent-text')).toContainText('sin importes en USD ni cantidades');
 /** Guarda ajustes en storage.local y recarga el panel para que los lea. */
 async function seedSettings(page: import('@playwright/test').Page, settings: Record<string, unknown>) {
   await page.evaluate(
@@ -871,7 +882,7 @@ test('AI card asks for consent before the first ai:analyze, then answers as plai
     const aiRequests = () => page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
 
     // Aviso de modelo gratuito antes de enviar nada.
-    await expect(page.getByTestId('ai-free-warning')).toContainText('pueden usar lo que envías para entrenar');
+    await expect(page.getByTestId('ai-card').getByTestId('ai-free-warning')).toContainText('pueden usar lo que envías para entrenar');
     const button = page.getByRole('button', { name: 'Analizar mi posición' });
     await expect(button).toBeEnabled();
     await button.click();
