@@ -73,29 +73,6 @@
   {/if}
 </div>
 
-<section class="settings" aria-label={t('settings.language.title')} data-testid="language-section">
-  <div class="settings-body">
-    <label class="field">
-      <span>{t('settings.language.title')}</span>
-      <select
-        disabled={!settingsLoaded}
-        value={settings.locale}
-        onchange={(event) => {
-          const value = (event.currentTarget as HTMLSelectElement).value;
-          if (value === 'auto' || isLocaleCode(value)) {
-            applySettings({ ...settings, locale: value });
-          }
-        }}
-      >
-        <option value="auto">{t('settings.language.auto')}</option>
-        {#each LOCALES as loc (loc.code)}
-          <option value={loc.code}>{loc.nativeName}</option>
-        {/each}
-      </select>
-      <small class="hint">{t('settings.language.hint')}</small>
-    </label>
-  </div>
-</section>
 
 <section class="settings" aria-label="Ajustes">
   <div class="settings-body">
@@ -235,6 +212,30 @@
       Se guarda en <code>storage.local</code> de la extensión. Los titulares se renuevan cada
       {NEWS_REFRESH_MS / 60000} min.
     </p>
+  </div>
+</section>
+
+<section class="settings" aria-label={t('settings.language.title')} data-testid="language-section">
+  <div class="settings-body">
+    <label class="field">
+      <span>{t('settings.language.title')}</span>
+      <select
+        disabled={!settingsLoaded}
+        value={settings.locale}
+        onchange={(event) => {
+          const value = (event.currentTarget as HTMLSelectElement).value;
+          if (value === 'auto' || isLocaleCode(value)) {
+            applySettings({ ...settings, locale: value });
+          }
+        }}
+      >
+        <option value="auto">{t('settings.language.auto')}</option>
+        {#each LOCALES as loc (loc.code)}
+          <option value={loc.code}>{loc.nativeName}</option>
+        {/each}
+      </select>
+      <small class="hint">{t('settings.language.hint')}</small>
+    </label>
   </div>
 </section>
 
