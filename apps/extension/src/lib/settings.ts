@@ -10,6 +10,34 @@ export const DEFAULT_HOTKEY_MAP: HotkeyMap = {
   F6: null, F7: null, F8: null, F9: null, F10: null, F11: null, F12: null,
 };
 
+export const AI_PROVIDERS = ['opencode', 'openrouter', 'openai', 'anthropic', 'gemini', 'local'] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+export type AiRedaction = 'relative' | 'absolute';
+export type AcctKind = 'none' | 'ed25519' | 'hmac';
+
+/** Límites de disciplina (reflejan los del guardian del dueño). */
+export interface RulesSettings {
+  maxRiskPct: number;
+  maxLeverage: number;
+  dailyLossUsd: number;
+  revengeMinutes: number;
+}
+
+/** Ajustes de IA. NUNCA guardan claves: esas viven en otro sitio. */
+export interface AiSettings {
+  provider: AiProvider;
+  model: string;
+  redaction: AiRedaction;
+  consentedProviders: AiProvider[];
+}
+
+/** Metadatos de la cuenta; nunca el secreto. */
+export interface AcctMeta {
+  configured: boolean;
+  kind: AcctKind;
+  last4: string;
+}
+
 export interface ExtensionSettings {
   /** Temporalidad con la que arranca el panel cuando la página no dice nada. */
   defaultTimeframe: Timeframe;
@@ -39,6 +67,11 @@ export interface ExtensionSettings {
   radarEnabled: boolean;
   /** Puerto del servicio de radar local. */
   radarPort: number;
+  rules: RulesSettings;
+  ai: AiSettings;
+  /** Lee posiciones del DOM de Binance. Necesita un `true` explícito. */
+  domPositions: boolean;
+  acctMeta: AcctMeta;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -54,6 +87,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   claudeBridgeToken: "",
   radarEnabled: true,
   radarPort: 47322,
+  rules: { maxRiskPct: 1, maxLeverage: 10, dailyLossUsd: 10, revengeMinutes: 15 },
+  ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
+  domPositions: false,
+  acctMeta: { configured: false, kind: 'none', last4: '' },
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -120,6 +157,58 @@ export function normalizeHotkeyMap(raw: unknown): HotkeyMap {
   }
   return out;
 }
+function clampNumber(value: unknown, min: number, max: number, fallback: number, integer: boolean): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  const v = integer ? Math.round(value) : value;
+  return Math.min(max, Math.max(min, v));
+}
+
+export function normalizeRules(raw: unknown): RulesSettings {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const d = DEFAULT_SETTINGS.rules;
+  return {
+    maxRiskPct: clampNumber(r.maxRiskPct, 0.1, 5, d.maxRiskPct, false),
+    maxLeverage: clampNumber(r.maxLeverage, 1, 125, d.maxLeverage, true),
+    // Debe ser > 0: lo que no lo sea vuelve al default.
+    dailyLossUsd:
+      typeof r.dailyLossUsd === 'number' && Number.isFinite(r.dailyLossUsd) && r.dailyLossUsd > 0
+        ? Math.min(1e6, r.dailyLossUsd)
+        : d.dailyLossUsd,
+    revengeMinutes: clampNumber(r.revengeMinutes, 1, 240, d.revengeMinutes, true),
+  };
+}
+
+function isAiProvider(value: unknown): value is AiProvider {
+  return typeof value === 'string' && (AI_PROVIDERS as readonly string[]).includes(value);
+}
+
+export function normalizeAi(raw: unknown): AiSettings {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const consented: AiProvider[] = [];
+  if (Array.isArray(r.consentedProviders)) {
+    for (const p of r.consentedProviders) {
+      if (isAiProvider(p) && !consented.includes(p)) consented.push(p);
+    }
+  }
+  return {
+    provider: isAiProvider(r.provider) ? r.provider : DEFAULT_SETTINGS.ai.provider,
+    model:
+      typeof r.model === 'string' && r.model.length <= 80 && /^[A-Za-z0-9._:/-]*$/.test(r.model)
+        ? r.model
+        : DEFAULT_SETTINGS.ai.model,
+    redaction: r.redaction === 'absolute' ? 'absolute' : 'relative',
+    consentedProviders: consented,
+  };
+}
+
+export function normalizeAcctMeta(raw: unknown): AcctMeta {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const kind: AcctKind = r.kind === 'ed25519' || r.kind === 'hmac' ? r.kind : 'none';
+  const last4 =
+    typeof r.last4 === 'string' && /^[A-Za-z0-9]{0,4}$/.test(r.last4) ? r.last4 : '';
+  return { configured: r.configured === true, kind, last4 };
+}
+
 export function normalizeSettings(raw: unknown): ExtensionSettings {
   const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const timeframe = normalizeSettingsTimeframe(record.defaultTimeframe);
@@ -156,12 +245,16 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
       record.radarPort <= 65535
         ? record.radarPort
         : DEFAULT_SETTINGS.radarPort,
+    rules: normalizeRules(record.rules),
+    ai: normalizeAi(record.ai),
+    domPositions: record.domPositions === true,
+    acctMeta: normalizeAcctMeta(record.acctMeta),
   };
 }
 
 /** `settings` tal como lo guarda `browser.storage.local`. */
 export function settingsFromStorage(raw: unknown): ExtensionSettings {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SETTINGS, symbols: [] };
+  if (!raw || typeof raw !== 'object') return normalizeSettings(undefined);
   const wrapped = (raw as Record<string, unknown>).settings;
   return normalizeSettings(wrapped ?? raw);
 }
