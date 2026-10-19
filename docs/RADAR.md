@@ -218,3 +218,16 @@ sed -e "s|@REPO_DIR@|$PWD|" -e "s|@ENV_FILE@|$HOME/.config/swal-trade/radar.env|
   radar/swal-radar.service.in > ~/.config/systemd/user/swal-radar.service
 systemctl --user daemon-reload && systemctl --user enable --now swal-radar
 ```
+
+## Estadisticas de movers
+
+`radar.publish_movers_stats` prepara y publica las estadisticas agregadas de movers (contrato `swal.movers-stats.v1`, ver `docs/design/SCANNER.md`). Antes de escribir o enviar cualquier documento lo valida con el validador del Worker (necesita `node`).
+```bash
+# Estudio historico: conserva solo las claves del contrato, no recalcula nada
+python3 -m radar.publish_movers_stats --study estudio.json --out /tmp/movers-study.json
+# Medicion hacia adelante desde la base del radar (alertas con source movers ya resueltas)
+python3 -m radar.publish_movers_stats --forward --out /tmp/movers-forward.json
+# Publicar (204 = correcto); URL en PUBLIC_MOVERS_STATS_URL si no es la de produccion
+python3 -m radar.publish_movers_stats --post /tmp/movers-forward.json
+```
+La clave de ingestion se lee de `~/.config/synapse/public-ingest-token`, que debe tener permisos 600; nunca se imprime. Las celdas con menos de 5 alertas se omiten; el grado usa `n_clusters` (cubos de 30 minutos), un bootstrap por dia y el equilibrio con coste `(1 + 0.0008 / median_stop_pct) / 2`.
