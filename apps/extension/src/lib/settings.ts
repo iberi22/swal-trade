@@ -62,6 +62,12 @@ export interface ExtensionSettings {
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
   explainWithAi: boolean;
+  /**
+   * Lee el texto que el usuario ya ve en su página de Binance Futures
+   * (posiciones abiertas e historial) para no necesitar clave de API.
+   * Local, opt-in y sin pulsar nada: exige un `true` explícito.
+   */
+  readPageAccount: boolean;
   /** Atajos de teclado habilitados para cambiar la temporalidad (F1..F12). */
   hotkeysEnabled: boolean;
   /** Mapa de tecla de función a temporalidad (o null para ninguna). */
@@ -90,6 +96,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   paintOnChart: false,
   readDrawings: false,
   explainWithAi: false,
+  readPageAccount: false,
   hotkeysEnabled: true,
   hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
   claudeBridgeEnabled: false,
@@ -235,6 +242,8 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     readDrawings: record.readDrawings === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
+    // Leer la página también: solo cuando el usuario lo enciende.
+    readPageAccount: record.readPageAccount === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
     hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),

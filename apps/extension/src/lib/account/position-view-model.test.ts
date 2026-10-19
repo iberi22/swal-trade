@@ -125,6 +125,23 @@ describe('texto', () => {
     expect(v.lines.join('\n')).toContain('Liquidación a 23.8 %');
     expect(v.lines.at(-1)).toContain('cobro en 1 h 23 min');
   });
+  it('tarjeta con la fuente página de Binance y su aviso de antigüedad', () => {
+    const v = positionCardView(POS, null, 0, {
+      sourceLabel: 'página de Binance',
+      staleNote: 'datos de la página de hace 75 s',
+    });
+    expect(v.lines[0]).toContain('página de Binance');
+    expect(v.lines.join('\n')).toContain('datos de la página de hace 75 s');
+    expect(v.lines.length).toBeLessThanOrEqual(6);
+  });
+
+  it('sin fuente ni aviso la tarjeta no cambia', () => {
+    const base = positionCardView(POS, null, 0);
+    const withNulls = positionCardView(POS, null, 0, { sourceLabel: null, staleNote: null });
+    expect(withNulls.lines).toEqual(base.lines);
+    expect(base.lines[0]).not.toContain('página de Binance');
+  });
+
   it('tarjeta con stop, manual y caducado', () => {
     const p = { ...POS, stop: { price: 95, kind: 'order' as const } };
     const v = positionCardView(p, null, 0, { stale: true, manual: true });

@@ -13,6 +13,14 @@ import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
+import { readPageAccount } from '../lib/page-account/content-reader';
+import {
+  PAGE_ACCOUNT_DIAGNOSE_REQUEST,
+  PAGE_ACCOUNT_DIAGNOSE_RESULT,
+  PAGE_ACCOUNT_UPDATE,
+} from '../lib/page-account/messages';
+import { anonymizeTree, treeToCompactText } from '../lib/page-account/snapshot';
+import type { TextNode } from '../lib/page-account/tree';
 
 /** Atributos que cambian cuando el usuario pulsa otro intervalo. */
 const OBSERVED_ATTRS = [
@@ -257,6 +265,89 @@ export default defineContentScript({
     let channel: BridgeChannel | null = null;
     const ackListeners = new Set<(data: unknown) => void>();
 
+    // --- Lectura de la página (posiciones e historial) --------------------
+    // Opt-in: solo con `readPageAccount` encendido. Lee el texto que el usuario
+    // ya ve, no escribe en la página ni pulsa nada. Una lectura cada >= 2 s,
+    // solo con la pestaña visible y solo se avisa si el contenido cambió.
+    const PAGE_READ_MIN_MS = 2000;
+    const PAGE_READ_DEBOUNCE_MS = 600;
+
+    let pageReadWanted = false;
+    let pageReadTimer: ReturnType<typeof setTimeout> | null = null;
+    let pageReadObserver: MutationObserver | null = null;
+    let lastPageParseMs = 0;
+    let lastPageFingerprint = '';
+    let lastPageTree: TextNode | null = null;
+
+    const pageTzOffset = () => new Date().getTimezoneOffset();
+
+    const readPageNow = () => {
+      lastPageParseMs = Date.now();
+      const result = readPageAccount(document, { tzOffsetMinutes: pageTzOffset() });
+      if (result.tree) lastPageTree = result.tree;
+      return result;
+    };
+
+    const publishPageAccount = () => {
+      if (!pageReadWanted) return;
+      // Con la pestaña oculta no se lee: el usuario no está mirando nada.
+      if (document.visibilityState !== 'visible') return;
+      const result = readPageNow();
+      if (result.fingerprint === lastPageFingerprint) return;
+      lastPageFingerprint = result.fingerprint;
+      try {
+        void browser.runtime
+          .sendMessage({
+            type: PAGE_ACCOUNT_UPDATE,
+            positions: result.positions,
+            history: result.history,
+            tzOffsetMinutes: pageTzOffset(),
+            capturedAt: Date.now(),
+          })
+          .catch(() => {});
+      } catch {
+        // La extensión se recargó: este content script quedó viejo.
+      }
+    };
+
+    const schedulePageRead = () => {
+      if (!pageReadWanted || pageReadTimer !== null) return;
+      const wait = Math.max(PAGE_READ_DEBOUNCE_MS, PAGE_READ_MIN_MS - (Date.now() - lastPageParseMs));
+      pageReadTimer = setTimeout(() => {
+        pageReadTimer = null;
+        publishPageAccount();
+      }, wait);
+    };
+
+    const startPageRead = () => {
+      if (pageReadObserver) return;
+      pageReadObserver = new MutationObserver(() => schedulePageRead());
+      // Binance reemplaza tablas y tarjetas enteras: hace falta subtree.
+      pageReadObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+      schedulePageRead();
+    };
+
+    const stopPageRead = () => {
+      pageReadObserver?.disconnect();
+      pageReadObserver = null;
+      if (pageReadTimer !== null) clearTimeout(pageReadTimer);
+      pageReadTimer = null;
+      lastPageFingerprint = '';
+      lastPageTree = null;
+    };
+
+    const applyPageReadSetting = (enabled: boolean) => {
+      if (enabled === pageReadWanted) return;
+      pageReadWanted = enabled;
+      if (enabled) startPageRead();
+      else stopPageRead();
+    };
+
+    const onPageVisibility = () => {
+      if (document.visibilityState === 'visible') schedulePageRead();
+    };
+    document.addEventListener('visibilitychange', onPageVisibility);
+
     // Lectura de los dibujos de posición del usuario (solo lectura). El ajuste
     // vive en storage.local y este content script lo lee por su cuenta: así
     // sobrevive a una recarga de la página sin depender de que el panel empuje
@@ -277,7 +368,9 @@ export default defineContentScript({
     };
     const onSettingsChanged = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
       if (areaName !== 'local' || !changes[SETTINGS_KEY]) return;
-      applyReadSetting(settingsFromStorage({ settings: changes[SETTINGS_KEY]?.newValue }).readDrawings);
+      const next = settingsFromStorage({ settings: changes[SETTINGS_KEY]?.newValue });
+      applyReadSetting(next.readDrawings);
+      applyPageReadSetting(next.readPageAccount);
     };
     try {
       browser.storage?.onChanged?.addListener(onSettingsChanged as never);
@@ -287,7 +380,11 @@ export default defineContentScript({
     try {
       void browser.storage?.local
         ?.get(SETTINGS_KEY)
-        .then((stored) => applyReadSetting(settingsFromStorage(stored).readDrawings))
+        .then((stored) => {
+          const next = settingsFromStorage(stored);
+          applyReadSetting(next.readDrawings);
+          applyPageReadSetting(next.readPageAccount);
+        })
         .catch(() => {});
     } catch {
       // storage no disponible en este frame.
@@ -385,6 +482,15 @@ export default defineContentScript({
         resolution?: unknown;
         tab?: unknown;
       };
+
+      if (record.type === PAGE_ACCOUNT_DIAGNOSE_REQUEST) {
+        // Solo el esquema anonimizado: el árbol crudo no sale de la página.
+        let tree = lastPageTree;
+        if (!tree && pageReadWanted) tree = readPageNow().tree;
+        const outline = tree ? treeToCompactText(anonymizeTree(tree)) : '';
+        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline });
+        return;
+      }
 
       if (record.type === TV_SWITCH_TAB) {
         const targetTab = record.tab === 'tradingView' ? 'tradingView' : 'original';
@@ -506,6 +612,8 @@ export default defineContentScript({
       clearInterval(tvProbe);
       if (timer !== null) clearTimeout(timer);
       browser.runtime.onMessage.removeListener(onRuntimeMessage);
+      document.removeEventListener('visibilitychange', onPageVisibility);
+      stopPageRead();
       try {
         browser.storage?.onChanged?.removeListener(onSettingsChanged as never);
       } catch {
