@@ -6,6 +6,7 @@
 import { handleExplainRequest } from './explain.js';
 import { handleNewsRequest, ingestNews } from './news.js';
 import { handleBackupRequest } from './backup.js';
+import { validateMoversStats } from './movers-stats.js';
 
 /**
  * Server-side privacy sanitizer.
@@ -924,6 +925,104 @@ export default {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'public, max-age=300'
+        }
+      }));
+    }
+
+    // POST /ingest/movers-stats endpoint (swal.movers-stats.v1)
+    if (url.pathname === '/ingest/movers-stats') {
+      if (request.method !== 'POST') {
+        return withSecurityHeaders(new Response(null, {
+          status: 405,
+          headers: { 'Allow': 'POST' }
+        }));
+      }
+
+      const authHeader = request.headers.get('Authorization') || '';
+      const expectedToken = (env && env.PUBLIC_INGEST_TOKEN) ? String(env.PUBLIC_INGEST_TOKEN) : '';
+      if (!expectedToken || !authHeader.startsWith('Bearer ')
+          || !(await timingSafeEqualString(authHeader.slice(7), expectedToken))) {
+        return withSecurityHeaders(new Response(null, { status: 401 }));
+      }
+
+      const MAX_BODY_BYTES = 128 * 1024;
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+        return withSecurityHeaders(new Response(null, { status: 413 }));
+      }
+      const bodyText = await request.text();
+      if (new TextEncoder().encode(bodyText).length > MAX_BODY_BYTES) {
+        return withSecurityHeaders(new Response(null, { status: 413 }));
+      }
+
+      let rawJson;
+      try {
+        rawJson = JSON.parse(bodyText);
+      } catch (_) {
+        return withSecurityHeaders(new Response(JSON.stringify({ error: 'invalid_json' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+
+      const validation = validateMoversStats(rawJson);
+      if (!validation.ok) {
+        return withSecurityHeaders(new Response(JSON.stringify({ error: validation.error }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+
+      validation.value.generated_at = new Date().toISOString();
+
+      const store = snapshotStore(env);
+      if (store) {
+        await store.put(`movers-stats:${validation.value.method}`, JSON.stringify(validation.value));
+      }
+
+      return withSecurityHeaders(new Response(null, { status: 204 }));
+    }
+
+    // GET /api/movers-stats?method=study|forward endpoint
+    if (url.pathname === '/api/movers-stats') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return withSecurityHeaders(new Response(null, {
+          status: 405,
+          headers: { 'Allow': 'GET, HEAD' }
+        }));
+      }
+
+      const method = url.searchParams.get('method') || 'study';
+      if (method !== 'study' && method !== 'forward') {
+        return withSecurityHeaders(new Response(JSON.stringify({ error: 'invalid_method' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+
+      const store = snapshotStore(env);
+      let moversData = null;
+      if (store) {
+        try {
+          moversData = await store.get(`movers-stats:${method}`);
+        } catch (_) {
+          // Una lectura fallida no rompe la pagina: documento vacio.
+          moversData = null;
+        }
+      }
+      if (!moversData) {
+        moversData = JSON.stringify({
+          schema: 'swal.movers-stats.v1',
+          cells: [],
+          note: 'Aun no hay datos publicados.'
+        });
+      }
+
+      return withSecurityHeaders(new Response(moversData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600'
         }
       }));
     }
