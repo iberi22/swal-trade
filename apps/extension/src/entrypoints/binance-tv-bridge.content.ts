@@ -13,7 +13,11 @@
  *   tenga rango visible y dibuja;
  * - limita los dibujos a 4/s y rechacha cargas de más de 4 × SWAL_MAX_SHAPES (F1);
  * - dibuja con un tono neutro y opacidad baja, y bloquea las entidades;
- * - borra únicamente las entidades que él creó.
+ * - borra únicamente las entidades que él creó;
+ * - si el usuario enciende «Leer mis dibujos de posición», SONDEO el gráfico cada
+ *   1,5 s y publico (solo lectura) las herramientas Long/Short Position que él
+ *   traza: entrada, stop y objetivo. Nunca creo, muevo ni borro un dibujo suyo:
+ *   leer es `getAllShapes`/`getShapeById` y nada más.
  *
  * No lee la cuenta, no toca formularios de orden, no pulsa nada. No tiene acceso
  * a la API de la extensión: en el mundo MAIN no existe.
@@ -27,8 +31,13 @@ import {
 } from '../lib/tv-bridge/schema';
 import { parseHello, withinShapeBudget, DrawRateLimit, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { ChartSession, type BridgeReport } from '../lib/tv-bridge/tv-session';
-import { chartFromWindow } from '../lib/tv-bridge/tv-chart';
+import { chartFromWindow, findChartWindow } from '../lib/tv-bridge/tv-chart';
 import { createBridgeMessageHandler } from '../lib/tv-bridge/message-handler';
+import {
+  PositionToolsPoller,
+  readPositionTools,
+  type TvPositionChartLike,
+} from '../lib/tv-bridge/position-tools';
 
 
 
@@ -101,6 +110,22 @@ export default defineContentScript({
 
     // El canal síncrono desvinculado (DOM)
     let channel: BridgeChannel | null = null;
+    // Lectura (solo lectura) de las herramientas Long/Short Position del usuario.
+    const positionTools = new PositionToolsPoller({
+      read: () => {
+        const win = findChartWindow(document, window);
+        const chart = win ? chartFromWindow(win) : null;
+        return readPositionTools(chart as unknown as TvPositionChartLike | null);
+      },
+      send: (message) => {
+        if (!channel) return;
+        try {
+          channel.send(message);
+        } catch {
+          // El puerto pudo cerrarse (pestaña recargada).
+        }
+      },
+    });
     // F8: el bucle de vigilancia no arranca hasta el primer draw (encendido).
     const handler = createBridgeMessageHandler(
       {
@@ -108,6 +133,7 @@ export default defineContentScript({
         stop: () => session.stop(),
         apply: (msg) => session.apply(msg),
         setResolution: (res) => session.setResolution(res),
+        setRead: (enabled) => positionTools.setEnabled(enabled),
       },
       new DrawRateLimit(4),
       (ack) => {
@@ -135,6 +161,7 @@ export default defineContentScript({
         channel.disconnect();
         channel = null;
       }
+      positionTools.stop();
       session.stop();
     });
   },

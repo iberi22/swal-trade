@@ -12,6 +12,7 @@ import {
   settingsToInputs,
   symbolAllowed,
 } from './settings';
+import { LOCALES } from './i18n/locales';
 
 describe('normalizeSymbolList', () => {
   it('acepta una lista o un texto separado por comas y espacios', () => {
@@ -81,7 +82,9 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -93,6 +96,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -110,7 +114,9 @@ describe('normalizeSettings', () => {
       symbols: ["BTC", "ETH"],
       autoSync: false,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: false,
       hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
       claudeBridgeEnabled: false,
@@ -122,6 +128,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -133,7 +140,9 @@ describe('normalizeSettings', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -145,6 +154,7 @@ describe('normalizeSettings', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -160,6 +170,25 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ paintOnChart: 'true' }).paintOnChart).toBe(false);
     expect(normalizeSettings({ paintOnChart: 1 }).paintOnChart).toBe(false);
     expect(DEFAULT_SETTINGS.paintOnChart).toBe(false);
+  });
+
+  it('leer los dibujos de posición solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: true }).readDrawings).toBe(true);
+    expect(normalizeSettings({ readDrawings: 'true' }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: 1 }).readDrawings).toBe(false);
+    expect(normalizeSettings({ readDrawings: null }).readDrawings).toBe(false);
+    expect(DEFAULT_SETTINGS.readDrawings).toBe(false);
+  });
+
+  it('leer las posiciones de la página solo se enciende con true explícito', () => {
+    expect(normalizeSettings({}).readPageAccount).toBe(false);
+    expect(DEFAULT_SETTINGS.readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: true }).readPageAccount).toBe(true);
+    expect(normalizeSettings({ readPageAccount: 'true' }).readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: 1 }).readPageAccount).toBe(false);
+    expect(normalizeSettings({ readPageAccount: null }).readPageAccount).toBe(false);
+    expect(settingsFromStorage({ settings: { readPageAccount: true } }).readPageAccount).toBe(true);
   });
 
   it('las explicaciones con IA solo se encienden con true explícito', () => {
@@ -214,9 +243,12 @@ describe('normalizeSettings', () => {
       'explainWithAi',
       'hotkeyMap',
       'hotkeysEnabled',
+      'locale',
       'paintOnChart',
       'radarEnabled',
       'radarPort',
+      'readDrawings',
+      'readPageAccount',
       'rules',
       'symbols',
     ]);
@@ -242,7 +274,9 @@ describe('settingsFromStorage', () => {
       symbols: ["ETH"],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -254,6 +288,7 @@ describe('settingsFromStorage', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -263,7 +298,9 @@ describe('settingsFromStorage', () => {
       symbols: [],
       autoSync: true,
       paintOnChart: false,
+      readDrawings: false,
       explainWithAi: false,
+      readPageAccount: false,
       hotkeysEnabled: true,
       hotkeyMap: DEFAULT_HOTKEY_MAP,
       claudeBridgeEnabled: false,
@@ -275,6 +312,7 @@ describe('settingsFromStorage', () => {
       ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
       domPositions: false,
       acctMeta: { configured: false, kind: 'none', last4: '' },
+      locale: 'auto',
     });
   });
 
@@ -381,5 +419,24 @@ describe('rules / ai / domPositions / acctMeta', () => {
     });
     const stored = JSON.parse(JSON.stringify({ [SETTINGS_KEY]: custom }));
     expect(settingsFromStorage(stored)).toEqual(custom);
+  });
+});
+
+describe('locale', () => {
+  it('por defecto es auto', () => {
+    expect(normalizeSettings({}).locale).toBe('auto');
+    expect(DEFAULT_SETTINGS.locale).toBe('auto');
+  });
+  it('acepta auto y cualquiera de los 20 códigos', () => {
+    expect(normalizeSettings({ locale: 'auto' }).locale).toBe('auto');
+    for (const l of LOCALES) expect(normalizeSettings({ locale: l.code }).locale).toBe(l.code);
+  });
+  it('un valor desconocido vuelve a auto', () => {
+    for (const bad of ['xx', 'pt', 'EN', '', 7, null, {}, ['es']]) {
+      expect(normalizeSettings({ locale: bad }).locale).toBe('auto');
+    }
+  });
+  it('ida y vuelta por settingsFromStorage', () => {
+    expect(settingsFromStorage({ [SETTINGS_KEY]: { locale: 'ar' } }).locale).toBe('ar');
   });
 });

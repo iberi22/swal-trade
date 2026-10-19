@@ -4,8 +4,11 @@
   import { normalizeSymbolList, HOTKEY_KEYS, type ExtensionSettings } from '../../lib/settings';
   import { NEWS_REFRESH_MS } from '../../lib/news';
   import { TIMEFRAMES, type Timeframe } from '../../lib/types';
+  import { LOCALES, isLocaleCode } from '../../lib/i18n/locales';
+  import { t } from '../../lib/i18n/i18n.svelte';
   import CredentialsAi from './CredentialsAi.svelte';
   import CredentialsBinance from './CredentialsBinance.svelte';
+  import PromptSettings from './PromptSettings.svelte';
   import RulesSettings from './RulesSettings.svelte';
 
   let {
@@ -33,8 +36,8 @@
   } = $props();
 </script>
 
-<!-- El interruptor de pintar vive aquí pero fuera de .settings: es una acción
-     sobre la página, no una preferencia más. -->
+<!-- Los interruptores de la página viven aquí pero fuera de .settings: son
+     acciones sobre la página, no una preferencia más. -->
 <div class="paint-block">
   <label class="field check paint-toggle">
     <input
@@ -69,7 +72,51 @@
       {/if}
     {/if}
   {/if}
+
+  <!-- Solo lectura del dibujo del usuario: no crea, mueve ni borra nada. -->
+  <label class="field check paint-toggle">
+    <input
+      type="checkbox"
+      disabled={!settingsLoaded}
+      checked={settings.readDrawings}
+      data-testid="settings-read-drawings"
+      onchange={(event) => {
+        applySettings({
+          ...settings,
+          readDrawings: (event.currentTarget as HTMLInputElement).checked,
+        });
+      }}
+    />
+    <span>Leer mis dibujos de posición (TradingView)</span>
+  </label>
+  {#if settings.readDrawings}
+    <p class="hint" data-testid="read-drawings-hint">
+      Cada 1,5 s se miran las herramientas Long/Short Position de la pestaña Trading View y la
+      tarjeta «Tu dibujo» de Operación enseña su análisis. No se crea ni se mueve ningún dibujo.
+    </p>
+  {/if}
+
+  <!-- Solo lectura de la página: ni clics ni escrituras, y nada sale del navegador. -->
+  <label class="field check paint-toggle">
+    <input
+      type="checkbox"
+      disabled={!settingsLoaded}
+      checked={settings.readPageAccount}
+      data-testid="settings-read-page-account"
+      onchange={(event) => {
+        applySettings({
+          ...settings,
+          readPageAccount: (event.currentTarget as HTMLInputElement).checked,
+        });
+      }}
+    />
+    <span>Leer mis posiciones e historial de la página de Binance (solo en este navegador)</span>
+  </label>
+  <p class="hint" data-testid="read-page-account-hint">
+    Lee el texto que ya ves en la página. No pulsa nada y no sale de tu navegador.
+  </p>
 </div>
+
 
 <section class="settings" aria-label="Ajustes">
   <div class="settings-body">
@@ -212,10 +259,35 @@
   </div>
 </section>
 
+<section class="settings" aria-label={t('settings.language.title')} data-testid="language-section">
+  <div class="settings-body">
+    <label class="field">
+      <span>{t('settings.language.title')}</span>
+      <select
+        disabled={!settingsLoaded}
+        value={settings.locale}
+        onchange={(event) => {
+          const value = (event.currentTarget as HTMLSelectElement).value;
+          if (value === 'auto' || isLocaleCode(value)) {
+            applySettings({ ...settings, locale: value });
+          }
+        }}
+      >
+        <option value="auto">{t('settings.language.auto')}</option>
+        {#each LOCALES as loc (loc.code)}
+          <option value={loc.code}>{loc.nativeName}</option>
+        {/each}
+      </select>
+      <small class="hint">{t('settings.language.hint')}</small>
+    </label>
+  </div>
+</section>
+
 <section class="settings" aria-label="Cuenta, reglas e IA">
   <div class="settings-body">
     <CredentialsBinance {settings} {applySettings} />
     <RulesSettings {settings} {settingsLoaded} {applySettings} />
     <CredentialsAi {settings} {settingsLoaded} {applySettings} />
+    <PromptSettings />
   </div>
 </section>

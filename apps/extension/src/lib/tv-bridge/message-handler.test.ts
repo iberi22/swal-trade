@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createBridgeMessageHandler } from './message-handler';
 import { DrawRateLimit, buildHello } from './handshake';
-import { SWAL_DRAW, SWAL_CLEAR, SWAL_READY, SWAL_SET_RESOLUTION, buildDrawMessage, buildClearMessage, buildReadyMessage, buildSetResolutionMessage, buildResolutionAckMessage } from './schema';
+import { SWAL_DRAW, SWAL_CLEAR, SWAL_READY, SWAL_SET_RESOLUTION, buildDrawMessage, buildClearMessage, buildReadyMessage, buildSetResolutionMessage, buildResolutionAckMessage, buildSetReadMessage, SWAL_MESSAGE_VERSION, SWAL_SET_READ } from './schema';
 
 describe('Bridge Message Handler', () => {
   it('does not stop session when receiving a ready message', () => {
@@ -25,6 +25,30 @@ describe('Bridge Message Handler', () => {
     expect(session.stop).not.toHaveBeenCalled();
     // And it shouldn't apply it since it returned early
     expect(session.apply).not.toHaveBeenCalled();
+  });
+
+  it('swal:set-read enciende y apaga la lectura sin arrancar el dibujo', () => {
+    const session = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      apply: vi.fn(),
+      setRead: vi.fn(),
+    };
+    const handler = createBridgeMessageHandler(session, new DrawRateLimit(4));
+
+    handler(buildSetReadMessage(true));
+    expect(session.setRead).toHaveBeenCalledWith(true);
+    // Leer no es pintar: la sesión de dibujo no se toca.
+    expect(session.start).not.toHaveBeenCalled();
+    expect(session.apply).not.toHaveBeenCalled();
+
+    handler(buildSetReadMessage(false));
+    expect(session.setRead).toHaveBeenCalledWith(false);
+
+    // Mensaje mal formado o de otra versión: se ignora en silencio.
+    handler({ type: SWAL_SET_READ, version: SWAL_MESSAGE_VERSION, enabled: 'yes' });
+    handler({ type: SWAL_SET_READ, version: 0, enabled: true });
+    expect(session.setRead).toHaveBeenCalledTimes(2);
   });
 
   it('draw -> ready -> draw keeps the session running', () => {

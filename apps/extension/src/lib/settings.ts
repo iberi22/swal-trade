@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
+import { isLocaleCode, type LocaleCode } from './i18n/locales';
 import { TIMEFRAMES, type Timeframe } from './types';
 
 export const HOTKEY_KEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'] as const;
@@ -51,10 +52,22 @@ export interface ExtensionSettings {
    */
   paintOnChart: boolean;
   /**
+   * Lee (solo lectura) las herramientas Long/Short Position que el usuario
+   * dibuja en la pestaña Trading View. Arranca apagado: leer el gráfico ajeno
+   * es una acción sobre la página y necesita un `true` explícito.
+   */
+  readDrawings: boolean;
+  /**
    * Explicaciones con IA: manda el símbolo, la temporalidad y los patrones a
    * trade.swal.network. Arranca apagado y exige un `true` explícito.
    */
   explainWithAi: boolean;
+  /**
+   * Lee el texto que el usuario ya ve en su página de Binance Futures
+   * (posiciones abiertas e historial) para no necesitar clave de API.
+   * Local, opt-in y sin pulsar nada: exige un `true` explícito.
+   */
+  readPageAccount: boolean;
   /** Atajos de teclado habilitados para cambiar la temporalidad (F1..F12). */
   hotkeysEnabled: boolean;
   /** Mapa de tecla de función a temporalidad (o null para ninguna). */
@@ -72,6 +85,8 @@ export interface ExtensionSettings {
   /** Lee posiciones del DOM de Binance. Necesita un `true` explícito. */
   domPositions: boolean;
   acctMeta: AcctMeta;
+  /** Idioma del panel: 'auto' sigue al navegador. */
+  locale: 'auto' | LocaleCode;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -79,7 +94,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   symbols: [],
   autoSync: true,
   paintOnChart: false,
+  readDrawings: false,
   explainWithAi: false,
+  readPageAccount: false,
   hotkeysEnabled: true,
   hotkeyMap: { ...DEFAULT_HOTKEY_MAP },
   claudeBridgeEnabled: false,
@@ -91,6 +108,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   ai: { provider: 'opencode', model: '', redaction: 'relative', consentedProviders: [] },
   domPositions: false,
   acctMeta: { configured: false, kind: 'none', last4: '' },
+  locale: 'auto',
 };
 
 export const SETTINGS_KEY = 'settings';
@@ -220,8 +238,12 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     autoSync: record.autoSync === false ? false : DEFAULT_SETTINGS.autoSync,
     // Pintar en el gráfico necesita un `true` explícito: se sale del panel.
     paintOnChart: record.paintOnChart === true,
+    // Leer los dibujos del usuario también: solo con un `true` explícito.
+    readDrawings: record.readDrawings === true,
     // Salir a la red necesita un `true` explícito: nunca por accidente.
     explainWithAi: record.explainWithAi === true,
+    // Leer la página también: solo cuando el usuario lo enciende.
+    readPageAccount: record.readPageAccount === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
     hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),
@@ -249,6 +271,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     ai: normalizeAi(record.ai),
     domPositions: record.domPositions === true,
     acctMeta: normalizeAcctMeta(record.acctMeta),
+    locale: isLocaleCode(record.locale) ? record.locale : 'auto',
   };
 }
 

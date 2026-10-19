@@ -30,6 +30,52 @@ Este documento complementa el [resumen de amenazas y vulnerabilidades](./SECURIT
 | El escáner solo lee datos públicos y nunca importa la cuenta ni la IA ni usa el enrutador `acct:`/`ai:` | `apps/extension/src/lib/scanner/scanner-privacy.test.ts` | apps/extension/src/lib/scanner/scanner-privacy.test.ts::scanner modules never import account or ai and never use the acct:/ai: router |
 | El permiso `notifications` es opcional y `alarms` es el único permiso nuevo obligatorio; el manifest sigue sin `tabs`, `scripting` ni `offscreen` | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should have minimal permissions for chrome |
 | El manifest cubre las rutas del escáner con una lista exacta (`ticker/24hr`, `exchangeInfo`, `movers-stats`) | `apps/extension/wxt.config.ts` | apps/extension/src/lib/manifest-guard.test.ts::should have exact set of host_permissions (snapshot-style) |
+| La lectura de posiciones e historial de la página de Binance es opt-in, local y de solo lectura: no pulsa, no escribe, no lee inputs y no abre ninguna conexión de red | `apps/extension/src/lib/page-account/` y `apps/extension/src/entrypoints/content.ts` | apps/extension/src/lib/page-account/page-account-privacy.test.ts::ningún módulo usa APIs de escritura ni de red |
+
+## Lectura de la página de Binance (opt-in)
+
+El ajuste **«Leer mis posiciones e historial de la página de Binance (solo en este navegador)»**
+(`readPageAccount`) está **apagado por defecto**. Existe para no necesitar clave de API cuando el
+usuario opera desde datos móviles (una clave con IP restringida falla ahí). Lo que hace, exactamente:
+
+**Qué lee**
+- El texto visible de la tabla de **posiciones abiertas**: símbolo, tamaño, PnL (%ROI), precio de
+  entrada, precio de equilibrio, precio de marca y precio de liquidación.
+- El texto visible de las tarjetas de **«Historial de posiciones»** que el usuario haya abierto en
+  Binance (elige 1 mes en la propia página): fechas de apertura y cierre, duración, PnL realizado,
+  ROI, volumen de cierre, entrada, cierre promedio e interés abierto máximo.
+- Nada más: ni el libro de órdenes, ni el saldo, ni formularios de órdenes. Los valores de los inputs
+  de «Cerrar» se ignoran y el diagnóstico anonimizado los descarta.
+
+**Cómo**
+- Un `MutationObserver` sobre `document.body`, con un mínimo de **2 s** entre lecturas, y **solo con
+  la pestaña visible**. Se localizan las regiones por las etiquetas visibles (`labels.ts`), nunca por
+  clases CSS, y el trabajo por lectura está acotado (nº de elementos y de nodos).
+- Solo se avisa al background cuando el contenido serializado cambió. El mensaje
+  `page-account:update` se valida de nuevo al recibirlo (tope de 50 posiciones y 500 filas por
+  aviso, números finitos).
+
+**Lo que nunca hace**
+- No hace clic, no escribe en la página, no cambia el scroll ni el foco.
+- No sale del navegador: ningún módulo de `page-account` usa `fetch`, `XMLHttpRequest` ni
+  `WebSocket` (lo comprueba `page-account-privacy.test.ts`). Nada de esto llega a Binance ni a
+  trade.swal.network.
+- No se usa para decidir entradas ni tamaño: es dato de lectura para el panel.
+
+**Dónde se guarda y cómo se borra**
+- Posiciones abiertas: `storage.session` de la extensión (se pierden al cerrar el navegador).
+- Historial leído: IndexedDB local `swal-page-account` (claves `pagehist:`), como máximo 2000 filas,
+  deduplicadas por operación.
+- Para borrarlo: pestaña **Mis trades → «Borrar datos leídos»**, o apagar el interruptor (deja de
+  leer) y borrar los datos de la extensión desde el navegador.
+- El botón **«Copiar diagnóstico»** copia `treeToCompactText(anonymizeTree(...))`: la estructura de la
+  región leída con **todos los dígitos tapados** (los símbolos y las etiquetas conocidas se
+  conservan). Sirve para que el usuario lo pegue en un informe; no se envía solo.
+
+**Con IA:** el botón «Analizar con IA» de Mis trades manda `swal.history.v1` con porcentajes, cuentas
+y ratios (n, aciertos, ROI medio/mejor/peor en %, duración, apalancamiento y reparto por símbolo y
+lado). **Nunca** importes, tamaños, precios ni el resultado neto en moneda; el test serializa la carga
+y comprueba que no aparezca ninguna de esas claves.
 
 ## Qué NO está garantizado
 

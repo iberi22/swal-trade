@@ -9,25 +9,29 @@ import type { Candle } from '../types';
  * Se asume que la última vela de cada serie es la que está en curso.
  */
 
-export type LevelKind =
-  | 'dayOpen'
-  | 'prevDayHigh'
-  | 'prevDayLow'
-  | 'weekOpen'
-  | 'prevWeekHigh'
-  | 'prevWeekLow'
-  | 'monthOpen'
-  | 'ema20_1h'
-  | 'ema50_1h'
-  | 'ema50_4h'
-  | 'bbUpper'
-  | 'bbLower'
-  | 'pivot'
-  | 'r1'
-  | 's1'
-  | 'round'
-  | 'confirm'
-  | 'invalidate';
+/** Lista canónica de tipos de nivel: única fuente de verdad (allow-list del payload de IA). */
+export const LEVEL_KINDS = [
+  'dayOpen',
+  'prevDayHigh',
+  'prevDayLow',
+  'weekOpen',
+  'prevWeekHigh',
+  'prevWeekLow',
+  'monthOpen',
+  'ema20_1h',
+  'ema50_1h',
+  'ema50_4h',
+  'bbUpper',
+  'bbLower',
+  'pivot',
+  'r1',
+  's1',
+  'round',
+  'confirm',
+  'invalidate',
+] as const;
+
+export type LevelKind = (typeof LEVEL_KINDS)[number];
 
 /** Orden fijo de prioridad: decide el tipo y el orden de las etiquetas al fusionar. */
 const KIND_ORDER: readonly LevelKind[] = [

@@ -24,7 +24,7 @@ export interface CloseItem {
 }
 
 export interface NextClosesOptions {
-  /** `nextFundingTime` de Binance (ms). Se usa solo si es futuro y a menos de 8 h. */
+  /** `nextFundingTime` de Binance (ms). Se usa solo si es futuro y cae en la próxima rejilla. */
   nextFundingTimeMs?: number | null;
 }
 

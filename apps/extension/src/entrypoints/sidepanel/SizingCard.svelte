@@ -3,15 +3,18 @@
   import { browser } from 'wxt/browser';
   import {
     calculatePositionSize,
+    calculatePositionSizeWithFees,
     defaultScaleEntries,
     planScaleIn,
     DEFAULT_SIZING_PREFERENCES,
     invalidationPriceFromFinding,
     normalizeSizingPreferences,
     SIZING_STORAGE_KEY,
+    TAKER_FEE_RATE,
     type SizingDirection,
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
+  import { subscribeSizingLoad, TRANCHES_NOTE } from '../../lib/trade-cards/sizing-bridge';
 
   let { lastPrice = null, finding = null, compact = false }: { lastPrice?: number | null; finding?: Finding | null; compact?: boolean } = $props();
 
@@ -24,6 +27,13 @@
   let userEditedEntry = $state(false);
   let userEditedStop = $state(false);
   let prevFindingId = $state<string | null>(null);
+  // Carga desde una tarjeta: usa el riesgo efectivo del ticket y sus tarifas
+  // para reproducir el mismo tamaño (si no, el riesgo guardado daría otro).
+  let fromCard = $state(false);
+  let cardNote = $state('');
+  let cardTranchesNote = $state('');
+  let cardEntryFeeRate = $state(TAKER_FEE_RATE);
+  let cardExitFeeRate = $state(TAKER_FEE_RATE);
 
   onMount(() => {
     void browser.storage.local?.get(SIZING_STORAGE_KEY).then((stored) => {
@@ -33,6 +43,31 @@
       direction = prefs.direction;
       loaded = true;
     }).catch(() => { loaded = true; });
+
+    // Tarjetas de operación: «Cargar en el dimensionador».
+    return subscribeSizingLoad((load) => {
+      direction = load.direction;
+      riskPct = load.riskPct;
+      entryStr = String(load.entry);
+      stopStr = String(load.stop);
+      userEditedEntry = true;
+      userEditedStop = true;
+      fromCard = true;
+      cardNote = load.note;
+      cardEntryFeeRate = load.entryFeeRate;
+      cardExitFeeRate = load.exitFeeRate;
+      const tranchePrices = load.tranches ?? [];
+      if (tranchePrices.length === 3) {
+        e2Str = String(tranchePrices[1]);
+        e3Str = String(tranchePrices[2]);
+        userEditedScale = true;
+        cardTranchesNote = '';
+      } else {
+        userEditedScale = false;
+        cardTranchesNote = tranchePrices.length > 1 ? TRANCHES_NOTE : '';
+      }
+      savePreferences();
+    });
   });
 
   function savePreferences() {
@@ -58,7 +93,21 @@
   const numEntry = $derived(parseFloat(entryStr));
   const numStop = $derived(parseFloat(stopStr));
   const hasInputs = $derived(Number.isFinite(numEntry) && numEntry > 0 && Number.isFinite(numStop) && numStop > 0);
-  const result = $derived(hasInputs ? calculatePositionSize({ capital, riskPct, direction, entry: numEntry, stop: numStop }) : null);
+  const result = $derived(
+    hasInputs
+      ? fromCard
+        ? calculatePositionSizeWithFees({
+            capital,
+            riskPct,
+            direction,
+            entry: numEntry,
+            stop: numStop,
+            entryFeeRate: cardEntryFeeRate,
+            exitFeeRate: cardExitFeeRate,
+          })
+        : calculatePositionSize({ capital, riskPct, direction, entry: numEntry, stop: numStop })
+      : null,
+  );
 
   let e2Str = $state('');
   let e3Str = $state('');
@@ -125,6 +174,12 @@
       }} />
     </label>
   </div>
+
+  {#if cardNote || cardTranchesNote}
+    <p class="from-card" data-testid="sizing-from-card">
+      {cardNote}{#if cardTranchesNote} · {cardTranchesNote}{/if}
+    </p>
+  {/if}
 
   {#if riskPct > 2}
     <p class="warning" data-testid="sizing-risk-warning">Aviso: arriesgar más del 2 % por operación desaconsejado para principiantes; aumenta drásticamente el riesgo de quiebra.</p>
@@ -204,4 +259,5 @@
   .leverage-note { margin: 0; font-size: 0.7rem; line-height: 1.35; color: hsl(var(--subtle-foreground)); }
   .error-line { margin: 0; font-size: 0.74rem; line-height: 1.35; color: hsl(var(--foreground)); background: hsl(var(--surface-strong)); padding: 0.4rem 0.5rem; border-radius: calc(var(--radius) - 0.3rem); }
   .hint-line { margin: 0; font-size: 0.72rem; color: hsl(var(--subtle-foreground)); }
+  .from-card { margin: 0; font-size: 0.7rem; color: hsl(var(--subtle-foreground)); line-height: 1.35; }
 </style>

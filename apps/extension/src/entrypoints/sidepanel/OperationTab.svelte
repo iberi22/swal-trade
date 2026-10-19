@@ -14,6 +14,15 @@
     type InitialStopStore,
   } from '../../lib/account/position-view-model';
   import { startContextFeed, type ContextSnapshot } from '../../lib/context/context-feed';
+  import { PAGE_ACCOUNT_SESSION_KEY, parseStoredPagePositions } from '../../lib/page-account/messages';
+  import {
+    PAGE_SOURCE_LABEL,
+    pagePositionFor,
+    pagePositionToView,
+    pageStaleLabel,
+    withPagePosition,
+  } from '../../lib/page-account/page-position';
+  import type { PagePosition } from '../../lib/page-account/parse-positions';
   import { fetchKlines } from '../../lib/market-feed';
   import { FEAR_GREED_KEY, browserCache } from '../../lib/market-pulse';
   import { positionFor, sectionsForMode, type PanelState } from '../../lib/account/panel-controller';
@@ -31,6 +40,7 @@
   import type { ExtensionSettings } from '../../lib/settings';
   import type { AnalysisResult, Candle, Finding, Timeframe } from '../../lib/types';
   import ContextBar from './ContextBar.svelte';
+  import DrawingCard from './DrawingCard.svelte';
   import ExplainCard from './ExplainCard.svelte';
   import LevelsCard from './LevelsCard.svelte';
   import ManualPosition from './ManualPosition.svelte';
@@ -39,6 +49,7 @@
   import RadarCard from './RadarCard.svelte';
   import RulesList from './RulesList.svelte';
   import SizingCard from './SizingCard.svelte';
+  import TradeCards from './TradeCards.svelte';
 
   let {
     symbol,
@@ -84,6 +95,11 @@
     applySettings: (next: ExtensionSettings) => void;
   } = $props();
 
+  // Posición leída de la página (opt-in, sin credenciales): el content script
+  // deja las posiciones abiertas en storage.session y aquí se usan cuando la
+  // cuenta por API no dice nada. La instantánea de API siempre manda.
+  let pageAccount = $state<{ positions: PagePosition[]; capturedAt: number } | null>(null);
+
   // Posición escrita a mano (sin credenciales): vive en storage.session y, si el
   // panel no sabe si hay posición, se trata como una de snapshot con fuente `manual`.
   let manual = $state<ManualData | null>(null);
@@ -102,6 +118,44 @@
       await session()?.set({ [key]: price });
     },
   };
+
+  $effect(() => {
+    const enabled = settings.readPageAccount;
+    if (!enabled) {
+      pageAccount = null;
+      return;
+    }
+    let alive = true;
+    const load = () => {
+      void session()
+        ?.get(PAGE_ACCOUNT_SESSION_KEY)
+        .then((stored) => {
+          if (!alive) return;
+          const parsed = parseStoredPagePositions(stored?.[PAGE_ACCOUNT_SESSION_KEY]);
+          pageAccount = parsed ? { positions: parsed.positions, capturedAt: parsed.capturedAt } : null;
+        })
+        .catch(() => {});
+    };
+    load();
+    const handle = setInterval(load, 5_000);
+    const onChanged = (changes: Record<string, unknown>, area: string) => {
+      if (area === 'session' && changes[PAGE_ACCOUNT_SESSION_KEY]) load();
+    };
+    try {
+      browser.storage?.onChanged?.addListener(onChanged as never);
+    } catch {
+      // sin onChanged queda el sondeo
+    }
+    return () => {
+      alive = false;
+      clearInterval(handle);
+      try {
+        browser.storage?.onChanged?.removeListener(onChanged as never);
+      } catch {
+        // nunca se registró
+      }
+    };
+  });
 
   $effect(() => {
     const sym = symbol;
@@ -151,8 +205,15 @@
   );
 
   const manualView = $derived(manual ? manualToPositionView(manual, lastPrice) : null);
-  const effectivePanel = $derived(withManualPosition(panel, manualView, symbol, nowMs));
-  const isManual = $derived(effectivePanel !== panel);
+  const pagePosition = $derived(pageAccount ? pagePositionFor(pageAccount.positions, symbol) : null);
+  const pageView = $derived(pagePositionToView(pagePosition));
+  const pageCapturedAt = $derived(pageAccount?.capturedAt ?? null);
+  const pageStale = $derived(pageStaleLabel(pageCapturedAt, nowMs));
+  // Orden: API > página > manual. Cada paso solo actúa si nadie más sabía nada.
+  const pagePanel = $derived(withPagePosition(panel, pageView, symbol, pageCapturedAt, nowMs));
+  const effectivePanel = $derived(withManualPosition(pagePanel, manualView, symbol, nowMs));
+  const isPage = $derived(pagePanel !== panel);
+  const isManual = $derived(effectivePanel !== pagePanel);
   const sections = $derived(sectionsForMode(effectivePanel.mode, symbol));
   const position = $derived(positionFor(effectivePanel.snapshot, symbol));
 
@@ -267,12 +328,28 @@
     {nowMs}
     stale={effectivePanel.stale}
     manual={isManual}
+    sourceLabel={isPage ? PAGE_SOURCE_LABEL : null}
+    staleNote={isPage ? pageStale : null}
     onRemoveManual={removeManual}
   />
   <RulesList results={ruleResults} />
 {:else if sections.sizing}
   <SizingCard {lastPrice} finding={selectedFinding} compact />
 {/if}
+
+<DrawingCard
+  {symbol}
+  {lastPrice}
+  snapshot={contextSnapshot}
+  {findingsLevels}
+  rules={settings.rules}
+  {settings}
+  {settingsLoaded}
+  {applySettings}
+  canLoad={sections.sizing}
+/>
+
+<TradeCards {symbol} {lastPrice} snapshot={contextSnapshot} {findingsLevels} rules={settings.rules} canLoad={sections.sizing} />
 
 <!-- Leyenda del gráfico. Vive fuera del canvas a propósito: dentro, el lienzo
      de lightweight-charts se come los clics. -->
