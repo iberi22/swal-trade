@@ -24,37 +24,62 @@ function ok(r: ReturnType<typeof buildTicket>): TradeTicket {
 }
 
 describe('buildTicket sizing', () => {
-  it('risk basis: 1 % of 1000, entry 100 stop 99 -> qty 10, loss 10', () => {
+  it('risk basis includes round-trip fees: 1 % of 1000, entry 100 stop 99 -> qty 9,095, loss 10 with fees', () => {
     const t = ok(buildTicket({ ...base, preset: marketPreset() }));
     expect(t.orderType).toBe('MARKET');
     expect(t.stop).toBe(99);
-    expect(t.entries).toEqual([{ price: 100, qty: 10, weightPct: 100 }]);
+    expect(t.entries).toEqual([{ price: 100, qty: 9.095, weightPct: 100 }]);
     expect(t.lossAtStopUsd).toBe(10);
+    expect(t.lossIncludesFees).toBe(true);
     expect(t.lossAtStopPctOfCapital).toBe(1);
-    expect(t.notionalUsd).toBe(1000);
+    expect(t.notionalUsd).toBe(909.5);
     expect(t.leverage).toBe(1);
-    expect(t.marginUsd).toBe(1000);
-    expect(t.feeUsd).toBe(1); // 1000 * 0,10 % mercado+stop
+    expect(t.marginUsd).toBe(909.5);
+    expect(t.feeUsd).toBe(0.9); // 9,095 * (100 + 99) * 0,05 %
     expect(t.tps.map((x) => x.price)).toEqual([101, 102]);
     expect(t.tps.map((x) => x.rMultiple)).toEqual([1, 2]);
     expect(t.rrToFirstTp).toBe(1);
     expect(t.warnings.some((w) => w.code === 'risk_above_rule')).toBe(false);
   });
 
-  it('margin basis: 5 % of 1000 at 10x -> notional 500', () => {
+  it('resting limit entry uses maker fee and keeps the 1 % budget (1000 / 100 / 99)', () => {
+    const t = ok(buildTicket({
+      ...base, price: 101, levels: [row(100, 'round')],
+      preset: marketPreset({ entry: { kind: 'limit_level', pick: 'nearest_support' } }),
+    }));
+    expect(t.entries[0]?.price).toBe(100);
+    expect(t.fees.entryRate).toBe(0.0002);
+    expect(t.entries[0]?.qty).toBe(9.3502); // 10 / (1 + 0,02 + 0,0495)
+    expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
+    expect(t.lossIncludesFees).toBe(true);
+  });
+
+  it('never exceeds the 1 % budget once fees are counted (judge scenario 1000 / 100 / 99)', () => {
+    const filters = { tickSize: 0.01, stepSize: 0.001, minNotional: 5, minQty: 0.001 };
+    const t = ok(buildTicket({ ...base, filters, preset: marketPreset() }));
+    expect(t.entries[0]?.qty).toBe(9.095);
+    expect(t.lossIncludesFees).toBe(true);
+    expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
+    expect(t.lossAtStopUsd).toBeGreaterThan(9.9);
+    expect(t.feeUsd).toBeGreaterThan(0);
+  });
+
+  it('margin basis: 5 % of 1000 at 10x -> notional 500, loss 5,50 with fees', () => {
     const t = ok(buildTicket({ ...base, preset: marketPreset({ size: { basis: 'margin', pct: 5 }, leverage: 10 }) }));
     expect(t.marginUsd).toBe(50);
     expect(t.notionalUsd).toBe(500);
     expect(t.entries[0]?.qty).toBe(5);
-    expect(t.lossAtStopUsd).toBe(5);
+    expect(t.lossAtStopUsd).toBe(5.5);
+    expect(t.lossIncludesFees).toBe(true);
     expect(t.leverage).toBe(10);
   });
 
-  it('margin basis with leverage min uses the largest leverage that fits the risk rule', () => {
-    // margen 100, stop 1 %: cada 1x pierde 1 USD; la regla (1 % de 1000 = 10 USD) admite 10x
+  it('margin basis with leverage min uses the largest leverage whose fee-inclusive loss fits the rule (9x, not 10x)', () => {
+    // margen 100, stop 1 %: sin comisiones 10x cabría justo; con comisiones la pérdida sería 10,995 -> 9x.
     const t = ok(buildTicket({ ...base, preset: marketPreset({ size: { basis: 'margin', pct: 10 }, leverage: 'min' }) }));
-    expect(t.leverage).toBe(10);
-    expect(t.lossAtStopUsd).toBe(10);
+    expect(t.leverage).toBe(9);
+    expect(t.lossAtStopUsd).toBe(9.9);
+    expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
     expect(t.warnings.some((w) => w.code === 'risk_above_rule')).toBe(false);
   });
 
@@ -111,7 +136,7 @@ describe('buildTicket sides, rounding and warnings', () => {
     expect(t.stopSource).toBe('invalidation');
   });
 
-  it('rounds prices to tick and floors quantity to step', () => {
+  it('rounds prices to tick and floors quantity to step (fees included)', () => {
     const filters = { tickSize: 0.5, stepSize: 0.1, minNotional: 5, minQty: 0.1 };
     const t = ok(buildTicket({
       ...base, capital: 1234, filters, levels: [row(97.3, 's1')],
@@ -119,8 +144,20 @@ describe('buildTicket sides, rounding and warnings', () => {
     }));
     expect(t.entries[0]?.price).toBe(97.5);
     expect(t.stop).toBe(95.5);
-    expect(t.entries[0]?.qty).toBe(6.1); // 12,34 / 2 = 6,17 -> 6,1
+    expect(t.entries[0]?.qty).toBe(5.9); // 12,34 / (2 + fees) = 5,9689 -> 5,9
     expect(t.warnings.some((w) => w.code === 'no_filters')).toBe(false);
+  });
+
+  it('charges taker when a rounded limit entry would rest on the wrong side (stop entry)', () => {
+    const filters = { tickSize: 1, stepSize: 0.001, minNotional: 0, minQty: 0 };
+    const t = ok(buildTicket({
+      ...base, price: 100.9, filters, levels: [row(100.8, 's1')],
+      preset: marketPreset({ entry: { kind: 'limit_level', pick: 'nearest_support' }, stop: { kind: 'pct', pct: 2 } }),
+    }));
+    expect(t.entries[0]?.price).toBe(101); // el tick lo redondea por ENCIMA del precio
+    expect(t.warnings.some((w) => w.code === 'entry_stop')).toBe(true);
+    // entrada taker 0,05 % + salida taker 0,05 % = 0,10 % del nocional
+    expect(t.feeUsd).toBeCloseTo(t.notionalUsd * 0.001, 1);
   });
 
   it('warns about rounding when filters are unknown', () => {
@@ -129,9 +166,9 @@ describe('buildTicket sides, rounding and warnings', () => {
   });
 
   it('warns below the pair minimum', () => {
-    const filters = { tickSize: 0.01, stepSize: 0.1, minNotional: 60, minQty: 0.1 };
+    const filters = { tickSize: 0.01, stepSize: 0.1, minNotional: 100, minQty: 0.1 };
     const t = ok(buildTicket({ ...base, capital: 100, filters, preset: marketPreset({ stop: { kind: 'pct', pct: 2 } }) }));
-    expect(t.entries[0]?.qty).toBe(0.5);
+    expect(t.entries[0]?.qty).toBe(0.4);
     expect(t.warnings.some((w) => w.text === 'por debajo del mínimo del par')).toBe(true);
   });
 

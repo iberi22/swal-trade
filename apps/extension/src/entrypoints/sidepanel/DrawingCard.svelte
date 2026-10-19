@@ -7,6 +7,7 @@
   import {
     buildDrawingCardModel,
     DRAWING_AI_NOT_CONFIGURED,
+    type DrawingCardEntry,
     type DrawingCardTool,
   } from '../../lib/drawing/card-model';
   import type { DrawingAnalysis } from '../../lib/drawing/types';
@@ -122,9 +123,11 @@
       ? snapshot.premium.lastFundingRate * 100
       : null,
   );
-  const analyses = $derived<DrawingAnalysis[]>(
-    drawingsFromPositionTools(message).map((drawing) =>
-      analyzeDrawing({
+  const entries = $derived<DrawingCardEntry[]>(
+    drawingsFromPositionTools(message).map((drawing) => ({
+      symbol: drawing.symbol,
+      id: drawing.id,
+      result: analyzeDrawing({
         drawing,
         price: refPrice ?? drawing.entry,
         levels,
@@ -134,12 +137,18 @@
         filters: filters ?? undefined,
         fundingRatePct8h,
       }),
-    ),
+    })),
   );
   const model = $derived(
-    buildDrawingCardModel({ enabled: settings.readDrawings, symbol, analyses }),
+    buildDrawingCardModel({ enabled: settings.readDrawings, symbol, entries }),
   );
-  const analysisById = $derived(new Map(analyses.map((analysis) => [analysis.drawing.id, analysis])));
+  const analysisById = $derived(
+    new Map(
+      entries.flatMap((entry) =>
+        entry.result.ok ? [[entry.id, entry.result.analysis] as const] : [],
+      ),
+    ),
+  );
 
   const provider = $derived(getProvider(settings.ai.provider));
   const aiConfigured = $derived(provider !== null && settings.ai.model.trim() !== '');
@@ -277,67 +286,74 @@
   {:else if model.state === 'empty'}
     <p class="hint" data-testid="drawing-empty">{model.hint}</p>
   {:else}
-    {#each model.tools as tool (tool.id)}
-      {@const analysis = analysisById.get(tool.id) ?? null}
-      <div class="tool" data-testid="drawing-tool">
-        <p class="summary" data-testid="drawing-summary">{tool.summary}</p>
+    {#each model.items as item (item.id)}
+      {#if item.kind === 'analysis'}
+        {@const tool = item.tool}
+        {@const analysis = analysisById.get(tool.id) ?? null}
+        <div class="tool" data-testid="drawing-tool">
+          <p class="summary" data-testid="drawing-summary">{tool.summary}</p>
 
-        {#if tool.checks.length > 0}
-          <ul class="checks">
-            {#each tool.checks as check (check.code)}
-              <li class="check" class:inverted={check.severity === 'warn'} data-testid="drawing-check">{check.text}</li>
+          {#if tool.checks.length > 0}
+            <ul class="checks">
+              {#each tool.checks as check (check.code)}
+                <li class="check" class:inverted={check.severity === 'warn'} data-testid="drawing-check">{check.text}</li>
+              {/each}
+            </ul>
+          {/if}
+
+          <dl>
+            {#each tool.numbers as row (row.label)}
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
             {/each}
-          </ul>
-        {/if}
+          </dl>
 
-        <dl>
-          {#each tool.numbers as row (row.label)}
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
-          {/each}
-        </dl>
+          {#if tool.levels.length > 0}
+            <p class="note">Niveles en el camino: {tool.levels.join(' · ')}</p>
+          {:else}
+            <p class="note">Sin niveles entre la entrada y el objetivo.</p>
+          {/if}
+          <p class="note">Alcance: {tool.reach}.</p>
+          <p class="note">Funding: {tool.funding}.</p>
+          <p class="note honest" data-testid="drawing-honest">{tool.honestLine}</p>
 
-        {#if tool.levels.length > 0}
-          <p class="note">Niveles en el camino: {tool.levels.join(' · ')}</p>
-        {:else}
-          <p class="note">Sin niveles entre la entrada y el objetivo.</p>
-        {/if}
-        <p class="note">Alcance: {tool.reach}.</p>
-        <p class="note">Funding: {tool.funding}.</p>
-        <p class="note honest" data-testid="drawing-honest">{tool.honestLine}</p>
-
-        <div class="actions">
-          <button type="button" class="btn" data-testid="drawing-load" disabled={!canLoad} onclick={() => load(tool)}>
-            Cargar en el dimensionador
-          </button>
-          <button type="button" class="btn ghost" data-testid="drawing-copy" onclick={() => copy(tool)}>
-            {copiedId === tool.id ? 'Copiado' : 'Copiar ticket'}
-          </button>
-          <button
-            type="button"
-            class="btn ghost"
-            data-testid="drawing-ai"
-            disabled={aiBusy || !aiConfigured || !analysis}
-            onclick={() => analysis && startAi(analysis)}
-          >
-            Analizar con IA
-          </button>
-        </div>
-        {#if !aiConfigured}
-          <p class="note" data-testid="drawing-ai-config">{DRAWING_AI_NOT_CONFIGURED}.</p>
-        {/if}
-
-        {#if pendingAnalysis && pendingAnalysis.drawing.id === tool.id && analysis}
-          <div class="consent" role="dialog" aria-label="Consentimiento de envío">
-            <p class="note">{consentLine}</p>
-            <pre class="pre">{serializeForLlm(drawingAiPayload(analysis))}</pre>
-            <div class="actions">
-              <button type="button" class="btn" data-testid="drawing-ai-accept" onclick={acceptAi}>Aceptar y analizar</button>
-              <button type="button" class="btn ghost" onclick={() => (pendingId = null)}>Cancelar</button>
-            </div>
+          <div class="actions">
+            <button type="button" class="btn" data-testid="drawing-load" disabled={!canLoad} onclick={() => load(tool)}>
+              Cargar en el dimensionador
+            </button>
+            <button type="button" class="btn ghost" data-testid="drawing-copy" onclick={() => copy(tool)}>
+              {copiedId === tool.id ? 'Copiado' : 'Copiar ticket'}
+            </button>
+            <button
+              type="button"
+              class="btn ghost"
+              data-testid="drawing-ai"
+              disabled={aiBusy || !aiConfigured || !analysis}
+              onclick={() => analysis && startAi(analysis)}
+            >
+              Analizar con IA
+            </button>
           </div>
-        {/if}
-      </div>
+          {#if !aiConfigured}
+            <p class="note" data-testid="drawing-ai-config">{DRAWING_AI_NOT_CONFIGURED}.</p>
+          {/if}
+
+          {#if pendingAnalysis && pendingAnalysis.drawing.id === tool.id && analysis}
+            <div class="consent" role="dialog" aria-label="Consentimiento de envío">
+              <p class="note">{consentLine}</p>
+              <pre class="pre">{serializeForLlm(drawingAiPayload(analysis))}</pre>
+              <div class="actions">
+                <button type="button" class="btn" data-testid="drawing-ai-accept" onclick={acceptAi}>Aceptar y analizar</button>
+                <button type="button" class="btn ghost" onclick={() => (pendingId = null)}>Cancelar</button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="tool" data-testid="drawing-invalid">
+          <p class="error" role="status">{item.text}</p>
+        </div>
+      {/if}
     {/each}
 
     {#if aiBusy}

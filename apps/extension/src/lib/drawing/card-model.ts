@@ -9,7 +9,13 @@
  */
 
 import { DRAWING_HONEST_LINE } from './analyze';
-import type { DrawingAnalysis, DrawingCheck, DrawingSide } from './types';
+import type {
+  DrawingAnalysis,
+  DrawingAnalysisResult,
+  DrawingCheck,
+  DrawingEntryMode,
+  DrawingSide,
+} from './types';
 
 /** Cuántas herramientas se enseñan a la vez (la última y la anterior). */
 export const DRAWING_MAX_SHOWN = 2;
@@ -42,6 +48,35 @@ function plain(value: number): string {
 
 const sideLabel = (side: DrawingSide): string => (side === 'short' ? 'Corto' : 'Largo');
 
+/**
+ * Cómo se enseña la entrada según cómo se colocaría la orden: la entrada por
+ * stop cruza el precio y por tanto paga comisión taker, igual que a mercado.
+ */
+export function entryModeText(mode: DrawingEntryMode): string {
+  if (mode === 'límite') return 'límite';
+  if (mode === 'stop') return 'stop (taker)';
+  return 'mercado';
+}
+
+/**
+ * Motivo de un dibujo inválido en castellano llano. `analyzeDrawing` devuelve
+ * códigos (`wrong_order`, `stop_too_far`…) y aquí se convierten en una frase; un
+ * código desconocido nunca se filtra tal cual a la tarjeta.
+ */
+const INVALID_REASON_TEXT: Record<string, string> = {
+  wrong_order: 'el stop está del lado equivocado (o el objetivo no queda en el sentido de la posición)',
+  non_positive_numbers: 'los precios tienen que ser números positivos',
+  invalid_side: 'la herramienta no dice si la posición es larga o corta',
+  stop_too_far: 'el stop queda a más de la mitad del precio de entrada',
+  invalid_input: 'no se pudo leer la herramienta',
+};
+
+/** Frase completa para un dibujo que no se puede analizar: sin cifras ni acciones. */
+export function invalidDrawingText(reason: string): string {
+  const detail = INVALID_REASON_TEXT[reason] ?? INVALID_REASON_TEXT.invalid_input;
+  return `Dibujo no válido: ${detail}.`;
+}
+
 export interface DrawingNumber {
   label: string;
   value: string;
@@ -70,18 +105,36 @@ export interface DrawingCardTool {
   load: { direction: DrawingSide; entry: number; stop: number };
 }
 
+/**
+ * Un elemento de la tarjeta: el análisis de un dibujo válido o el motivo por el
+ * que un dibujo no se puede analizar. Se conserva el orden de llegada.
+ */
+export type DrawingCardItem =
+  | { kind: 'analysis'; id: string; tool: DrawingCardTool }
+  | { kind: 'invalid'; id: string; text: string };
+
 export type DrawingCardModel =
   | { state: 'off'; text: string }
   | { state: 'empty'; hint: string }
-  | { state: 'ready'; tools: DrawingCardTool[] };
+  | { state: 'ready'; items: DrawingCardItem[] };
+
+/**
+ * Un dibujo leído del gráfico y su resultado ya calculado. El símbolo y el id
+ * viajan aparte porque `DrawingAnalysisResult` inválido no los lleva.
+ */
+export interface DrawingCardEntry {
+  symbol: string;
+  id: string;
+  result: DrawingAnalysisResult;
+}
 
 export interface DrawingCardInput {
   /** `settings.readDrawings`. */
   enabled: boolean;
   /** Símbolo del panel: solo se enseña lo dibujado sobre él. */
   symbol: string;
-  /** Análisis ya calculados, en el orden en que llegaron del gráfico. */
-  analyses: readonly DrawingAnalysis[];
+  /** Dibujos con su análisis ya calculado, en el orden en que llegaron del gráfico. */
+  entries: readonly DrawingCardEntry[];
 }
 
 /** Niveles que el objetivo cruza, de más cerca a más lejos de la entrada. */
@@ -127,14 +180,14 @@ export function numberLines(analysis: DrawingAnalysis): DrawingNumber[] {
   return [
     {
       label: 'Entrada',
-      value: `${formatDrawingPrice(analysis.drawing.entry)} · ${g.entryMode === 'límite' ? 'límite' : 'mercado'}`,
+      value: `${formatDrawingPrice(analysis.drawing.entry)} · ${entryModeText(g.entryMode)}`,
     },
     { label: 'Stop', value: formatDrawingPrice(analysis.drawing.stop) },
     { label: 'Objetivo', value: formatDrawingPrice(analysis.drawing.target) },
     { label: 'R:R bruto / neto', value: `${decimals(g.rr, 2)} / ${decimals(analysis.costs.netRr, 2)}` },
     { label: 'Distancia del stop', value: `${decimals(g.riskPct, 2)} %${stopAtr}` },
     {
-      label: 'Pérdida a tu regla',
+      label: size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop',
       value:
         size.lossUsd > 0
           ? `${decimals(size.lossUsd, 2)} USD`
@@ -148,13 +201,13 @@ export function numberLines(analysis: DrawingAnalysis): DrawingNumber[] {
 export function drawingTicketText(analysis: DrawingAnalysis): string {
   const lines = [
     `DIBUJO · ${analysis.symbol} · ${sideLabel(analysis.side)}`,
-    `Entrada: ${plain(analysis.drawing.entry)} (${analysis.geometry.entryMode})`,
+    `Entrada: ${plain(analysis.drawing.entry)} · ${entryModeText(analysis.geometry.entryMode)}`,
     `Stop: ${plain(analysis.drawing.stop)}`,
     `Objetivo: ${plain(analysis.drawing.target)}`,
     `R:R: ${plain(analysis.geometry.rr)} (neto ${plain(analysis.costs.netRr)})`,
     `Stop: ${plain(analysis.geometry.riskPct)} % del precio`,
     `Cantidad a tu regla: ${analysis.size.qty > 0 ? plain(analysis.size.qty) : 'no cabe en el mínimo del contrato'}`,
-    `Pérdida en el stop: ${plain(analysis.size.lossUsd)} USD`,
+    `${analysis.size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop'}: ${plain(analysis.size.lossUsd)} USD`,
     DRAWING_HONEST_LINE,
   ];
   return lines.join('\n');
@@ -184,18 +237,26 @@ export function toolFromAnalysis(analysis: DrawingAnalysis): DrawingCardTool {
   };
 }
 
+function itemFromEntry(entry: DrawingCardEntry): DrawingCardItem {
+  if (entry.result.ok) {
+    return { kind: 'analysis', id: entry.id, tool: toolFromAnalysis(entry.result.analysis) };
+  }
+  return { kind: 'invalid', id: entry.id, text: invalidDrawingText(entry.result.reason) };
+}
+
 /**
  * Construye lo que enseña la tarjeta. Del más nuevo al más viejo se muestran
  * como mucho `DRAWING_MAX_SHOWN`; el orden de llegada del gráfico se respeta
- * (las formas nuevas van al final de `getAllShapes`).
+ * (las formas nuevas van al final de `getAllShapes`). Un dibujo inválido ocupa
+ * su sitio con el motivo y sin cifras, en lugar de inventar un análisis.
  */
 export function buildDrawingCardModel(input: DrawingCardInput): DrawingCardModel {
   if (!input.enabled) return { state: 'off', text: DRAWING_OFF_TEXT };
   const symbol = typeof input.symbol === 'string' ? input.symbol.toUpperCase() : '';
-  const mine = (input.analyses ?? []).filter(
-    (analysis) => analysis && analysis.symbol.toUpperCase() === symbol,
+  const mine = (input.entries ?? []).filter(
+    (entry) => entry && typeof entry.symbol === 'string' && entry.symbol.toUpperCase() === symbol,
   );
   if (mine.length === 0) return { state: 'empty', hint: DRAWING_EMPTY_HINT };
   const shown = mine.slice(-DRAWING_MAX_SHOWN).reverse();
-  return { state: 'ready', tools: shown.map(toolFromAnalysis) };
+  return { state: 'ready', items: shown.map(itemFromEntry) };
 }

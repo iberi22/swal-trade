@@ -8,12 +8,8 @@ import type { LevelKind } from '../context/levels';
 
 export type TradeSide = 'long' | 'short';
 
-/** Todos los tipos de nivel, para validar lo que viene de storage. */
-export const LEVEL_KINDS = [
-  'dayOpen', 'prevDayHigh', 'prevDayLow', 'weekOpen', 'prevWeekHigh', 'prevWeekLow', 'monthOpen',
-  'ema20_1h', 'ema50_1h', 'ema50_4h', 'bbUpper', 'bbLower', 'pivot', 'r1', 's1', 'round',
-  'confirm', 'invalidate',
-] as const satisfies readonly LevelKind[];
+/** Todos los tipos de nivel (lista canónica en context/levels.ts), para validar storage. */
+export { LEVEL_KINDS } from '../context/levels';
 
 export type TradeCardEntry =
   /**
@@ -78,14 +74,15 @@ export interface TradeTicket {
   leverage: number;
   marginUsd: number;
   notionalUsd: number;
-  /** Pérdida si salta el stop. Con tramos incluye comisiones (lossIncludesFees). */
+  /** Pérdida si salta el stop, SIEMPRE con comisiones incluidas. */
   lossAtStopUsd: number;
   lossIncludesFees: boolean;
   lossAtStopPctOfCapital: number;
   /** Más del 2 % de la cuenta: la tarjeta lo muestra en estilo invertido. */
   highRisk: boolean;
   feeUsd: number;
-  fees: { makerRate: number; takerRate: number; note: string };
+  /** Tarifas usadas en este ticket: entrada real (maker o taker) y salida taker. */
+  fees: { makerRate: number; takerRate: number; entryRate: number; exitRate: number; note: string };
   rrToFirstTp: number | null;
   warnings: TicketWarning[];
   basis: { basis: 'risk' | 'margin'; pct: number };

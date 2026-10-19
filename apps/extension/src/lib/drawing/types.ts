@@ -32,6 +32,8 @@ export interface DrawingCheck {
 export interface DrawingLevelContext {
   price: number;
   kind: LevelKind;
+  /** Tipos fusionados en la fila (el primero es `kind`), solo códigos. */
+  kinds: LevelKind[];
   label: string;
   /** Distancia desde la entrada, en % del precio de entrada (magnitud). */
   distancePctFromEntry: number;
@@ -46,9 +48,12 @@ export interface DrawingSize {
   /** Margen al apalancamiento mínimo necesario. */
   marginUsd: number;
   minLeverage: number;
+  /** Pérdida si salta el stop, comisiones incluidas. */
   lossUsd: number;
   lossPct: number;
   riskUsd: number;
+  /** true si `lossUsd` incluye las comisiones de ida y vuelta. */
+  lossIncludesFees: boolean;
 }
 
 export interface DrawingAtrs {
@@ -65,7 +70,7 @@ export interface DrawingFilters {
   minNotional?: number;
 }
 
-export type DrawingEntryMode = 'mercado' | 'límite';
+export type DrawingEntryMode = 'mercado' | 'límite' | 'stop';
 
 export interface DrawingAnalysis {
   drawing: PositionDrawing;
@@ -82,7 +87,7 @@ export interface DrawingAnalysis {
     targetAtr1h: number | null;
     /** Distancia de la entrada al precio actual, signada (positiva si está por encima). */
     entryDistancePct: number;
-    /** 'mercado' si la entrada está a ≤ 0,05 % del precio; si no, 'límite'. */
+    /** 'mercado' si la entrada está a ≤ 0,05 % del precio; 'límite' si reposa en el lado correcto; 'stop' si está al otro lado (entrada por stop, taker). */
     entryMode: DrawingEntryMode;
   };
   costs: {
@@ -137,3 +142,12 @@ export interface AnalyzeDrawingInput {
   filters?: DrawingFilters;
   fundingRatePct8h?: number | null;
 }
+
+/**
+ * Resultado tipado del análisis: con geometría inválida (stop del lado
+ * equivocado, orden roto, números no positivos) devuelve `ok:false` y NO
+ * calcula R:R ni tamaño, en lugar de inventar cifras.
+ */
+export type DrawingAnalysisResult =
+  | { ok: true; analysis: DrawingAnalysis }
+  | { ok: false; reason: string };

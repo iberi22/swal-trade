@@ -10,7 +10,7 @@ const levelsSource = read(new URL('../context/levels.ts', import.meta.url));
 
 /** LevelKind leído del código fuente de levels.ts (el tipo no existe en tiempo de ejecución). */
 function levelKinds(): string[] {
-  const block = /export type LevelKind =([^;]+);/.exec(levelsSource)?.[1] ?? '';
+  const block = /export const LEVEL_KINDS = \[([\s\S]*?)\] as const;/.exec(levelsSource)?.[1] ?? '';
   return [...block.matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1] as string);
 }
 

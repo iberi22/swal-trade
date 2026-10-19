@@ -31,7 +31,7 @@ function run(over: Partial<AnalyzeDrawingInput> = {}, side: DrawingSide = 'long'
       target: side === 'long' ? 104 : 96,
       symbol: 'BTCUSDT',
     } as const);
-  return analyzeDrawing({
+  const result = analyzeDrawing({
     drawing,
     price: 100,
     levels: [],
@@ -40,6 +40,8 @@ function run(over: Partial<AnalyzeDrawingInput> = {}, side: DrawingSide = 'long'
     rules,
     ...over,
   });
+  if (!result.ok) throw new Error(result.reason);
+  return result.analysis;
 }
 
 describe('analyzeDrawing · geometría', () => {
@@ -65,10 +67,38 @@ describe('analyzeDrawing · geometría', () => {
     expect(a.side).toBe('short');
   });
 
-  it('marca entrada límite cuando el precio está a más del 0,05 %', () => {
+  it('marca entrada límite cuando el precio está a más del 0,05 % y la entrada reposa del lado correcto', () => {
     const a = run({ price: 110 });
     expect(a.geometry.entryDistancePct).toBeCloseTo(-9.0909, 4);
     expect(a.geometry.entryMode).toBe('límite');
+  });
+
+  it('trata como stop (taker) una entrada por encima del precio en un largo', () => {
+    // Largo con entrada 110 y precio 100: al enviarla cruzaría, sería una orden stop.
+    const a = run({
+      price: 100,
+      drawing: { id: 'd', side: 'long', entry: 110, stop: 108, target: 114, symbol: 'BTCUSDT' },
+    });
+    expect(a.geometry.entryDistancePct).toBe(10);
+    expect(a.geometry.entryMode).toBe('stop');
+    expect(a.costs.entryFeePct).toBe(0.05); // taker, no maker
+    const check = a.checks.find((c) => c.code === 'entry_stop');
+    expect(check?.severity).toBe('info');
+    expect(check?.text).toBe('entrada por encima del precio: sería una orden stop, comisión taker');
+  });
+
+  it('trata como stop (taker) una entrada por debajo del precio en un corto', () => {
+    const a = run(
+      {
+        price: 100,
+        drawing: { id: 'd', side: 'short', entry: 90, stop: 92, target: 86, symbol: 'BTCUSDT' },
+      },
+      'short',
+    );
+    expect(a.geometry.entryDistancePct).toBe(-10);
+    expect(a.geometry.entryMode).toBe('stop');
+    expect(a.costs.entryFeePct).toBe(0.05);
+    expect(a.checks.find((c) => c.code === 'entry_stop')?.text).toContain('por debajo del precio');
   });
 
   it('mantiene entrada de mercado justo en el límite del 0,05 %', () => {
@@ -120,23 +150,36 @@ describe('analyzeDrawing · costes', () => {
 });
 
 describe('analyzeDrawing · tamaño al riesgo de la regla', () => {
-  it('usa maxRiskPct del capital y redondea con los helpers de sizing', () => {
+  it('usa maxRiskPct del capital y redondea con los helpers de sizing, comisiones incluidas', () => {
     const a = run();
     expect(a.size.riskUsd).toBe(10); // 1 % de 1.000
-    expect(a.size.qty).toBe(5); // 10 / 2
-    expect(a.size.notionalUsd).toBe(500);
+    expect(a.size.qty).toBe(4.7642); // 10 / (2 + 0,05 + 0,049) con taker/taker
+    expect(a.size.notionalUsd).toBe(476.42);
     expect(a.size.minLeverage).toBe(1);
-    expect(a.size.marginUsd).toBe(500);
+    expect(a.size.marginUsd).toBe(476.42);
     expect(a.size.lossUsd).toBe(10);
     expect(a.size.lossPct).toBe(1);
+    expect(a.size.lossIncludesFees).toBe(true);
+  });
+
+  it('no supera el presupuesto de riesgo al incluir comisiones (1000 / 100 / 99, 1 %)', () => {
+    // Escenario del juez: qty sin comisiones sería 10 y la pérdida real ~10,5.
+    const a = run({
+      drawing: { id: 'd', side: 'long', entry: 100, stop: 99, target: 104, symbol: 'BTCUSDT' },
+      filters: { stepSize: 0.001 },
+    });
+    expect(a.size.qty).toBe(9.095); // 10 / (1 + 0,05 + 0,0495)
+    expect(a.size.lossUsd).toBeLessThanOrEqual(10);
+    expect(a.size.lossUsd).toBeGreaterThan(9.9);
+    expect(a.size.lossIncludesFees).toBe(true);
   });
 
   it('respeta el stepSize sin inflar el riesgo', () => {
     const a = run({ filters: { stepSize: 0.1 } });
-    expect(a.size.qty).toBe(5);
+    expect(a.size.qty).toBe(4.7);
     const b = run({ filters: { stepSize: 3 } });
-    expect(b.size.qty).toBe(3); // floor(5 / 3) * 3
-    expect(b.size.lossUsd).toBe(6);
+    expect(b.size.qty).toBe(3); // floor(4,7619 / 3) * 3
+    expect(b.size.lossUsd).toBe(6.3); // 3 * (2 + 0,05 + 0,049)
   });
 
   it('devuelve tamaño 0 si el mínimo del contrato obligaría a arriesgar más', () => {
@@ -154,6 +197,33 @@ describe('analyzeDrawing · tamaño al riesgo de la regla', () => {
     const daily = run({ rules: { ...rules, dailyLossUsd: 5 } });
     expect(daily.rules.dailyLossBreached).toBe(true);
     expect(daily.checks.find((c) => c.code === 'daily_loss_breach')?.severity).toBe('warn');
+  });
+});
+
+describe('analyzeDrawing · geometría inválida', () => {
+  it('rechaza un largo con el stop por encima de la entrada: sin R:R ni tamaño', () => {
+    const result = analyzeDrawing({
+      drawing: { id: 'bad', side: 'long', entry: 100, stop: 101, target: 102, symbol: 'BTCUSDT' },
+      price: 100,
+      levels: [],
+      atrs: { atr1h: 1.25 },
+      capital: 1000,
+      rules,
+    });
+    expect(result).toEqual({ ok: false, reason: 'wrong_order' });
+    expect(result).not.toHaveProperty('analysis');
+  });
+
+  it('rechaza números no positivos sin lanzar', () => {
+    const result = analyzeDrawing({
+      drawing: { id: 'bad', side: 'long', entry: 0, stop: -1, target: 102, symbol: 'BTCUSDT' },
+      price: 100,
+      levels: [],
+      atrs: { atr1h: 1.25 },
+      capital: 1000,
+      rules,
+    });
+    expect(result).toEqual({ ok: false, reason: 'non_positive_numbers' });
   });
 });
 

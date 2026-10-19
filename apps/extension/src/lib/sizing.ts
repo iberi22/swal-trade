@@ -33,6 +33,8 @@ export const SIZING_STORAGE_KEY = 'sizing_prefs';
 export const DEFAULT_SIZING_PREFERENCES: SizingPreferences = { capital: 1000, riskPct: 1, direction: 'long' };
 /** Taker 0,05 % al entrar y otro 0,05 % al salir (USDT; en USDC es 0,04 %): estimación prudente. */
 export const TAKER_ROUND_TRIP_FEE_RATE = 0.001;
+/** Comisión taker de una sola pata (0,05 %). */
+export const TAKER_FEE_RATE = TAKER_ROUND_TRIP_FEE_RATE / 2;
 
 export function roundToDecimals(value: number, decimals = 4): number {
   if (!Number.isFinite(value)) return 0;
@@ -67,6 +69,66 @@ export function calculatePositionSize(input: SizingInput): SizingResult {
     minLeverage,
     feeUsd,
     summary: `Si el stop salta pierdes ${lossUsd} USD (${riskPct} % de tu cuenta)`,
+  };
+}
+
+export interface FeeAwareSizingInput extends SizingInput {
+  /** Comisión de entrada como tasa (0,0005 = 0,05 %). */
+  entryFeeRate: number;
+  /** Comisión de salida como tasa, aplicada al precio del stop. */
+  exitFeeRate: number;
+}
+
+export type FeeAwareSizingResult =
+  | {
+      valid: true;
+      distancePct: number;
+      /** Presupuesto de riesgo: capital × riskPct (sin comisiones). */
+      lossBudgetUsd: number;
+      /** Pérdida real si salta el stop, comisiones incluidas (≤ presupuesto tras redondear). */
+      lossUsd: number;
+      quantity: number;
+      notionalUsd: number;
+      minLeverage: number;
+      feeUsd: number;
+      summary: string;
+    }
+  | { valid: false; error: string; reason: 'wrong_side' | 'invalid_input' };
+
+/**
+ * Tamaño al riesgo contando las comisiones de ida y vuelta. La cantidad se
+ * calcula para que la pérdida EN EL STOP (precio + comisiones) no supere el
+ * presupuesto: qty = riesgo / (|entrada - stop| + entrada·feeEntrada +
+ * stop·feeSalida). Es un helper aparte: `calculatePositionSize` conserva su
+ * contrato (tamaño por distancia de precio) para quien muestra las comisiones
+ * por separado.
+ */
+export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAwareSizingResult {
+  const { entryFeeRate, exitFeeRate } = input;
+  if (!Number.isFinite(entryFeeRate) || entryFeeRate < 0 || !Number.isFinite(exitFeeRate) || exitFeeRate < 0) {
+    return { valid: false, error: 'La comisión no es válida.', reason: 'invalid_input' };
+  }
+  const base = calculatePositionSize(input);
+  if (!base.valid) return base;
+  const { capital, riskPct, entry, stop } = input;
+  const priceDiff = Math.abs(entry - stop);
+  const lossBudgetUsd = roundToDecimals(capital * (riskPct / 100), 2);
+  const lossPerUnit = priceDiff + entry * entryFeeRate + stop * exitFeeRate;
+  const quantity = roundToDecimals(lossBudgetUsd / lossPerUnit, 4);
+  const notionalUsd = roundToDecimals(quantity * entry, 2);
+  const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
+  const feeUsd = roundToDecimals(quantity * entry * entryFeeRate + quantity * stop * exitFeeRate, 2);
+  const lossUsd = roundToDecimals(quantity * lossPerUnit, 2);
+  return {
+    valid: true,
+    distancePct: base.distancePct,
+    lossBudgetUsd,
+    lossUsd,
+    quantity,
+    notionalUsd,
+    minLeverage,
+    feeUsd,
+    summary: `Si el stop salta pierdes ${lossUsd} USD con comisiones (${riskPct} % de tu cuenta)`,
   };
 }
 
