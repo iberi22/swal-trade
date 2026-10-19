@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect, test } from '@playwright/test';
-import { fulfillJson } from '../fixtures/browser';
+import { FNG, fulfillJson } from '../fixtures/browser';
 import { aggressiveBuyKlines, toBinanceKlines } from '../fixtures/candles.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -62,10 +62,18 @@ async function openSidePanel(
   const errors: string[] = [];
   const newsRequests: string[] = [];
   page.on('pageerror', (err) => errors.push(String(err)));
+  page.on('requestfailed', (req) => errors.push(`requestfailed ${req.url()}`));
   page.on('console', (msg) => {
     if (msg.type() === 'error') errors.push(msg.text());
   });
   await page.routeWebSocket(/fstream\.binance\.com/, () => {});
+  // Nada de red real: en CI Binance responde 451 desde IPs de EE. UU. y no hay radar ni puente local.
+  await page.routeWebSocket(/127\.0\.0\.1/, () => {});
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/depth/, (route) =>
+    fulfillJson(route, { lastUpdateId: 1, bids: [], asks: [] }),
+  );
+  await page.route(/https:\/\/api\.alternative\.me\//, (route) => fulfillJson(route, FNG));
+  await page.route(/http:\/\/127\.0\.0\.1:47322\//, (route) => fulfillJson(route, { ok: true, alerts: [] }));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
     fulfillJson(route, klines),
   );

@@ -146,7 +146,11 @@ test("radar tools refuse non-local URLs before attempting connection", async () 
 });
 
 test("radar tools return clear error when local radar is down", async () => {
-  const env = { SWAL_RADAR_URL: "http://127.0.0.1:49999" };
+  // Hermetic: a token file must exist, otherwise the error is "token no encontrado" (as on CI).
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "swal-radar-down-"));
+  const tokenFile = path.join(tmp, "radar-token");
+  fs.writeFileSync(tokenFile, "unused-token", { mode: 0o600 });
+  const env = { SWAL_RADAR_URL: "http://127.0.0.1:49999", SWAL_RADAR_TOKEN_PATH: tokenFile };
   await withClient({ env }, async (client) => {
     assert.equal(errorText(await callOrCatch(client, "radar_alerts", {})), RADAR_DOWN_ERROR);
     assert.equal(errorText(await callOrCatch(client, "radar_stats", {})), RADAR_DOWN_ERROR);
