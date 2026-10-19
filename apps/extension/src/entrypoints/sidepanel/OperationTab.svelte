@@ -13,7 +13,9 @@
     rememberInitialStop,
     type InitialStopStore,
   } from '../../lib/account/position-view-model';
+  import { startContextFeed, type ContextSnapshot } from '../../lib/context/context-feed';
   import { fetchKlines } from '../../lib/market-feed';
+  import { FEAR_GREED_KEY, browserCache } from '../../lib/market-pulse';
   import { positionFor, sectionsForMode, type PanelState } from '../../lib/account/panel-controller';
   import {
     TOP_ONE_LINERS,
@@ -28,7 +30,9 @@
   import { relativeTime, type NewsItem } from '../../lib/news';
   import type { ExtensionSettings } from '../../lib/settings';
   import type { AnalysisResult, Candle, Finding, Timeframe } from '../../lib/types';
+  import ContextBar from './ContextBar.svelte';
   import ExplainCard from './ExplainCard.svelte';
+  import LevelsCard from './LevelsCard.svelte';
   import ManualPosition from './ManualPosition.svelte';
   import MarketPulse from './MarketPulse.svelte';
   import PositionCard from './PositionCard.svelte';
@@ -126,6 +130,26 @@
     void session()?.remove(manualStorageKey(symbol)).catch(() => {});
   }
 
+  // Contexto (sentimiento, cierres, niveles): datos públicos de Binance; si fallan, la
+  // banda sigue con los cierres, que son matemática pura.
+  let contextSnapshot = $state<ContextSnapshot | null>(null);
+  const contextCache = browserCache(FEAR_GREED_KEY);
+
+  $effect(() => {
+    contextSnapshot = null;
+    const handle = startContextFeed(symbol, {
+      cache: contextCache,
+      onChange: (snapshot) => {
+        contextSnapshot = snapshot;
+      },
+    });
+    return () => handle.stop();
+  });
+
+  const findingsLevels = $derived(
+    legend.map((row) => ({ label: row.label, confirm: row.confirm, invalidate: row.invalidate })),
+  );
+
   const manualView = $derived(manual ? manualToPositionView(manual, lastPrice) : null);
   const effectivePanel = $derived(withManualPosition(panel, manualView, symbol, nowMs));
   const isManual = $derived(effectivePanel !== panel);
@@ -220,6 +244,9 @@
     </details>
   </li>
 {/snippet}
+
+<ContextBar snapshot={contextSnapshot} {newsItems} {nowMs} />
+<LevelsCard {lastPrice} snapshot={contextSnapshot} {findingsLevels} />
 
 {#if sections.notice}
   <p class="mode-notice" data-testid="mode-notice" data-mode={effectivePanel.mode}>{sections.notice}</p>
