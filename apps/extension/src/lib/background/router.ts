@@ -391,7 +391,9 @@ export function createRouter(deps: RouterDeps) {
     const provider = getProvider(m.provider);
     if (!provider) return { view: null, reason: 'bad_response' };
     const schema = m.payload.schema;
-    if (schema !== 'swal.position.v1' && schema !== 'swal.history.v1') {
+    // Tres formas relativas conocidas: posición abierta, historial y dibujo
+    // Long/Short Position. Cualquier otra se rechaza antes de tocar la red.
+    if (schema !== 'swal.position.v1' && schema !== 'swal.history.v1' && schema !== 'swal.drawing.v1') {
       return { view: null, reason: 'bad_payload' };
     }
     let settings: ExtensionSettings;

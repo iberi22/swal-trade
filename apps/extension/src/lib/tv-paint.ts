@@ -12,6 +12,11 @@ import type { BridgeShape } from './tv-bridge/schema';
 export const TV_PAINT = 'tv-paint';
 /** Mensaje de runtime: del content script al panel y al background. */
 export const TV_STATE = 'tv-state';
+/**
+ * Mensaje de runtime: del content script al background con las herramientas
+ * Long/Short Position que el usuario dibujó (solo lectura, sin cuenta).
+ */
+export const TV_POSITION_TOOLS = 'tv-position-tools';
 /** Mensaje de runtime: del panel al background. */
 export const TV_GET_STATE = 'get-tv-state';
 

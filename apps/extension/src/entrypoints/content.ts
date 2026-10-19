@@ -6,11 +6,12 @@ import {
   probeStorageInterval,
   type PageSource,
 } from '../lib/page-probe';
-import { buildClearMessage, buildDrawMessage, buildSetResolutionMessage, coerceShapes, isBridgeResolution, parseBridgeMessage } from '../lib/tv-bridge/schema';
+import { buildClearMessage, buildDrawMessage, buildSetReadMessage, buildSetResolutionMessage, coerceShapes, isBridgeResolution, parseBridgeMessage, SWAL_POSITION_TOOLS } from '../lib/tv-bridge/schema';
 import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
-import { PAINTABLE_URL, TV_PAINT, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
+import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
+import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 
 /** Atributos que cambian cuando el usuario pulsa otro intervalo. */
@@ -256,6 +257,42 @@ export default defineContentScript({
     let channel: BridgeChannel | null = null;
     const ackListeners = new Set<(data: unknown) => void>();
 
+    // Lectura de los dibujos de posición del usuario (solo lectura). El ajuste
+    // vive en storage.local y este content script lo lee por su cuenta: así
+    // sobrevive a una recarga de la página sin depender de que el panel empuje
+    // nada. El puente solo mira el gráfico cuando recibe el encendido.
+    let readWanted = false;
+    const pushReadState = () => {
+      if (!channel) return;
+      try {
+        channel.send(buildSetReadMessage(readWanted));
+      } catch {
+        // El canal se cerró: se reenvía cuando se vuelva a enlazar.
+      }
+    };
+    const applyReadSetting = (enabled: boolean) => {
+      if (enabled === readWanted) return;
+      readWanted = enabled;
+      pushReadState();
+    };
+    const onSettingsChanged = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
+      if (areaName !== 'local' || !changes[SETTINGS_KEY]) return;
+      applyReadSetting(settingsFromStorage({ settings: changes[SETTINGS_KEY]?.newValue }).readDrawings);
+    };
+    try {
+      browser.storage?.onChanged?.addListener(onSettingsChanged as never);
+    } catch {
+      // Sin storage.onChanged: queda solo la lectura inicial.
+    }
+    try {
+      void browser.storage?.local
+        ?.get(SETTINGS_KEY)
+        .then((stored) => applyReadSetting(settingsFromStorage(stored).readDrawings))
+        .catch(() => {});
+    } catch {
+      // storage no disponible en este frame.
+    }
+
     if (PAINTABLE_URL.test(location.href)) {
       linkPromise = establishLink('content', 3000)
         .then((ch) => {
@@ -265,11 +302,26 @@ export default defineContentScript({
               listener(data);
             }
             const message = parseBridgeMessage(data);
-            if (!message || message.type !== 'swal:ready') return;
+            if (!message) return;
+            // Dibujos de posición: el background los guarda por símbolo en
+            // storage.session y el panel lee de ahí. Nunca se pintan.
+            if (message.type === SWAL_POSITION_TOOLS) {
+              try {
+                void browser.runtime
+                  .sendMessage({ type: TV_POSITION_TOOLS, tools: message })
+                  .catch(() => {});
+              } catch {
+                // La extensión se recargó: este content script quedó viejo.
+              }
+              return;
+            }
+            if (message.type !== 'swal:ready') return;
             applyReady(message.ready, message.reason, message.chart);
           });
           // Send hello
           channel.send(buildHello(session, false));
+          // Estado del interruptor de lectura en el momento de enlazar.
+          channel.send(buildSetReadMessage(readWanted));
           return ch;
         })
         .catch(() => {
@@ -454,6 +506,11 @@ export default defineContentScript({
       clearInterval(tvProbe);
       if (timer !== null) clearTimeout(timer);
       browser.runtime.onMessage.removeListener(onRuntimeMessage);
+      try {
+        browser.storage?.onChanged?.removeListener(onSettingsChanged as never);
+      } catch {
+        // nunca se llegó a registrar
+      }
       if (channel) {
         channel.disconnect();
         channel = null;
