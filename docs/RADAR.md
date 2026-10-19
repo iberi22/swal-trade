@@ -188,6 +188,10 @@ La auditoria de [docs/research/AUDIT_PATRONES_2026-10-18.md](research/AUDIT_PATR
 
 Silenciar una celda no la convierte en una senal de la contraria. Las celdas que quedan siguen sin evidencia de ventaja.
 
+## Operador de testnet
+
+`python3 -m radar.testnet_operator` envia las alertas ya disparadas del radar al bot de **tu testnet** de Binance Futures (`/control/manual-signal`). Sirve para probar ejecucion (entrada, stop, cierre, reinicio) y juntar evidencia hacia adelante con fills; no afirma ninguna ventaja. Se niega a arrancar si el archivo del bot no dice `BINANCE_TESTNET=true`. Tamano: la perdida si salta el stop es `OPERATOR_RISK_PCT` (0,25 %) del capital, con tope de nocional, apalancamiento y posiciones abiertas. Cada decision queda en `~/.local/share/swal-trade/testnet-operator.jsonl`. Los simbolos USDC del radar se mapean a USDT, porque el saldo de la testnet esta en USDT.
+
 ## Cómo ejecutar
 
 ### Modo de prueba rápida (`--once`)
