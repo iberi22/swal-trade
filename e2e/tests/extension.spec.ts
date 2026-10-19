@@ -86,6 +86,24 @@ async function openSidePanel(
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/ticker\/24hr/, (route) =>
     fulfillJson(route, { symbol: 'BTCUSDT', priceChangePercent: '1.195' }),
   );
+  // Filtros del par para las tarjetas de operación (el test del escáner registra después su propio mock, que manda).
+  await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/exchangeInfo/, (route) =>
+    fulfillJson(route, {
+      symbols: [
+        {
+          symbol: 'BTCUSDT',
+          status: 'TRADING',
+          contractType: 'PERPETUAL',
+          quoteAsset: 'USDT',
+          filters: [
+            { filterType: 'PRICE_FILTER', tickSize: '0.10' },
+            { filterType: 'LOT_SIZE', stepSize: '0.001', minQty: '0.001' },
+            { filterType: 'MIN_NOTIONAL', notional: '100' },
+          ],
+        },
+      ],
+    }),
+  );
   await page.route(/https:\/\/api\.alternative\.me\//, (route) => fulfillJson(route, FNG));
   await page.route(/http:\/\/127\.0\.0\.1:47322\//, (route) => fulfillJson(route, { ok: true, alerts: [] }));
   await page.route(/https:\/\/fapi\.binance\.com\/fapi\/v1\/klines/, (route) =>
@@ -1113,6 +1131,28 @@ test('sizing: escalonar en 3 tramos shows the tranches and the honest note, neve
     const text = await fold.innerText();
     expect(text).not.toMatch(/\d\s?%\s+de\s+(probabilidad|acierto)/i);
     expect(text).not.toMatch(/tasa de acierto|winrate/i);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('tarjetas de operación: ticket con stop, línea honesta y sin lenguaje de compra o venta', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.getByTestId('trade-cards')).toBeVisible();
+    await expect(page.getByTestId('trade-card').first()).toBeVisible();
+    await page.getByTestId('trade-card').first().click();
+    const ticket = page.getByTestId('trade-ticket');
+    await expect(ticket).toBeVisible();
+    await expect(ticket).toContainText('Stop');
+    await expect(ticket).toContainText('R:R no es probabilidad');
+    await expect(page.getByTestId('trade-copy')).toBeVisible();
+    await expect(page.getByTestId('trade-load')).toBeVisible();
+    const text = (await page.locator('body').innerText()).toLowerCase();
+    expect(text).not.toContain('comprar');
+    expect(text).not.toContain('vender');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
