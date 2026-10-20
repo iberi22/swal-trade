@@ -26,6 +26,7 @@
       }
     })();
   });
+  const universes = ['USDT', 'USDC'] as const;
   const tiers = [
     { id: 'hi', label: 'Volumen alto (≥ 100 M)' },
     { id: 'mid', label: 'Volumen medio (≥ 20 M)' },
@@ -63,12 +64,16 @@
   <div class="sc-settings">
     <label class="sc-field">
       <span>Universo</span>
+      <!-- `selected` en cada opción: el valor llega de forma asíncrona
+           (storage) y el <select> no debe quedarse pintando USDT mientras
+           el estado ya dice USDC. -->
       <select
-        value={settings.universe}
+        data-testid="scanner-universe"
         onchange={(e) => onChange({ universe: (e.currentTarget as HTMLSelectElement).value === 'USDC' ? 'USDC' : 'USDT' })}
       >
-        <option value="USDT">USDT</option>
-        <option value="USDC">USDC</option>
+        {#each universes as quote (quote)}
+          <option value={quote} selected={settings.universe === quote}>{quote}</option>
+        {/each}
       </select>
     </label>
 

@@ -66,3 +66,48 @@ describe('load/save', () => {
     expect(await loadScannerSettings(bad)).toEqual(defaultScannerSettings());
   });
 });
+
+describe('universe round-trip', () => {
+  function memoryStorage(initial: Record<string, unknown> = {}) {
+    const data = new Map<string, unknown>(Object.entries(initial));
+    return {
+      data,
+      async get(key: string) {
+        return data.get(key);
+      },
+      async set(key: string, value: unknown) {
+        data.set(key, JSON.parse(JSON.stringify(value)));
+      },
+    };
+  }
+
+  it('saves USDC and reads it back unchanged', async () => {
+    const storage = memoryStorage();
+    const saved = await saveScannerSettings(storage, { universe: 'USDC', enabled: true });
+    expect(saved.universe).toBe('USDC');
+    expect((await loadScannerSettings(storage)).universe).toBe('USDC');
+  });
+
+  it('keeps USDC when another setting changes right after', async () => {
+    const storage = memoryStorage();
+    await saveScannerSettings(storage, { universe: 'USDC' });
+    const next = await saveScannerSettings(storage, {
+      ...(await loadScannerSettings(storage)),
+      sound: true,
+    });
+    expect(next.universe).toBe('USDC');
+    expect(next.sound).toBe(true);
+    expect((await loadScannerSettings(storage)).universe).toBe('USDC');
+  });
+
+  it('keeps the stored value when junk fields are around it', async () => {
+    const storage = memoryStorage();
+    await saveScannerSettings(storage, { universe: 'USDC' });
+    storage.data.set('scanner.settings', {
+      ...(storage.data.get('scanner.settings') as object),
+      universe: 'USDC',
+      junk: [1, 2, 3],
+    });
+    expect((await loadScannerSettings(storage)).universe).toBe('USDC');
+  });
+});
