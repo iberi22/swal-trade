@@ -320,6 +320,12 @@ export interface PageAccountDiagnoseReport {
   outline: string;
   /** Esquema de cada región, con `found` para saber qué no se reconoció. */
   regions: DiagnoseRegions;
+  /**
+   * El content script no miró la página porque `readPageAccount` está apagado.
+   * Sin esto, el panel diría «abre la página de Binance» cuando lo que falta es
+   * el interruptor.
+   */
+  disabled: boolean;
 }
 
 /**
@@ -330,12 +336,20 @@ export function parsePageAccountDiagnoseReport(raw: unknown): PageAccountDiagnos
   const outline = parsePageAccountDiagnoseResult(raw);
   if (outline === null) return null;
   const record = raw as Record<string, unknown>;
+  const emptyRegions = () => {
+    const regions = {} as DiagnoseRegions;
+    for (const key of DIAGNOSE_REGION_KEYS) regions[key] = { found: false, nodes: 0, outline: '' };
+    return regions;
+  };
+  if (record.disabled === true) {
+    return { outline: '', regions: emptyRegions(), disabled: true };
+  }
   const rawRegions = isRecord(record.regions) ? record.regions : {};
   const regions = {} as DiagnoseRegions;
   for (const key of DIAGNOSE_REGION_KEYS) regions[key] = parseDiagnoseRegion(rawRegions[key]);
   // Sin volcado y sin ninguna región no hay nada que enseñar: el panel lo dice.
   if (outline === '' && !DIAGNOSE_REGION_KEYS.some((key) => regions[key].found)) return null;
-  return { outline, regions };
+  return { outline, regions, disabled: false };
 }
 
 export type PageAccountMessage =

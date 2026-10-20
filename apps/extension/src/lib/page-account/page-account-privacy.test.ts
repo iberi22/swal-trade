@@ -59,6 +59,22 @@ describe('page-account no escribe en la página ni sale a la red', () => {
     }
   });
 
+  it('el diagnóstico respeta el opt-in: sin readPageAccount no se mira la página', () => {
+    const text = readFileSync(contentScript, 'utf8');
+    const start = text.indexOf('record.type === PAGE_ACCOUNT_DIAGNOSE_REQUEST');
+    const end = text.indexOf('record.type === TV_SWITCH_TAB');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = text.slice(start, end);
+    const gate = block.indexOf('if (!pageReadWanted)');
+    expect(gate).toBeGreaterThan(-1);
+    // El corte va ANTES de leer (`readPageNow`) y de mirar las regiones.
+    expect(gate).toBeLessThan(block.indexOf('readPageNow()'));
+    expect(gate).toBeLessThan(block.indexOf('describeRegions('));
+    // Y la respuesta lo dice explícitamente.
+    expect(block.slice(gate, gate + 400)).toContain('disabled: true');
+  });
+
   it('el content script solo manda avisos y el diagnóstico anonimizado', () => {
     const text = readFileSync(contentScript, 'utf8');
     expect(text).toContain('PAGE_ACCOUNT_UPDATE');

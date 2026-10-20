@@ -174,6 +174,10 @@
     try {
       const reply = await browser.runtime.sendMessage({ type: PAGE_ACCOUNT_DIAGNOSE });
       const report = parsePageAccountDiagnoseReport(reply);
+      if (report?.disabled) {
+        note = 'El diagnóstico lee la página: activa «Leer mis posiciones e historial» en Ajustes y vuelve a intentarlo.';
+        return;
+      }
       const text = report ? composeDiagnoseText(report.regions, report.outline) : '';
       if (!text) {
         note = 'Abre la página de futuros de Binance para copiar el diagnóstico.';

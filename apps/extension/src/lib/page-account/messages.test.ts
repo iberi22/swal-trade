@@ -396,6 +396,20 @@ describe('parsePageAccountDiagnoseReport', () => {
     expect(report?.regions.history).toEqual({ found: false, nodes: 0, outline: '' });
   });
 
+  it('avisa cuando la lectura de página está apagada', () => {
+    const report = parsePageAccountDiagnoseReport({
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: '',
+      regions: null,
+      disabled: true,
+    });
+    expect(report).not.toBeNull();
+    expect(report?.disabled).toBe(true);
+    expect(report?.outline).toBe('');
+    expect(report?.regions.balance.found).toBe(false);
+    expect(report?.regions.history.found).toBe(false);
+  });
+
   it('sin volcado y sin regiones no hay informe', () => {
     expect(parsePageAccountDiagnoseReport({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '' })).toBeNull();
     expect(

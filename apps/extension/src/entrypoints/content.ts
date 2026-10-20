@@ -526,14 +526,25 @@ export default defineContentScript({
       };
 
       if (record.type === PAGE_ACCOUNT_DIAGNOSE_REQUEST) {
+        // El diagnóstico LEE la página, así que respeta el mismo opt-in que el
+        // resto de la lectura: sin `readPageAccount` no se mira nada y se dice.
+        if (!pageReadWanted) {
+          sendResponse({
+            type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+            outline: '',
+            regions: null,
+            disabled: true,
+          });
+          return;
+        }
         // Solo el esquema anonimizado: el árbol crudo no sale de la página.
         let tree = lastPageTree;
-        if (!tree && pageReadWanted) tree = readPageNow().tree;
+        if (!tree) tree = readPageNow().tree;
         const outline = tree ? treeToCompactText(anonymizeTree(tree)) : '';
         // Cobertura por región: dice si la caja de cuenta y el historial se
         // localizaron, que es justo lo que el volcado único no enseñaba.
         const regions = describeRegions(document);
-        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline, regions });
+        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline, regions, disabled: false });
         return;
       }
 
