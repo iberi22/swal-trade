@@ -6,7 +6,6 @@
 
   let {
     operacion,
-    analisis,
     aprender,
     ajustes,
     escaner,
@@ -14,7 +13,6 @@
     onTabChange,
   }: {
     operacion: Snippet;
-    analisis: Snippet;
     aprender: Snippet;
     ajustes: Snippet;
     escaner: Snippet;
@@ -86,9 +84,6 @@
   <!-- Todos los paneles siguen montados: cambiar de pestaña no reinicia la IA ni el radar. -->
   <div role="tabpanel" id="tabpanel-operacion" aria-labelledby="tab-operacion" hidden={selected !== 'operacion'}>
     {@render operacion()}
-  </div>
-  <div role="tabpanel" id="tabpanel-analisis" aria-labelledby="tab-analisis" hidden={selected !== 'analisis'}>
-    {@render analisis()}
   </div>
   <div role="tabpanel" id="tabpanel-aprender" aria-labelledby="tab-aprender" hidden={selected !== 'aprender'}>
     {@render aprender()}

@@ -209,25 +209,26 @@ describe('parseSnapshotReply', () => {
 });
 
 describe('pestañas', () => {
-  it('parsePanelTab cae a operacion', () => {
+  it('parsePanelTab cae a operacion y migra Análisis a Mis trades', () => {
     expect(parsePanelTab('ajustes')).toBe('ajustes');
     expect(parsePanelTab('aprender')).toBe('aprender');
     expect(parsePanelTab('escaner')).toBe('escaner');
+    expect(parsePanelTab('mistrades')).toBe('mistrades');
+    expect(parsePanelTab('analisis')).toBe('mistrades');
     expect(parsePanelTab('nada')).toBe('operacion');
     expect(parsePanelTab(undefined)).toBe('operacion');
   });
 
-  it('la pestaña Aprender existe por su nombre, entre Análisis y Ajustes', () => {
-    // Por nombre, no por recuento: main añade «Mis trades» y la lista crece.
-    const index = PANEL_TABS.findIndex((tab) => tab.id === 'aprender');
-    expect(index).toBeGreaterThan(-1);
-    expect(PANEL_TABS[index]!.label).toBe('Aprender');
-    expect(PANEL_TABS[index - 1]?.id).toBe('analisis');
-    expect(PANEL_TABS[index + 1]?.id).toBe('ajustes');
+  it('Análisis ya no es una pestaña: vive dentro de Mis trades', () => {
+    expect(PANEL_TABS.some((tab) => tab.id === ('analisis' as never))).toBe(false);
+    expect(PANEL_TABS.map((tab) => tab.label)).toEqual([
+      'Operación', 'Aprender', 'Ajustes', 'Escáner', 'Mis trades',
+    ]);
     // Sin duplicados: cada id aparece una sola vez.
     const ids = PANEL_TABS.map((tab) => tab.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(tabForKey('analisis', 'ArrowRight')).toBe('aprender');
+    const index = PANEL_TABS.findIndex((tab) => tab.id === 'mistrades');
+    expect(PANEL_TABS[index]!.label).toBe('Mis trades');
     expect(tabForKey('aprender', 'ArrowRight')).toBe('ajustes');
   });
 
@@ -240,9 +241,9 @@ describe('pestañas', () => {
     expect(tabForKey(last, 'ArrowRight')).toBe(PANEL_TABS[0]!.id);
     expect(tabForKey('operacion', 'ArrowLeft')).toBe(last);
     expect(tabForKey(PANEL_TABS[1]!.id, 'ArrowLeft')).toBe(PANEL_TABS[0]!.id);
-    expect(tabForKey('analisis', 'Home')).toBe('operacion');
-    expect(tabForKey('analisis', 'End')).toBe(last);
-    expect(tabForKey('analisis', 'a')).toBeNull();
+    expect(tabForKey('mistrades', 'Home')).toBe('operacion');
+    expect(tabForKey('mistrades', 'End')).toBe(last);
+    expect(tabForKey('mistrades', 'a')).toBeNull();
   });
 });
 

@@ -15,6 +15,9 @@
   import type { AiView } from '../../lib/ai/prompt';
   import { getProvider, isFreeModel } from '../../lib/ai/providers';
   import type { ExtensionSettings } from '../../lib/settings';
+  import type { PanelState } from '../../lib/account/panel-controller';
+  import type { Finding } from '../../lib/types';
+  import AnalysisTab from './AnalysisTab.svelte';
   import {
     EVIDENCE_MIN_N,
     filterHistory,
@@ -27,17 +30,39 @@
 
   let {
     active = false,
+    symbol,
+    timeframe,
+    panel,
     settings,
     settingsLoaded,
     applySettings,
+    findings,
+    trend,
+    lastPrice,
+    atr,
     nowMs,
   }: {
     active?: boolean;
+    symbol: string;
+    timeframe: string;
+    panel: PanelState;
     settings: ExtensionSettings;
     settingsLoaded: boolean;
     applySettings: (next: ExtensionSettings) => void;
+    findings: readonly Finding[];
+    trend: string | null;
+    lastPrice: number | null;
+    atr: number | null;
     nowMs: number;
   } = $props();
+
+  /**
+   * De dónde salen los trades: la página abierta (lectura del DOM, sin clave) o
+   * la clave de solo lectura de la API. Antes eran dos pestañas; ahora es un
+   * selector dentro de «Mis trades». La página es el origen por defecto.
+   */
+  type TradesSource = 'page' | 'api';
+  let source = $state<TradesSource>('page');
 
   let state = $state.raw<ReturnType<typeof parsePageAccountResult> | null>(null);
   let filterSymbol = $state('');
@@ -256,9 +281,38 @@
 <section class="mis-trades" data-testid="mytrades-tab" aria-label="Mis trades">
   <div class="card-head">
     <h2>Mis trades</h2>
-    <span class="head-hint">leído de tu página · solo lectura</span>
+    <span class="head-hint">
+      {source === 'page' ? 'leído de tu página · solo lectura' : 'leído con tu clave de solo lectura'}
+    </span>
   </div>
 
+  <label class="field source">
+    <span>Origen</span>
+    <select
+      data-testid="mytrades-source"
+      value={source}
+      onchange={(event) => (source = (event.currentTarget as HTMLSelectElement).value === 'api' ? 'api' : 'page')}
+    >
+      <option value="page">Página de Binance</option>
+      <option value="api">Clave API</option>
+    </select>
+  </label>
+
+  <div class="source-panel" hidden={source !== 'api'} data-testid="mytrades-api-panel">
+    <AnalysisTab
+      {symbol}
+      {timeframe}
+      {panel}
+      {settings}
+      {applySettings}
+      {findings}
+      {trend}
+      {lastPrice}
+      {atr}
+    />
+  </div>
+
+  <div class="source-panel" hidden={source !== 'page'} data-testid="mytrades-page-panel">
   {#if !enabled}
     <p class="hint">
       Lee el texto que ya ves en la página de futuros de Binance: tus posiciones abiertas y el
@@ -417,6 +471,7 @@
       {/if}
     </div>
   {/if}
+  </div>
 </section>
 
 <style>
@@ -439,6 +494,17 @@
   .head-hint {
     font-size: 0.7rem;
     color: hsl(var(--muted-foreground));
+  }
+  .source {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .source select {
+    flex: 1;
+  }
+  .source-panel[hidden] {
+    display: none;
   }
   h3 {
     margin: 0;

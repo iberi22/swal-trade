@@ -142,10 +142,17 @@ async function openSidePanel(
 /** Abre una pestaña del panel por su nombre. */
 async function openTab(
   page: import('@playwright/test').Page,
-  name: 'Operación' | 'Análisis' | 'Aprender' | 'Ajustes' | 'Escáner',
+  name: 'Operación' | 'Aprender' | 'Ajustes' | 'Escáner' | 'Mis trades',
 ) {
   await page.getByRole('tab', { name }).click();
   await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Historial de la clave de la API: «Mis trades» con el origen «Clave API». */
+async function openAnalysis(page: import('@playwright/test').Page) {
+  await openTab(page, 'Mis trades');
+  await page.getByTestId('mytrades-source').selectOption('api');
+  await expect(page.getByTestId('mytrades-api-panel')).toBeVisible();
 }
 
 /** Cinco titulares con tonos distintos: positivo, negativo y neutral. */
@@ -613,13 +620,15 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
   try {
     const { page } = panel;
     const tablist = page.getByRole('tablist');
-    // Por nombre, no por número: otras pestañas pueden añadirse.
-    for (const name of ['Operación', 'Análisis', 'Aprender', 'Ajustes', 'Escáner', 'Mis trades']) {
+    // Por nombre, no por número: otras pestañas pueden añadirse. «Análisis» ya
+    // no es una pestaña: su contenido vive dentro de «Mis trades».
+    for (const name of ['Operación', 'Aprender', 'Ajustes', 'Escáner', 'Mis trades']) {
       await expect(tablist.getByRole('tab', { name })).toHaveCount(1);
     }
+    await expect(tablist.getByRole('tab', { name: 'Análisis' })).toHaveCount(0);
     const tabs = tablist.getByRole('tab');
     const tabCount = await tabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(6);
+    expect(tabCount).toBeGreaterThanOrEqual(5);
     await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
 
     // Sin posición conocida y sin clave: modo unknown, con el aviso y el dimensionador.
@@ -641,8 +650,15 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
     // Teclado: flechas cambian de pestaña y la elegida sobrevive a una recarga.
     await page.getByRole('tab', { name: 'Operación' }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Aprender' })).toHaveAttribute('aria-selected', 'true');
+    // «Mis trades» arranca en la página de Binance y ofrece el historial de la
+    // clave al cambiar de origen.
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
+    await page.getByTestId('mytrades-source').selectOption('api');
     await expect(page.getByTestId('history-card')).toBeVisible();
+    await page.getByTestId('mytrades-source').selectOption('page');
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
     // Inicio y Fin van a la primera y a la última pestaña, sean cuantas sean.
     await page.keyboard.press('End');
     await expect(tabs.nth(tabCount - 1)).toHaveAttribute('aria-selected', 'true');
@@ -996,7 +1012,7 @@ test('analysis tab without a key points to Ajustes and has nothing to export', a
   const panel = await openSidePanel();
   try {
     const { page } = panel;
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await expect(page.getByTestId('history-no-key')).toContainText('Ajustes');
     await expect(page.getByRole('button', { name: /Cargar historial/ })).toHaveCount(0);
     await expect(page.getByTestId('metrics-card')).toContainText('Aún no hay historial');
@@ -1017,7 +1033,7 @@ test('analysis tab loads a mocked history, shows sin evidencia for n<30 and expo
   try {
     const { page } = panel;
     await seedSettings(page, KEY_META);
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await page.getByRole('button', { name: 'Cargar historial (6 meses)' }).click();
 
     const card = page.getByTestId('metrics-card');
@@ -1062,7 +1078,7 @@ test('AI card asks for consent before the first ai:analyze, then answers as plai
       ...KEY_META,
       ai: { provider: 'opencode', model: 'qwen-test-free', redaction: 'relative', consentedProviders: [] },
     });
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     const aiRequests = () => page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
 
     // Aviso de modelo gratuito antes de enviar nada.
@@ -1123,7 +1139,7 @@ test('"Ver lo que se envía" shows the exact JSON and relative mode carries no U
       ...KEY_META,
       ai: { provider: 'opencode', model: 'qwen-test', redaction: 'relative', consentedProviders: [] },
     });
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     const details = page.getByTestId('ai-preview');
     await details.locator('summary').click();
     const pre = page.getByTestId('ai-preview-position');
@@ -1185,7 +1201,7 @@ test('prompt settings: custom preferences travel inside the delimited block with
     expect(stored['ai.promptConfig']).toMatchObject({ version: 1, extra });
 
     // «Ver lo que se envía» muestra el prompt ensamblado, con el marco al final.
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await page.getByTestId('ai-preview').locator('summary').click();
     const pre = page.getByTestId('ai-preview-system');
     await expect(pre).toBeVisible();

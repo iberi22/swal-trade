@@ -32,7 +32,6 @@
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import { browserLanguages, initI18n } from '../../lib/i18n/i18n.svelte';
-  import AnalysisTab from './AnalysisTab.svelte';
   import MyTradesTab from './MyTradesTab.svelte';
   import OperationTab from './OperationTab.svelte';
   import LearnTab from './LearnTab.svelte';
@@ -514,19 +513,6 @@
         {applySettings}
       />
     {/snippet}
-    {#snippet analisis()}
-      <AnalysisTab
-        {symbol}
-        {timeframe}
-        {panel}
-        {settings}
-        {applySettings}
-        findings={topFindings}
-        {trend}
-        {lastPrice}
-        {atr}
-      />
-    {/snippet}
     {#snippet aprender()}
       <LearnTab />
     {/snippet}
@@ -550,9 +536,16 @@
     {#snippet mistrades()}
       <MyTradesTab
         active={activeTab === 'mistrades'}
+        {symbol}
+        {timeframe}
+        {panel}
         {settings}
         {settingsLoaded}
         {applySettings}
+        findings={topFindings}
+        {trend}
+        {lastPrice}
+        {atr}
         nowMs={nowMs}
       />
     {/snippet}
