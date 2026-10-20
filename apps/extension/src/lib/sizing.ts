@@ -8,6 +8,11 @@ export interface SizingInput {
   direction: SizingDirection;
   entry: number;
   stop: number;
+  /**
+   * Paso de cantidad del par. Si se conoce, la cantidad se recorta a ese paso;
+   * si no, se recorta a 8 decimales. En ningún caso se redondea hacia arriba.
+   */
+  stepSize?: number;
 }
 
 export type SizingResult =
@@ -42,6 +47,108 @@ export function roundToDecimals(value: number, decimals = 4): number {
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
+/** Decimales con los que se enseña una cantidad cuando no se conoce el paso del contrato. */
+export const QUANTITY_DISPLAY_DECIMALS = 8;
+
+/**
+ * Recorta hacia ABAJO con `decimals` decimales (nunca hacia arriba). Es lo que se
+ * usa para importes que no deben pasarse de un presupuesto y para cifras de
+ * pantalla: redondear 0,0090955 a 4 decimales lo sube a 0,0091 y esa cantidad
+ * pierde más de lo presupuestado.
+ */
+export function floorToDecimals(value: number, decimals = QUANTITY_DISPLAY_DECIMALS): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const factor = 10 ** decimals;
+  const scaled = value * factor;
+  // Fuera del rango de enteros seguros no quedan decimales que recortar: el
+  // valor se devuelve tal cual (nunca mayor). Antes un bucle `n -= 1` no
+  // avanzaba aquí (n - 1 === n) y congelaba el panel.
+  if (!Number.isFinite(scaled) || scaled >= Number.MAX_SAFE_INTEGER) return value;
+  let n = Math.floor(scaled);
+  // Ruido de la coma flotante de un paso de rejilla (0,0091 × 1e8 = 909.999,9999…):
+  // se acepta el entero siguiente solo si no supera al original salvo por unas
+  // pocas unidades de precisión (ruido de representación, ~1e-15 relativo). Un
+  // exceso real (0,019999999995 frente a 0,02, ~1e-10) se rechaza.
+  if (n > 0 && n / factor > value) {
+    // La división flotante quedó por encima: un único paso hacia abajo.
+    n -= 1;
+  } else {
+    const next = (n + 1) / factor;
+    // Tolerancia doble: relativa (unos ulps) Y absoluta (una millonésima de la
+    // última cifra). Con importes enormes la relativa sola llegaba a un céntimo.
+    const gap = next - value;
+    if (next <= value || (gap <= value * Number.EPSILON * 8 && gap <= 1e-6 / factor)) n += 1;
+  }
+  return n / factor;
+}
+
+/**
+ * Importe en USD de una PÉRDIDA tal cual se enseña: siempre hacia abajo. Desde
+ * un céntimo se recorta a 2 decimales; por debajo, a 8 (sin redondear: una
+ * pérdida de 0,005 USD no puede parecer 0,01, el doble del presupuesto).
+ *
+ * Se tolera solo el ruido de representación binaria (una pérdida exacta de 9,90
+ * se guarda como 9,899999999999999 y no debe enseñarse como 9,89). La tolerancia
+ * (1e-9 sobre el número ya escalado) es mucho menor que un céntimo: un valor
+ * realmente por debajo de la rejilla no sube.
+ */
+export function floorLossUsdForDisplay(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  // Sin tolerancia hacia arriba: 0,019999999995 se muestra 0,01, nunca 0,02.
+  return floorToDecimals(value, value >= 0.01 ? 2 : QUANTITY_DISPLAY_DECIMALS);
+}
+
+// `roundingMode: 'floor'` evita que el propio formateador vuelva a redondear
+// hacia arriba (Intl redondea al más cercano por defecto).
+const lossUsd2Format = new Intl.NumberFormat('es-ES', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  roundingMode: 'floor',
+} as Intl.NumberFormatOptions);
+const lossUsdSmallFormat = new Intl.NumberFormat('es-ES', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: QUANTITY_DISPLAY_DECIMALS,
+  roundingMode: 'floor',
+} as Intl.NumberFormatOptions);
+
+/** Texto de una pérdida en USD para la pantalla, recortado hacia abajo. */
+export function formatLossUsd(value: number): string {
+  const floored = floorLossUsdForDisplay(value);
+  return floored >= 0.01 ? lossUsd2Format.format(floored) : lossUsdSmallFormat.format(floored);
+}
+
+/**
+ * Cantidad tal cual se puede enseñar y copiar: al paso del contrato si se
+ * conoce, y si no a 8 decimales. Siempre hacia abajo, para que la cifra de la
+ * pantalla nunca gaste más que el presupuesto.
+ */
+export function floorQuantityForDisplay(value: number, stepSize?: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const floored = stepSize && Number.isFinite(stepSize) && stepSize > 0 ? floorToStep(value, stepSize) : value;
+  return floorToDecimals(floored, QUANTITY_DISPLAY_DECIMALS);
+}
+
+const quantityDisplayFormat = new Intl.NumberFormat('es-ES', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: QUANTITY_DISPLAY_DECIMALS,
+});
+
+/** Texto de una cantidad para el panel: recortada, nunca redondeada hacia arriba. */
+export function formatQuantity(value: number, stepSize?: number): string {
+  return quantityDisplayFormat.format(floorQuantityForDisplay(value, stepSize));
+}
+
+/**
+ * Cantidad en texto PLANO para copiar: punto decimal, sin separador de miles y
+ * sin notación científica. Conserva los dígitos de la cantidad recortada; no
+ * usa `toPrecision`, que redondeaba una cantidad de 12 dígitos hacia arriba.
+ */
+export function formatQuantityPlain(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0';
+  const fixed = floorToDecimals(value, QUANTITY_DISPLAY_DECIMALS).toFixed(QUANTITY_DISPLAY_DECIMALS);
+  return fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed;
+}
+
 export function calculatePositionSize(input: SizingInput): SizingResult {
   const { capital, riskPct, direction, entry, stop } = input;
   if (![capital, riskPct, entry, stop].every((n) => Number.isFinite(n) && n > 0)) {
@@ -55,8 +162,17 @@ export function calculatePositionSize(input: SizingInput): SizingResult {
   }
   const priceDiff = Math.abs(entry - stop);
   const distancePct = roundToDecimals((priceDiff / entry) * 100, 4);
-  const lossUsd = roundToDecimals(capital * (riskPct / 100), 2);
-  const quantity = roundToDecimals(lossUsd / priceDiff, 4);
+  // Presupuesto exacto y cantidad RECORTADA: redondear la cantidad hacia arriba
+  // gastaba más que el presupuesto (0,0091 unidades con un stop de 1.100 USD
+  // perdían 10,01 con un presupuesto de 10).
+  const riskBudgetUsd = capital * (riskPct / 100);
+  const rawQuantity = riskBudgetUsd / priceDiff;
+  const step = input.stepSize;
+  const quantity =
+    step && Number.isFinite(step) && step > 0
+      ? floorToStep(rawQuantity, step)
+      : floorToDecimals(rawQuantity, QUANTITY_DISPLAY_DECIMALS);
+  const lossUsd = floorLossUsdForDisplay(quantity * priceDiff);
   const notionalUsd = roundToDecimals(quantity * entry, 2);
   const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
   const feeUsd = roundToDecimals(notionalUsd * TAKER_ROUND_TRIP_FEE_RATE, 2);
@@ -77,15 +193,33 @@ export interface FeeAwareSizingInput extends SizingInput {
   entryFeeRate: number;
   /** Comisión de salida como tasa, aplicada al precio del stop. */
   exitFeeRate: number;
+  /** Paso de cantidad del par (stepSize). Sin paso, la cantidad va con toda la precisión. */
+  stepSize?: number;
+  /**
+   * Presupuesto de riesgo exacto en USD (capital × riesgo, sin redondear). Si no
+   * llega, se calcula con `capital` y `riskPct`. Lo usa quien ya tiene el riesgo
+   * exacto de un ticket y no quiere arrastrar un porcentaje redondeado.
+   */
+  lossBudgetUsd?: number;
+}
+
+/**
+ * Importe en USD para un TEXTO: dos decimales cuando el importe llega al
+ * céntimo; si es menor, se deja con precisión de 8 decimales. Siempre hacia
+ * abajo: 0,005 USD no puede parecer 0,01 (el doble del presupuesto) ni 0,015
+ * puede enseñarse como 0,02.
+ */
+function usdForText(value: number): number {
+  return floorLossUsdForDisplay(value);
 }
 
 export type FeeAwareSizingResult =
   | {
       valid: true;
       distancePct: number;
-      /** Presupuesto de riesgo: capital × riskPct (sin comisiones). */
+      /** Presupuesto de riesgo exacto: capital × riskPct (sin comisiones y sin redondear). */
       lossBudgetUsd: number;
-      /** Pérdida real si salta el stop, comisiones incluidas (≤ presupuesto tras redondear). */
+      /** Pérdida real si salta el stop, comisiones incluidas (recortada: nunca supera el presupuesto). */
       lossUsd: number;
       quantity: number;
       notionalUsd: number;
@@ -102,6 +236,12 @@ export type FeeAwareSizingResult =
  * stop·feeSalida). Es un helper aparte: `calculatePositionSize` conserva su
  * contrato (tamaño por distancia de precio) para quien muestra las comisiones
  * por separado.
+ *
+ * La cantidad NUNCA se redondea hacia arriba: un redondeo hacia arriba gasta más
+ * que el presupuesto (0,0091 unidades con un stop de 1.000 USD perdían 10,00545
+ * con un presupuesto de 10). Sin `stepSize` se devuelve la cantidad con toda la
+ * precisión; con `stepSize` se redondea HACIA ABAJO al paso del contrato. Así la
+ * pérdida con comisiones no supera el presupuesto.
  */
 export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAwareSizingResult {
   const { entryFeeRate, exitFeeRate } = input;
@@ -112,13 +252,23 @@ export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAw
   if (!base.valid) return base;
   const { capital, riskPct, entry, stop } = input;
   const priceDiff = Math.abs(entry - stop);
-  const lossBudgetUsd = roundToDecimals(capital * (riskPct / 100), 2);
+  // Presupuesto EXACTO: redondearlo a dos decimales lo subía (capital 1 y 0,5 %
+  // de riesgo daban 0,01 en vez de 0,005, el doble de pérdida permitida). Se
+  // redondea solo al enseñarlo.
+  const lossBudgetUsd =
+    Number.isFinite(input.lossBudgetUsd) && (input.lossBudgetUsd as number) > 0
+      ? (input.lossBudgetUsd as number)
+      : capital * (riskPct / 100);
   const lossPerUnit = priceDiff + entry * entryFeeRate + stop * exitFeeRate;
-  const quantity = roundToDecimals(lossBudgetUsd / lossPerUnit, 4);
+  const rawQuantity = lossBudgetUsd / lossPerUnit;
+  const step = input.stepSize;
+  const quantity = step && Number.isFinite(step) && step > 0 ? floorToStep(rawQuantity, step) : rawQuantity;
   const notionalUsd = roundToDecimals(quantity * entry, 2);
   const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
   const feeUsd = roundToDecimals(quantity * entry * entryFeeRate + quantity * stop * exitFeeRate, 2);
-  const lossUsd = roundToDecimals(quantity * lossPerUnit, 2);
+  // La pérdida se recorta (nunca hacia arriba) para que no supere el presupuesto
+  // ni por el ruido de la coma flotante.
+  const lossUsd = floorToDecimals(quantity * lossPerUnit, 8);
   return {
     valid: true,
     distancePct: base.distancePct,
@@ -128,7 +278,7 @@ export function calculatePositionSizeWithFees(input: FeeAwareSizingInput): FeeAw
     notionalUsd,
     minLeverage,
     feeUsd,
-    summary: `Si el stop salta pierdes ${lossUsd} USD con comisiones (${riskPct} % de tu cuenta)`,
+    summary: `Si el stop salta pierdes ${usdForText(lossUsd)} USD con comisiones (${riskPct} % de tu cuenta)`,
   };
 }
 
@@ -207,10 +357,12 @@ export type ScaleInResult =
 /** Redondea hacia abajo a un múltiplo de `step` (tolerante al error de coma flotante). */
 export function floorToStep(value: number, step?: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
-  if (!step || !Number.isFinite(step) || step <= 0) return Math.floor(value * 1e6 + 1e-9) / 1e6;
+  if (!step || !Number.isFinite(step) || step <= 0) return floorToDecimals(value, 6);
   const n = Math.floor(value / step + 1e-9);
   const decimals = Math.min(12, Math.max(0, Math.ceil(-Math.log10(step)) + 2));
-  return roundToDecimals(n * step, decimals);
+  // Limpiar el ruido de `n * step` no puede devolver más que el original.
+  const cleaned = roundToDecimals(n * step, decimals);
+  return cleaned > value ? roundToDecimals((n - 1) * step, decimals) : cleaned;
 }
 
 export function roundToTick(price: number, tick?: number): number {

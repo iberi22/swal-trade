@@ -5,6 +5,8 @@
     calculatePositionSize,
     calculatePositionSizeWithFees,
     defaultScaleEntries,
+    formatLossUsd,
+    formatQuantity,
     planScaleIn,
     DEFAULT_SIZING_PREFERENCES,
     invalidationPriceFromFinding,
@@ -14,7 +16,14 @@
     type SizingDirection,
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
-  import { subscribeSizingLoad, TRANCHES_NOTE } from '../../lib/trade-cards/sizing-bridge';
+  import {
+    exactSizingFromLoad,
+    parseSizingLoad,
+    sizingStateFromLoad,
+    subscribeSizingLoad,
+    TRANCHES_NOTE,
+    type SizingLoad,
+  } from '../../lib/trade-cards/sizing-bridge';
 
   let { lastPrice = null, finding = null, compact = false }: { lastPrice?: number | null; finding?: Finding | null; compact?: boolean } = $props();
 
@@ -34,6 +43,8 @@
   let cardTranchesNote = $state('');
   let cardEntryFeeRate = $state(TAKER_FEE_RATE);
   let cardExitFeeRate = $state(TAKER_FEE_RATE);
+  /** Payload validado de la tarjeta o del dibujo (contrato `SizingLoad`). */
+  let cardLoad = $state<SizingLoad | null>(null);
 
   onMount(() => {
     void browser.storage.local?.get(SIZING_STORAGE_KEY).then((stored) => {
@@ -44,15 +55,28 @@
       loaded = true;
     }).catch(() => { loaded = true; });
 
-    // Tarjetas de operación: «Cargar en el dimensionador».
-    return subscribeSizingLoad((load) => {
-      direction = load.direction;
-      riskPct = load.riskPct;
-      entryStr = String(load.entry);
-      stopStr = String(load.stop);
+    // Tarjetas de operación y dibujos: «Cargar en el dimensionador».
+    return subscribeSizingLoad((incoming) => {
+      // Misma validación que usan los tests de contrato: un payload sin tarifas
+      // o sin riesgo no se pinta (antes salía «La comisión no es válida»).
+      const load = parseSizingLoad(incoming);
+      if (!load) return;
+      // El capital del panel pasa a ser el del ticket: si no, una tarjeta de
+      // 2.000 con el panel en 1.000 daba otra cantidad (1,49977 en vez de 3).
+      const state = sizingStateFromLoad(load);
+      direction = state.direction;
+      // El campo enseña el % con 4 decimales; la cantidad y la pérdida que se
+      // ven abajo salen del payload EXACTO (ver `exactSizingFromLoad`). En
+      // cuanto se toca el riesgo, la cifra exacta deja de valer y el panel
+      // recalcula con lo escrito.
+      riskPct = state.riskPct;
+      entryStr = state.entryStr;
+      stopStr = state.stopStr;
+      capital = state.capital;
       userEditedEntry = true;
       userEditedStop = true;
       fromCard = true;
+      cardLoad = load;
       cardNote = load.note;
       cardEntryFeeRate = load.entryFeeRate;
       cardExitFeeRate = load.exitFeeRate;
@@ -108,6 +132,19 @@
         : calculatePositionSize({ capital, riskPct, direction, entry: numEntry, stop: numStop })
       : null,
   );
+  /**
+   * Cifras exactas del ticket mientras los campos sigan igual que al cargarlo.
+   * Recalcular desde el % redondeado cambiaba 3 -> 3,0014; el payload trae la
+   * cantidad y la pérdida reales. Cambiar capital, riesgo, entrada o stop anula
+   * la carga exacta: las cifras pasan a salir de lo escrito.
+   */
+  const exact = $derived(
+    fromCard && cardLoad
+      ? exactSizingFromLoad(cardLoad, { entryStr, stopStr, direction, capital, riskPct })
+      : null,
+  );
+  const shownQuantity = $derived(exact ? exact.quantity : result?.valid ? result.quantity : null);
+  const shownLossUsd = $derived(exact ? exact.lossUsd : result?.valid ? result.lossUsd : null);
 
   let e2Str = $state('');
   let e3Str = $state('');
@@ -175,7 +212,7 @@
     </label>
   </div>
 
-  {#if cardNote || cardTranchesNote}
+  {#if exact && (cardNote || cardTranchesNote)}
     <p class="from-card" data-testid="sizing-from-card">
       {cardNote}{#if cardTranchesNote} · {cardTranchesNote}{/if}
     </p>
@@ -189,8 +226,8 @@
     {#if result.valid}
       <div class="metrics-grid" data-testid="sizing-results">
         <div class="metric"><span class="m-title">Distancia stop</span><span class="m-val">{pctFmt.format(result.distancePct)} %</span></div>
-        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{usdFmt.format(result.lossUsd)} USD</span></div>
-        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{priceFmt.format(result.quantity)}</span></div>
+        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{formatLossUsd(shownLossUsd ?? result.lossUsd)} USD</span></div>
+        <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{formatQuantity(shownQuantity ?? result.quantity)}</span></div>
         <div class="metric"><span class="m-title">Nocional</span><span class="m-val">{usdFmt.format(result.notionalUsd)} USD</span></div>
         <div class="metric"><span class="m-title">Apalancamiento mín.</span><span class="m-val">{result.minLeverage}×</span></div>
       </div>
@@ -213,13 +250,13 @@
           {#if scalePlan && scalePlan.valid}
             <ul class="sz-lines" data-testid="scale-in-tranches">
               {#each scalePlan.tranches as t, i}
-                <li>Tramo {i + 1} ({Math.round(scalePlan.weights[i] * 100)} %): {priceFmt.format(t.price)} · {priceFmt.format(t.qty)}</li>
+                <li>Tramo {i + 1} ({Math.round(scalePlan.weights[i] * 100)} %): {priceFmt.format(t.price)} · {formatQuantity(t.qty)}</li>
               {/each}
             </ul>
             <p class="sz-line" data-testid="scale-in-avg">Media si se llenan todos: {priceFmt.format(scalePlan.avgByFill[scalePlan.avgByFill.length - 1])}</p>
             <p class="sz-line">Punto de equilibrio con comisión: {priceFmt.format(scalePlan.breakEvenByFill[scalePlan.breakEvenByFill.length - 1])}</p>
-            <p class="sz-line" data-testid="scale-in-loss-all">Si se llenan todos y salta el stop: -{usdFmt.format(scalePlan.lossIfAllFillAndStop)} USD</p>
-            <p class="sz-line" data-testid="scale-in-loss-first">Si solo se llena el primero: -{usdFmt.format(scalePlan.lossIfOnlyFirstFillsAndStop)} USD</p>
+            <p class="sz-line" data-testid="scale-in-loss-all">Si se llenan todos y salta el stop: -{formatLossUsd(scalePlan.lossIfAllFillAndStop)} USD</p>
+            <p class="sz-line" data-testid="scale-in-loss-first">Si solo se llena el primero: -{formatLossUsd(scalePlan.lossIfOnlyFirstFillsAndStop)} USD</p>
             {#each scalePlan.notes as n}<p class="sz-line">{n}</p>{/each}
             <p class="sz-note" data-testid="scale-in-honest">{scalePlan.honestNote}</p>
           {:else if scalePlan}

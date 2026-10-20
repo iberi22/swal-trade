@@ -25,6 +25,17 @@ interface SidePanel {
  * red interceptadas: velas de Binance y titulares de trade.swal.network.
  * `klines` permite mockear otra ventana (por ejemplo con volumen taker).
  */
+/** Simula una pestaña activa de Binance Futures (id 7): el panel solo muestra dibujos de la pestaña activa. */
+const FUTURES_TAB_FAKE = `(() => {
+  const tabs = globalThis.chrome && globalThis.chrome.tabs;
+  if (!tabs) return;
+  const fake = [{ id: 7, active: true, url: 'https://www.binance.com/en/futures/BTCUSDT' }];
+  tabs.query = (_q, cb) => {
+    if (typeof cb === 'function') { cb(fake); return; }
+    return Promise.resolve(fake);
+  };
+})();`;
+
 async function openSidePanel(
   fetchImpl?: () => Promise<unknown>,
   klines: unknown = toBinanceKlines(),
@@ -1330,7 +1341,7 @@ test('tarjetas de operación: ticket con stop, línea honesta y sin lenguaje de 
 });
 
 test('tu dibujo: lee la posición dibujada en Trading View y la cuenta en largo/corto', async () => {
-  const panel = await openSidePanel();
+  const panel = await openSidePanel(undefined, undefined, FUTURES_TAB_FAKE);
   try {
     const { page } = panel;
     const card = page.getByTestId('drawing-card');
@@ -1350,7 +1361,7 @@ test('tu dibujo: lee la posición dibujada en Trading View y la cuenta en largo/
           api.storage.session.set(
             {
               positionTools: {
-                BTCUSDT: {
+                '7:BTCUSDT': {
                   type: 'swal:position-tools',
                   version: 2,
                   symbol: 'BTCUSDT',

@@ -9,13 +9,14 @@
  */
 
 import { DRAWING_HONEST_LINE } from './analyze';
+import type { DrawingAnalysis, DrawingAnalysisResult } from './types';
 import type {
-  DrawingAnalysis,
-  DrawingAnalysisResult,
   DrawingCheck,
   DrawingEntryMode,
   DrawingSide,
 } from './types';
+import { feeInclusiveRiskUsd, FROM_DRAWING_NOTE, type SizingLoad } from '../trade-cards/sizing-bridge';
+import { formatLossUsd, formatQuantityPlain } from '../sizing';
 
 /** Cuántas herramientas se enseñan a la vez (la última y la anterior). */
 export const DRAWING_MAX_SHOWN = 2;
@@ -101,8 +102,8 @@ export interface DrawingCardTool {
   honestLine: string;
   /** Texto plano para el portapapeles. */
   ticket: string;
-  /** Lo que se carga en el dimensionador. */
-  load: { direction: DrawingSide; entry: number; stop: number };
+  /** Contrato completo que consume el dimensionador (`SizingLoad`). */
+  load: SizingLoad;
 }
 
 /**
@@ -160,16 +161,17 @@ export function reachText(analysis: DrawingAnalysis): string {
   return 'el objetivo queda fuera de los rangos típicos de 1 h, 4 h y 24 h';
 }
 
-/** Funding por 8 h: cuánto paga (o cobra) el lado dibujado y su peso en el riesgo. */
+/** Funding: cuánto paga (o cobra) el lado dibujado y su peso en el riesgo. */
 export function fundingText(analysis: DrawingAnalysis): string {
   const rate = analysis.funding.ratePct8h;
   if (rate === null) return 'sin dato de funding';
   const side = analysis.funding.sidePays ? 'lo paga tu lado' : 'lo cobra tu lado';
   const share =
     analysis.funding.pctOfRiskPer8h !== null
-      ? ` · ${decimals(analysis.funding.pctOfRiskPer8h, 2)} % del riesgo cada 8 h`
+      ? ` · ${decimals(analysis.funding.pctOfRiskPer8h, 2)} % del riesgo por intervalo de funding`
       : '';
-  return `${decimals(rate, 4)} % cada 8 h · ${side}${share}`;
+  // El intervalo de funding lo fija cada contrato: no se afirma «cada 8 h».
+  return `${decimals(rate, 4)} % por intervalo de funding · ${side}${share}`;
 }
 
 /** Cifras clave: entrada, stop, objetivo, R:R, distancia del stop y tamaño. */
@@ -190,10 +192,10 @@ export function numberLines(analysis: DrawingAnalysis): DrawingNumber[] {
       label: size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop',
       value:
         size.lossUsd > 0
-          ? `${decimals(size.lossUsd, 2)} USD`
+          ? `${formatLossUsd(size.lossUsd)} USD`
           : 'el mínimo del contrato no cabe en tu regla',
     },
-    { label: 'Cantidad', value: size.qty > 0 ? plain(size.qty) : '—' },
+    { label: 'Cantidad', value: size.qty > 0 ? formatQuantityPlain(size.qty) : '—' },
   ];
 }
 
@@ -206,11 +208,43 @@ export function drawingTicketText(analysis: DrawingAnalysis): string {
     `Objetivo: ${plain(analysis.drawing.target)}`,
     `R:R: ${plain(analysis.geometry.rr)} (neto ${plain(analysis.costs.netRr)})`,
     `Stop: ${plain(analysis.geometry.riskPct)} % del precio`,
-    `Cantidad a tu regla: ${analysis.size.qty > 0 ? plain(analysis.size.qty) : 'no cabe en el mínimo del contrato'}`,
-    `${analysis.size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop'}: ${plain(analysis.size.lossUsd)} USD`,
+    `Cantidad a tu regla: ${analysis.size.qty > 0 ? formatQuantityPlain(analysis.size.qty) : 'no cabe en el mínimo del contrato'}`,
+    `${analysis.size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop'}: ${String(analysis.size.lossUsd)} USD`,
+    `Funding: ${fundingText(analysis)}`,
     DRAWING_HONEST_LINE,
   ];
   return lines.join('\n');
+}
+
+/**
+ * Payload del dibujo para el dimensionador, con el MISMO contrato que las
+ * tarjetas: dirección, entrada, stop, tarifas según el modo de entrada, riesgo
+ * exacto con comisiones (sin redondear) y la cantidad exacta del análisis. Sin
+ * esto el panel mostraba «La comisión no es válida».
+ */
+export function sizingLoadFromDrawing(analysis: DrawingAnalysis): SizingLoad {
+  const entryFeeRate = analysis.costs.entryFeePct / 100;
+  const exitFeeRate = analysis.costs.exitFeePct / 100;
+  const quantity = analysis.size.qty;
+  const riskUsd = feeInclusiveRiskUsd({
+    quantity,
+    entry: analysis.drawing.entry,
+    stop: analysis.drawing.stop,
+    entryFeeRate,
+    exitFeeRate,
+  });
+  return {
+    direction: analysis.side,
+    entry: analysis.drawing.entry,
+    stop: analysis.drawing.stop,
+    riskPct: analysis.size.lossPct,
+    riskUsd,
+    quantity,
+    capital: analysis.capital,
+    note: FROM_DRAWING_NOTE,
+    entryFeeRate,
+    exitFeeRate,
+  };
 }
 
 export function toolFromAnalysis(analysis: DrawingAnalysis): DrawingCardTool {
@@ -229,11 +263,7 @@ export function toolFromAnalysis(analysis: DrawingAnalysis): DrawingCardTool {
     funding: fundingText(analysis),
     honestLine: DRAWING_HONEST_LINE,
     ticket: drawingTicketText(analysis),
-    load: {
-      direction: analysis.side,
-      entry: analysis.drawing.entry,
-      stop: analysis.drawing.stop,
-    },
+    load: sizingLoadFromDrawing(analysis),
   };
 }
 

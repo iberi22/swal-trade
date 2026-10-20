@@ -9,6 +9,7 @@
     type TopBucketKind,
   } from '../../lib/account/analysis-view';
   import type { TradeMetrics } from '../../lib/account/metrics';
+  import { formatLossUsd } from '../../lib/sizing';
 
   let {
     metrics,
@@ -66,7 +67,7 @@
     {#if riskUsd === null}
       <p class="an-note">Sin riesgo por operación el R nominal vale 0. Indícalo arriba.</p>
     {:else}
-      <p class="an-note">{R_NOMINAL_NOTE} Usado: {riskUsd.toFixed(2)} USD.</p>
+      <p class="an-note">{R_NOMINAL_NOTE} Usado: {formatLossUsd(riskUsd)} USD.</p>
     {/if}
     {#if skipped > 0}
       <p class="an-note">{skipped} filas de Binance no se pudieron leer y se descartaron.</p>

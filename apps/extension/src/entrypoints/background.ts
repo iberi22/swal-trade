@@ -14,7 +14,7 @@ import { createIdbVault } from '../lib/account/idb-vault';
 import { chat } from '../lib/ai/llm-client';
 import { ALARM_NAME, createBackgroundScanner, desiredAlarm } from '../lib/scanner/background-runner';
 import { loadScannerSettings, SCANNER_SETTINGS_KEY } from '../lib/scanner/settings';
-import { mergePositionToolsStore, POSITION_TOOLS_STORAGE_KEY } from '../lib/tv-bridge/relay';
+import { dropTab, mergePositionToolsStore, POSITION_TOOLS_STORAGE_KEY } from '../lib/tv-bridge/relay';
 import type { BridgePositionToolsMessage } from '../lib/tv-bridge/schema';
 import { createIdbPageHistory } from '../lib/page-account/idb-page-history';
 import { historyMetrics } from '../lib/page-account/metrics';
@@ -97,19 +97,53 @@ async function remember(context: MarketContext): Promise<void> {
 }
 
 /**
- * Último dibujo de posición leído del gráfico, por símbolo (storage.session).
- * El background no lo interpreta: solo lo guarda para que el panel lo lea al
- * abrirse. Nada sale del navegador y no se toca la cuenta.
+ * Último dibujo de posición leído del gráfico, por PESTAÑA y símbolo
+ * (storage.session). La clave lleva el id de la pestaña que lo mandó: dos
+ * pestañas con el mismo par y dibujos distintos no se pisan. El background no
+ * lo interpreta: solo lo guarda para que el panel lo lea al abrirse. Nada sale
+ * del navegador y no se toca la cuenta.
  */
-async function rememberPositionTools(tools: BridgePositionToolsMessage): Promise<void> {
+async function rememberPositionTools(tools: BridgePositionToolsMessage, tabId: number | undefined): Promise<void> {
+  try {
+    const session = browser.storage.session;
+    if (!session || tabId === undefined) return;
+    const stored = await session.get(POSITION_TOOLS_STORAGE_KEY);
+    const merged = mergePositionToolsStore(stored?.[POSITION_TOOLS_STORAGE_KEY], tools, tabId);
+    if (merged.changed) await session.set({ [POSITION_TOOLS_STORAGE_KEY]: merged.store });
+  } catch {
+    // Sin storage.session no hay dibujos en el panel; no es un error de la página.
+  }
+}
+
+/**
+ * Al cerrar una pestaña o al navegar a otra página se tiran sus dibujos: si no,
+ * el panel podría enseñar el dibujo de un gráfico que ya no existe. Se usan
+ * `tabs.onRemoved`/`onUpdated`, disponibles sin el permiso `tabs`.
+ */
+async function forgetPositionTools(tabId: number): Promise<void> {
   try {
     const session = browser.storage.session;
     if (!session) return;
     const stored = await session.get(POSITION_TOOLS_STORAGE_KEY);
-    const merged = mergePositionToolsStore(stored?.[POSITION_TOOLS_STORAGE_KEY], tools);
-    if (merged.changed) await session.set({ [POSITION_TOOLS_STORAGE_KEY]: merged.store });
+    const dropped = dropTab(stored?.[POSITION_TOOLS_STORAGE_KEY], tabId);
+    if (dropped.changed) await session.set({ [POSITION_TOOLS_STORAGE_KEY]: dropped.store });
   } catch {
-    // Sin storage.session no hay dibujos en el panel; no es un error de la página.
+    // Sin storage.session no hay nada que limpiar.
+  }
+}
+
+function setupPositionToolsCleanup(): void {
+  const tabs = browser.tabs;
+  if (!tabs) return;
+  try {
+    tabs.onRemoved.addListener((tabId: number) => {
+      void forgetPositionTools(tabId);
+    });
+    tabs.onUpdated.addListener((tabId: number, change: { url?: string }) => {
+      if (change?.url) void forgetPositionTools(tabId);
+    });
+  } catch {
+    // Sin eventos de pestañas: el panel acota por pestaña y símbolo de todos modos.
   }
 }
 
@@ -346,6 +380,7 @@ export default defineBackground(() => {
   });
 
   setupScannerAlarm();
+  setupPositionToolsCleanup();
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isPrivilegedType((message as { type?: unknown } | null)?.type)) return;
@@ -405,7 +440,7 @@ export default defineBackground(() => {
       return;
     }
     if (parsed.type === 'tv-position-tools') {
-      void rememberPositionTools(parsed.tools);
+      void rememberPositionTools(parsed.tools, _sender.tab?.id);
       return;
     }
     if (parsed.type === 'get-tv-state') {

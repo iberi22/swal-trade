@@ -9,7 +9,34 @@ import { buildSystemPrompt, DEFAULT_PROMPT_CONFIG } from './prompt-config';
 export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_PROMPT_CONFIG, 'es');
 
 export const AI_FLAG_TEXT = 'Esta respuesta afirma algo que no podemos respaldar.';
-const PROMISE_WORDS = ['garantiz', 'seguro que', 'win rate', 'tasa de acierto', '% de probabilidad', 'probabilidad de'];
+/**
+ * Guardas de la respuesta: promesas y ordenes de compra/venta. Se comparan sin
+ * mayusculas y sin tildes, porque el modelo no siempre respeta la ortografia.
+ * Cubre imperativos (`compra`, `comprar`, `vende`, `vender`, `entra ya`, `buy`,
+ * `sell`) y cifras de acierto (`99 % de acierto`, `70% de probabilidad`,
+ * `80 % de exito`, `win rate`).
+ */
+const PROMISE_PATTERNS: readonly RegExp[] = [
+  /garantiz/,
+  /\bseguro que\b/,
+  /\bwin\s*rate\b/,
+  /\btasa de acierto\b/,
+  /\d+\s*%\s*de\s*(?:acierto|probabilidad|exito)/,
+  /\bprobabilidad de\b/,
+  /\bentra ya\b/,
+  /\b(?:compra|comprar|compres|vende|vender|vendas|buy|sell)\b/,
+];
+
+/** Texto en minusculas y sin tildes, para que la guarda no dependa de la ortografia. */
+function guardText(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/** true si la respuesta promete o da una orden concreta. */
+export function flagsPromise(text: string): boolean {
+  const plain = guardText(typeof text === 'string' ? text : '');
+  return PROMISE_PATTERNS.some((pattern) => pattern.test(plain));
+}
 
 export interface AiOption {
   accion: string;
@@ -92,8 +119,7 @@ export function parseAiAnswer(text: string): AiView {
     };
   }
   const all = [view.resumen, ...view.lectura, ...view.preguntas, ...view.faltan, ...view.opciones.flatMap((o) => [o.accion, o.coste, o.no_aplica_si])]
-    .join(' ')
-    .toLowerCase();
-  if (PROMISE_WORDS.some((w) => all.includes(w))) view.flag = AI_FLAG_TEXT;
+    .join(' ');
+  if (flagsPromise(all)) view.flag = AI_FLAG_TEXT;
   return view;
 }

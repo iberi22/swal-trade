@@ -84,14 +84,37 @@ function hasCloseMarker(text: string): boolean {
   return /\b(?:cerrado|cerrada|closed|close)\b/.test(normalizeLabel(text));
 }
 
+/** Etiqueta de un trozo de texto: `Cerrado` gana a `Abierto` si aparecen los dos. */
+function markerOf(text: string): DateHit['marker'] {
+  if (hasCloseMarker(text)) return 'close';
+  if (hasOpenMarker(text)) return 'open';
+  return null;
+}
+
+/**
+ * Fechas con su etiqueta. Cuando apertura y cierre viven en el MISMO texto
+ * («10/18/2026 23:45:54 Abierto | 10/19/2026 10:21:28 Cerrado») no basta con
+ * mirar el texto entero: cada fecha se asocia a la etiqueta que la SIGUE (y, si
+ * no hay, a la que la precede). Asi la primera es apertura y la segunda cierre;
+ * antes las dos salian como cierre y la tarjeta se descartaba.
+ */
 function datesIn(text: string, tzOffsetMinutes: number): DateHit[] {
   const hits: DateHit[] = [];
   const re = /\d{1,2}\/\d{1,2}\/\d{4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?/g;
-  for (const match of text.matchAll(re)) {
+  const matches = [...text.matchAll(re)];
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i] as RegExpMatchArray;
     const ms = parseDate(match[0], tzOffsetMinutes);
     if (ms === null) continue;
-    // La etiqueta puede estar en el mismo texto o ser el texto completo.
-    const marker = hasCloseMarker(text) ? 'close' : hasOpenMarker(text) ? 'open' : null;
+    const start = (match.index ?? 0) + match[0].length;
+    const end = i + 1 < matches.length ? ((matches[i + 1] as RegExpMatchArray).index ?? text.length) : text.length;
+    // La etiqueta mas cercana por delante de la fecha.
+    let marker = markerOf(text.slice(start, end));
+    if (marker === null) {
+      const previous = matches[i - 1] as RegExpMatchArray | undefined;
+      const from = previous ? (previous.index ?? 0) + previous[0].length : 0;
+      marker = markerOf(text.slice(from, match.index ?? 0));
+    }
     hits.push({ ms, marker });
   }
   return hits;

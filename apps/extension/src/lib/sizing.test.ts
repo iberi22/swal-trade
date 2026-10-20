@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePositionSize,
+  calculatePositionSizeWithFees,
   defaultScaleEntries,
+  floorLossUsdForDisplay,
+  floorQuantityForDisplay,
+  floorToDecimals,
+  floorToStep,
+  formatLossUsd,
+  formatQuantity,
+  formatQuantityPlain,
   planScaleIn,
   invalidationPriceFromFinding,
   normalizeSizingPreferences,
+  TAKER_FEE_RATE,
   TAKER_ROUND_TRIP_FEE_RATE,
   type SizingInput,
 } from './sizing';
@@ -82,14 +91,42 @@ describe('position sizing math (pure)', () => {
     expect(calculatePositionSize({ ...base, capital: NaN }).valid).toBe(false);
   });
 
-  it('rounds quantity to 4 decimals', () => {
+  it('floors the quantity to 8 decimals when the step is unknown, so it never spends more than the budget', () => {
     const input: SizingInput = { capital: 1000, riskPct: 1, direction: 'long', entry: 64321, stop: 63123 };
     const result = calculatePositionSize(input);
     expect(result.valid).toBe(true);
     if (!result.valid) return;
-    expect(result.quantity).toBe(0.0083);
+    // Antes se redondeaba a 4 decimales (0,0083, más de lo presupuestado).
+    expect(result.quantity).toBe(0.00834724);
+    expect(result.quantity).toBeLessThanOrEqual(10 / (64321 - 63123));
+    // La pérdida que se enseña es la real (recortada): no supera el presupuesto.
+    expect(result.quantity * (64321 - 63123)).toBeLessThanOrEqual(10);
     const decimals = result.quantity.toString().split('.')[1] || '';
-    expect(decimals.length).toBeLessThanOrEqual(4);
+    expect(decimals.length).toBeLessThanOrEqual(8);
+  });
+
+  it('floors the quantity to the contract step when it is known', () => {
+    const result = calculatePositionSize({ capital: 1000, riskPct: 1, direction: 'long', entry: 100000, stop: 98900, stepSize: 0.0001 });
+    expect(result.valid).toBe(true);
+    if (!result.valid) return;
+    expect(result.quantity).toBe(0.009);
+    expect(result.lossUsd).toBe(9.9);
+  });
+
+  it('floors the normal-path quantity and loss so neither exceeds the risk budget (1000 / 1 % / 100000 / 98900)', () => {
+    const input: SizingInput = { capital: 1000, riskPct: 1, direction: 'long', entry: 100000, stop: 98900 };
+    const result = calculatePositionSize(input);
+    expect(result.valid).toBe(true);
+    if (!result.valid) return;
+    const budget = 10;
+    const priceDiff = 100000 - 98900;
+    // La distancia redondeaba 0,009090909 a 0,0091 y la pérdida pasaba de 10.
+    expect(result.quantity).toBe(floorToDecimals(budget / priceDiff, 8));
+    expect(result.lossUsd).toBeLessThanOrEqual(budget);
+    expect(result.lossUsd).toBe(9.99);
+    // La pérdida mostrada no es la del redondeo viejo (10,01).
+    expect(result.summary).toContain('9.99');
+    expect(result.summary).not.toContain('10.01');
   });
 
   it('calculates fees as 0.05% taker on entry plus 0.05% on exit', () => {
@@ -217,5 +254,211 @@ describe('planScaleIn (escalonar en 3 tramos)', () => {
     expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 90 })).toEqual({ entry2: 96, entry3: 92 });
     expect(defaultScaleEntries({ direction: 'short', entry: 100, stop: 110 })).toEqual({ entry2: 104, entry3: 108 });
     expect(defaultScaleEntries({ direction: 'long', entry: 100, stop: 105 })).toBeNull();
+  });
+});
+
+describe('calculatePositionSizeWithFees (riesgo con comisiones)', () => {
+  const base = {
+    capital: 1000,
+    riskPct: 1,
+    direction: 'long' as const,
+    entry: 100000,
+    stop: 99000,
+    entryFeeRate: TAKER_FEE_RATE,
+    exitFeeRate: TAKER_FEE_RATE,
+  };
+
+  it('keeps the loss at the stop within the risk budget once fees are included', () => {
+    const r = calculatePositionSizeWithFees(base);
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    // Presupuesto 10 USD: qty = 10 / (1000 + 100000·0,0005 + 99000·0,0005) = 10 / 1099,5
+    expect(r.lossBudgetUsd).toBe(10);
+    expect(r.quantity).toBeCloseTo(10 / 1099.5, 12);
+    expect(r.lossUsd).toBeLessThanOrEqual(10 + 1e-9);
+    expect(r.lossUsd).toBe(10);
+    expect(r.notionalUsd).toBeCloseTo(909.5, 6);
+    expect(r.minLeverage).toBe(1);
+    // Comisión de ida (50·qty) + vuelta (49,5·qty) ≈ 0,90 USD
+    expect(r.feeUsd).toBe(0.9);
+  });
+
+  it('floors the quantity to the contract step so it never spends more than the budget', () => {
+    const r = calculatePositionSizeWithFees({ ...base, stepSize: 0.0001 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.quantity).toBe(0.009);
+    expect(r.quantity).toBe(floorToStep(10 / 1099.5, 0.0001));
+    expect(r.lossUsd).toBeLessThanOrEqual(10 + 1e-9);
+  });
+
+  it('returns full precision when no stepSize is given instead of flooring to 6 decimals', () => {
+    const r = calculatePositionSizeWithFees(base);
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    const raw = 10 / 1099.5;
+    // Sin paso de contrato la cantidad conserva toda la precisión: no se recorta al
+    // suelo de 6 decimales que aplica floorToStep sin argumento.
+    expect(r.quantity).not.toBe(floorToStep(raw, undefined));
+    expect(r.quantity).toBeCloseTo(raw, 12);
+  });
+
+  it('honours an exact lossBudgetUsd instead of deriving it from a rounded riskPct', () => {
+    const r = calculatePositionSizeWithFees({ ...base, lossBudgetUsd: 25 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.lossBudgetUsd).toBe(25);
+    expect(r.quantity).toBeCloseTo(25 / 1099.5, 12);
+    expect(r.lossUsd).toBeLessThanOrEqual(25 + 1e-9);
+  });
+
+  it('rejects a negative fee and propagates base validation errors', () => {
+    const badFee = calculatePositionSizeWithFees({ ...base, entryFeeRate: -0.001 });
+    expect(badFee.valid).toBe(false);
+    if (!badFee.valid) expect(badFee.reason).toBe('invalid_input');
+
+    const wrongSide = calculatePositionSizeWithFees({ ...base, direction: 'long', stop: 100500 });
+    expect(wrongSide.valid).toBe(false);
+    if (!wrongSide.valid) expect(wrongSide.reason).toBe('wrong_side');
+  });
+
+  it('uses the EXACT budget when it is below one cent (capital 1, risk 0,5 %)', () => {
+    const r = calculatePositionSizeWithFees({
+      capital: 1,
+      riskPct: 0.5,
+      direction: 'long',
+      entry: 100,
+      stop: 99,
+      entryFeeRate: TAKER_FEE_RATE,
+      exitFeeRate: TAKER_FEE_RATE,
+    });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    // Presupuesto exacto 0,005 USD: redondearlo a 0,01 duplicaba la pérdida permitida.
+    expect(r.lossBudgetUsd).toBe(0.005);
+    expect(r.lossBudgetUsd).toBeLessThan(0.01);
+    expect(r.quantity).toBeCloseTo(0.005 / 1.0995, 12);
+    expect(r.lossUsd).toBeLessThanOrEqual(0.005 + 1e-12);
+    expect(r.lossUsd).toBeCloseTo(0.005, 12);
+    // El resumen no infla la pérdida al céntimo: dice 0,005, no 0,01.
+    expect(r.summary).toContain('0.005');
+  });
+
+  it('takes an exact lossBudgetUsd below a cent too', () => {
+    const r = calculatePositionSizeWithFees({ ...base, capital: 1, lossBudgetUsd: 0.005 });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.lossBudgetUsd).toBe(0.005);
+    expect(r.lossUsd).toBeLessThanOrEqual(0.005 + 1e-12);
+  });
+});
+
+describe('cantidades para la pantalla (nunca hacia arriba)', () => {
+  it('recorta al paso del contrato cuando se conoce', () => {
+    // 0,0090955 unidades con paso 0,0001 son 0,009 (no 0,0091, que se pasaba del presupuesto).
+    expect(floorQuantityForDisplay(0.0090955, 0.0001)).toBe(0.009);
+    expect(floorQuantityForDisplay(3, 0.0001)).toBe(3);
+    expect(floorQuantityForDisplay(0.99999, 0.001)).toBe(0.999);
+  });
+
+  it('sin paso recorta a 8 decimales en vez de redondear', () => {
+    // 0,0090955 se enseñaba como 0,0091 (redondeo hacia arriba).
+    expect(floorQuantityForDisplay(0.0090955)).toBe(0.0090955);
+    expect(floorQuantityForDisplay(0.00909556)).toBe(0.00909556);
+    // El noveno decimal y siguientes se tiran, no se redondean.
+    expect(floorQuantityForDisplay(0.009095569)).toBe(0.00909556);
+    expect(floorQuantityForDisplay(1.234567899)).toBe(1.23456789);
+    // Un valor con más ruido que decimales útiles no sube nunca por encima del original.
+    for (const value of [0.0090955, 1.999999999, 0.000123456789, 2.000000009]) {
+      expect(floorQuantityForDisplay(value)).toBeLessThanOrEqual(value);
+    }
+  });
+
+  it('limpia el ruido de la coma flotante sin perder un dígito', () => {
+    // 0,0091 × 1e8 = 909.999,9999…: un `Math.floor` directo daría 0,00909999.
+    expect(floorQuantityForDisplay(0.0091)).toBe(0.0091);
+    expect(floorQuantityForDisplay(0.0091, 0.0001)).toBe(0.0091);
+    expect(floorToDecimals(10.000000000000002)).toBe(10);
+  });
+
+  it('el texto de la cantidad usa la cifra recortada', () => {
+    expect(formatQuantity(3)).toBe('3');
+    expect(formatQuantity(0.0090955)).toBe('0,0090955');
+    expect(formatQuantity(0.0090955, 0.0001)).toBe('0,009');
+    // 0,0091 redondeaba hacia arriba desde 0,0090955: el texto ya no lo hace.
+    expect(formatQuantity(0.0090955)).not.toBe('0,0091');
+    expect(formatQuantity(0)).toBe('0');
+    expect(formatQuantity(Number.NaN)).toBe('0');
+  });
+
+  it('el texto plano (portapapeles) conserva los dígitos y no sube la cantidad', () => {
+    expect(formatQuantityPlain(9.095043)).toBe('9.095043');
+    expect(formatQuantityPlain(4.76417341)).toBe('4.76417341');
+    expect(formatQuantityPlain(3)).toBe('3');
+    // `toPrecision(10)` redondeaba una cantidad de 12 dígitos hacia arriba
+    // (123456,123457 -> 123456,1235).
+    expect(formatQuantityPlain(123456.123457)).toBe('123456.123457');
+    for (const value of [123456.123457, 4.76417341, 0.00000001, 0.009099999999999]) {
+      expect(Number(formatQuantityPlain(value))).toBeLessThanOrEqual(value);
+    }
+    expect(formatQuantityPlain(0)).toBe('0');
+  });
+});
+
+describe('recortes: el resultado nunca supera la entrada', () => {
+  it('floorToDecimals no sube un valor pegado a la rejilla (0,009099999999999)', () => {
+    // Con el redondeo previo, 909.999,9999999 subía a 910.000 y devolvía 0,0091.
+    expect(floorToDecimals(0.009099999999999, 8)).toBeLessThanOrEqual(0.009099999999999);
+    expect(floorToDecimals(0.009099999999999, 8)).toBe(0.00909999);
+    expect(floorToDecimals(0.0091, 8)).toBe(0.0091);
+    expect(floorToDecimals(909999.9999999, 8)).toBeLessThanOrEqual(909999.9999999);
+    const values = [0.0091, 0.009099999999999, 1.9999999999, 2.000000009, 10.000000000000002];
+    for (const value of values) expect(floorToDecimals(value, 8)).toBeLessThanOrEqual(value);
+  });
+
+  it('floorToStep tampoco supera la cantidad original', () => {
+    for (const [value, step] of [
+      [0.009099999999999, 0.0001],
+      [10.000000000000002, undefined],
+      [1.9999999999, 0.1],
+      [0.6000001, 0.3],
+      [3.0000000000000004, 0.001],
+    ] as ReadonlyArray<[number, number | undefined]>) {
+      expect(floorToStep(value, step)).toBeLessThanOrEqual(value);
+    }
+  });
+});
+
+describe('pérdidas en USD para la pantalla (siempre hacia abajo)', () => {
+  it('desde un céntimo recorta a 2 decimales; por debajo, a 8', () => {
+    // 0,015 se enseñaba como 0,02 (más de lo que costaba).
+    expect(formatLossUsd(0.015)).toBe('0,01');
+    // 0,005 se enseñaba como 0,01 (el doble del presupuesto).
+    expect(formatLossUsd(0.005)).toBe('0,005');
+    expect(floorLossUsdForDisplay(0.015)).toBe(0.01);
+    expect(floorLossUsdForDisplay(0.005)).toBe(0.005);
+    expect(floorLossUsdForDisplay(0.0149999)).toBe(0.01);
+    expect(formatLossUsd(9.999999)).toBe('9,99');
+    expect(formatLossUsd(10)).toBe('10,00');
+    expect(formatLossUsd(0)).toBe('0');
+    expect(formatLossUsd(Number.NaN)).toBe('0');
+  });
+
+  it('el resumen de una pérdida con comisiones tampoco sube al céntimo', () => {
+    const r = calculatePositionSizeWithFees({
+      capital: 1,
+      riskPct: 1,
+      direction: 'long',
+      entry: 100,
+      stop: 99,
+      entryFeeRate: TAKER_FEE_RATE,
+      exitFeeRate: TAKER_FEE_RATE,
+      lossBudgetUsd: 0.015,
+    });
+    expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect(r.lossUsd).toBeLessThanOrEqual(0.015);
+    expect(r.summary).toContain('0.01');
+    expect(r.summary).not.toContain('0.02');
   });
 });

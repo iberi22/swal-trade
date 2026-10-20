@@ -23,7 +23,8 @@
   import { publishSizingLoad } from '../../lib/trade-cards/sizing-bridge';
   import type { SymbolFilters } from '../../lib/trade-cards/ticket';
   import { drawingsFromPositionTools } from '../../lib/tv-bridge/position-tools';
-  import { POSITION_TOOLS_STORAGE_KEY, toolsForSymbol } from '../../lib/tv-bridge/relay';
+  import { POSITION_TOOLS_STORAGE_KEY, toolsForTab } from '../../lib/tv-bridge/relay';
+  import { onActiveBinanceTabChange, resolveActiveBinanceTabId } from '../../lib/tv-bridge/tab-scope';
 
   /**
    * «Tu dibujo»: lee la herramienta Long/Short Position que el usuario traza en
@@ -53,8 +54,10 @@
     canLoad?: boolean;
   } = $props();
 
-  /** Último mensaje del puente, tal cual lo guarda el background por símbolo. */
+  /** Último mensaje del puente, tal cual lo guarda el background por pestaña y símbolo. */
   let store = $state<unknown>(null);
+  /** Pestaña de Binance Futures cuyo gráfico manda en el panel. */
+  let activeTabId = $state<number | null>(null);
   let capital = $state(DEFAULT_SIZING_PREFERENCES.capital);
   let filters = $state<SymbolFilters | null>(null);
   let copiedId = $state<string | null>(null);
@@ -77,6 +80,16 @@
     };
     browser.storage?.onChanged?.addListener(onChanged as never);
 
+    // La pestaña activa del gráfico decide qué dibujo se enseña: dos pestañas
+    // con el mismo par no comparten dibujo.
+    const refreshTab = () => {
+      void resolveActiveBinanceTabId().then((id) => {
+        activeTabId = id;
+      });
+    };
+    refreshTab();
+    const offTabs = onActiveBinanceTabChange(refreshTab);
+
     const applySizing = (raw: unknown) => {
       capital = normalizeSizingPreferences(raw).capital;
     };
@@ -94,6 +107,7 @@
     return () => {
       browser.storage?.onChanged?.removeListener(onChanged as never);
       browser.storage?.onChanged?.removeListener(onLocalChanged as never);
+      offTabs();
     };
   });
 
@@ -109,7 +123,7 @@
     };
   });
 
-  const message = $derived(toolsForSymbol(store, symbol));
+  const message = $derived(toolsForTab(store, activeTabId, symbol));
   const refPrice = $derived(lastPrice !== null && lastPrice > 0 ? lastPrice : null);
   const candles = $derived(snapshot?.candles ?? null);
   const atrs = $derived(computeAtrs({ h1: candles?.h1, h4: candles?.h4, d1: candles?.d1 }));
@@ -318,7 +332,13 @@
           <p class="note honest" data-testid="drawing-honest">{tool.honestLine}</p>
 
           <div class="actions">
-            <button type="button" class="btn" data-testid="drawing-load" disabled={!canLoad} onclick={() => load(tool)}>
+            <button
+              type="button"
+              class="btn"
+              data-testid="drawing-load"
+              disabled={!canLoad || !(tool.load.quantity > 0)}
+              onclick={() => load(tool)}
+            >
               Cargar en el dimensionador
             </button>
             <button type="button" class="btn ghost" data-testid="drawing-copy" onclick={() => copy(tool)}>
