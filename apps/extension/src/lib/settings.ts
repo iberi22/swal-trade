@@ -5,15 +5,40 @@ import { isReservedCombo, normalizeCombo } from './key-combo';
 import { TIMEFRAMES, type Timeframe } from './types';
 
 /**
- * Seis huecos de atajo, uno por temporalidad dibujable. Cada uno guarda su
- * combinación (editable) y la temporalidad que aplica. F1..F12 quedaron fuera:
- * son teclas del navegador y del sistema.
+ * Seis huecos de atajo, uno por temporalidad dibujable, más cuatro acciones
+ * que el dueño pidió fuera de las temporalidades. Cada hueco guarda su
+ * combinación (editable); los de temporalidad guardan además la temporalidad
+ * que aplican. F1..F12 quedaron fuera: son teclas del navegador y del sistema.
  */
-export const HOTKEY_SLOTS = ['1', '2', '3', '4', '5', '6'] as const;
+export const TIMEFRAME_HOTKEY_SLOTS = ['1', '2', '3', '4', '5', '6'] as const;
+/** Acciones que no cambian la temporalidad: símbolo, pintado y «Tu dibujo». */
+export const ACTION_HOTKEY_SLOTS = ['next-symbol', 'prev-symbol', 'toggle-paint', 'focus-drawing'] as const;
+export const HOTKEY_SLOTS = [...TIMEFRAME_HOTKEY_SLOTS, ...ACTION_HOTKEY_SLOTS] as const;
+export type TimeframeHotkeySlot = (typeof TIMEFRAME_HOTKEY_SLOTS)[number];
+export type ActionHotkeySlot = (typeof ACTION_HOTKEY_SLOTS)[number];
 export type HotkeySlot = (typeof HOTKEY_SLOTS)[number];
+
+export function isTimeframeSlot(slot: HotkeySlot): slot is TimeframeHotkeySlot {
+  return (TIMEFRAME_HOTKEY_SLOTS as readonly string[]).includes(slot);
+}
+
+/** Texto de cada acción en el editor de atajos. */
+export const HOTKEY_SLOT_LABELS: Record<HotkeySlot, string> = {
+  '1': 'Temporalidad 1',
+  '2': 'Temporalidad 2',
+  '3': 'Temporalidad 3',
+  '4': 'Temporalidad 4',
+  '5': 'Temporalidad 5',
+  '6': 'Temporalidad 6',
+  'next-symbol': 'Siguiente símbolo de la lista',
+  'prev-symbol': 'Símbolo anterior de la lista',
+  'toggle-paint': 'Pintar o borrar niveles en el gráfico',
+  'focus-drawing': 'Ir a «Tu dibujo»',
+};
 export interface HotkeyBinding {
   /** Combinación canónica, p. ej. `Alt+Shift+5`. Cadena vacía = sin atajo. */
   combo: string;
+  /** Temporalidad que aplica; null en los huecos de acción. */
   timeframe: Timeframe | null;
 }
 export type HotkeyMap = Record<HotkeySlot, HotkeyBinding>;
@@ -24,6 +49,10 @@ export const DEFAULT_HOTKEY_MAP: HotkeyMap = {
   '4': { combo: 'Alt+Shift+4', timeframe: '1h' },
   '5': { combo: 'Alt+Shift+5', timeframe: '4h' },
   '6': { combo: 'Alt+Shift+6', timeframe: '1d' },
+  'next-symbol': { combo: 'Alt+Shift+ArrowRight', timeframe: null },
+  'prev-symbol': { combo: 'Alt+Shift+ArrowLeft', timeframe: null },
+  'toggle-paint': { combo: 'Alt+Shift+L', timeframe: null },
+  'focus-drawing': { combo: 'Alt+Shift+D', timeframe: null },
 };
 
 export const AI_PROVIDERS = ['opencode', 'openrouter', 'openai', 'anthropic', 'gemini', 'local'] as const;
@@ -210,13 +239,23 @@ export function normalizeHotkeyMap(raw: unknown, legacy?: unknown): HotkeyMap {
     const fallback = DEFAULT_HOTKEY_MAP[slot];
     const entry = record[slot];
     const row = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : null;
-    const legacyTimeframe = index === 5 && legacyTimeframes[5] === undefined ? firstLegacyAfterSix : legacyTimeframes[index];
-    const rawTimeframe = row ? row.timeframe : legacyTimeframe;
+    // Los huecos de acción nunca llevan temporalidad: la acción va en el hueco.
+    const rawTimeframe = !isTimeframeSlot(slot)
+      ? null
+      : row
+        ? row.timeframe
+        : index === 5 && legacyTimeframes[5] === undefined
+          ? firstLegacyAfterSix
+          : legacyTimeframes[index];
     const timeframe =
-      rawTimeframe === undefined ? fallback.timeframe : normalizeSlotTimeframe(rawTimeframe, fallback.timeframe);
+      !isTimeframeSlot(slot)
+        ? null
+        : rawTimeframe === undefined
+          ? fallback.timeframe
+          : normalizeSlotTimeframe(rawTimeframe, fallback.timeframe);
     let combo = typeof row?.combo === 'string' ? normalizeCombo(row.combo) : null;
     if (combo && isReservedCombo(combo)) combo = null;
-    if (!combo) combo = used.has(fallback.combo.toLowerCase()) ? '' : fallback.combo;
+    if (!combo) combo = used.has(fallback.combo.toLowerCase()) || isReservedCombo(fallback.combo) ? '' : fallback.combo;
     if (combo) used.add(combo.toLowerCase());
     out[slot] = { combo, timeframe };
   });
@@ -293,7 +332,10 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     readPageAccount: record.readPageAccount === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
-    hotkeyMap: normalizeHotkeyMap(record.hotkeys, record.hotkeyMap),
+    // El editor guarda en `hotkeyMap`; `hotkeys` es el mapa viejo de F1..F12 y
+    // solo se usa para migrar. Leerlos al revés hacía que los atajos editados
+    // volvieran a los valores por defecto al recargar.
+    hotkeyMap: normalizeHotkeyMap(record.hotkeyMap, record.hotkeys),
     claudeBridgeEnabled: record.claudeBridgeEnabled === true,
     claudeBridgePort:
       typeof record.claudeBridgePort === "number" &&

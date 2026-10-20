@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_HOTKEY_MAP,
   DEFAULT_SETTINGS,
-  HOTKEY_KEYS,
   SETTINGS_KEY,
   normalizeHotkeyMap,
   normalizeSettings,
@@ -107,7 +106,7 @@ describe('normalizeSettings', () => {
         symbols: "BTC, ETH",
         autoSync: false,
         hotkeysEnabled: false,
-        hotkeys: { '1': { combo: 'Ctrl+Alt+7', timeframe: '15m' } },
+        hotkeyMap: { '1': { combo: 'Ctrl+Alt+7', timeframe: '15m' } },
       }),
     ).toEqual({
       defaultTimeframe: "4h",
@@ -208,8 +207,9 @@ describe('normalizeSettings', () => {
   });
 
   it('migra los atajos F1..F12 a Alt+Mayús conservando la temporalidad', () => {
-    const migrated = normalizeSettings({ hotkeyMap: { F1: '15m', F3: '4h', F12: '1d' } }).hotkeyMap;
+    const migrated = normalizeSettings({ hotkeys: { F1: '15m', F3: '4h', F12: '1d' } }).hotkeyMap;
     expect(migrated).toEqual({
+      ...DEFAULT_HOTKEY_MAP,
       '1': { combo: 'Alt+Shift+1', timeframe: '15m' },
       '2': { combo: 'Alt+Shift+2', timeframe: '5m' },
       '3': { combo: 'Alt+Shift+3', timeframe: '4h' },
@@ -221,9 +221,30 @@ describe('normalizeSettings', () => {
     expect(JSON.stringify(migrated)).not.toContain('F1');
   });
 
+  it('los atajos editados sobreviven a guardar y recargar (hotkeyMap, no hotkeys)', () => {
+    // El editor guarda en `hotkeyMap`. Antes se leía `record.hotkeys` como mapa
+    // nuevo y `hotkeyMap` como legado F1..F12: todo lo editado se perdía y
+    // volvían los defaults al recargar.
+    const saved = {
+      ...DEFAULT_SETTINGS,
+      hotkeyMap: {
+        ...DEFAULT_HOTKEY_MAP,
+        '1': { combo: 'Ctrl+Alt+7', timeframe: '4h' as const },
+        '2': { combo: 'Alt+Shift+A', timeframe: '15m' as const },
+        'next-symbol': { combo: 'Ctrl+Alt+ArrowRight', timeframe: null },
+      },
+    };
+    const reloaded = settingsFromStorage({ [SETTINGS_KEY]: saved });
+    expect(reloaded.hotkeyMap['1']).toEqual({ combo: 'Ctrl+Alt+7', timeframe: '4h' });
+    expect(reloaded.hotkeyMap['2']).toEqual({ combo: 'Alt+Shift+A', timeframe: '15m' });
+    expect(reloaded.hotkeyMap['next-symbol']).toEqual({ combo: 'Ctrl+Alt+ArrowRight', timeframe: null });
+    // Y no se queda con los defaults del hueco.
+    expect(reloaded.hotkeyMap['1'].combo).not.toBe(DEFAULT_HOTKEY_MAP['1'].combo);
+  });
+
   it('un atajo guardado inválido o reservado vuelve al default del hueco', () => {
     const map = normalizeSettings({
-      hotkeys: {
+      hotkeyMap: {
         '1': { combo: 'F5', timeframe: '1m' },
         '2': { combo: 'Ctrl+T', timeframe: '5m' },
         '3': { combo: 'Alt+Shift+9', timeframe: '15m' },
@@ -235,7 +256,7 @@ describe('normalizeSettings', () => {
   });
 
   it('un hueco sin temporalidad se conserva como tal', () => {
-    const map = normalizeSettings({ hotkeys: { '1': { combo: 'Alt+Shift+1', timeframe: null } } }).hotkeyMap;
+    const map = normalizeSettings({ hotkeyMap: { '1': { combo: 'Alt+Shift+1', timeframe: null } } }).hotkeyMap;
     expect(map['1']).toEqual({ combo: 'Alt+Shift+1', timeframe: null });
   });
 
