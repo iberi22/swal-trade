@@ -97,16 +97,12 @@ async function openFuturesPage(
     }
   }
   await page.waitForTimeout(2_000);
-  const tabPattern = tab === 'Original' ? 'Original' : 'Trading\\s*View';
-  await page.evaluate((pattern) => {
-    const matches = [...document.querySelectorAll('div,span,a,button,li')].filter(
-      (element) =>
-        element.childElementCount <= 2 &&
-        new RegExp(`^\\s*${pattern}\\s*$`, 'i').test(element.textContent ?? '') &&
-        element.offsetParent !== null,
-    );
-    matches[matches.length - 1]?.click();
-  }, tabPattern);
+  // Clic por texto exacto: el heurístico de "último elemento visible" dejó de
+  // acertar con el DOM actual de Binance.
+  await page
+    .getByText(tab === 'Original' ? 'Original' : 'Trading View', { exact: true })
+    .first()
+    .click({ timeout: 15_000 });
   if (tab === 'Original') return;
   // El iframe tarda en montar el chart y en tener rango visible.
   await expect
@@ -164,8 +160,8 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
       const panel = await context.newPage();
       await panel.goto(`chrome-extension://${extensionId}/${sidePath}`);
 
-      const settings = panel.locator('details.settings');
-      await settings.locator('summary').click();
+      // Los ajustes viven en la pestaña «Ajustes» del panel.
+      await panel.getByRole('tab', { name: 'Ajustes' }).click();
       const toggle = panel.getByRole('checkbox', {
         name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
       });
@@ -279,8 +275,8 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
 
       const panel = await context.newPage();
       await panel.goto(`chrome-extension://${extensionId}/${sidePath}`);
-      const settings = panel.locator('details.settings');
-      await settings.locator('summary').click();
+      // Los ajustes viven en la pestaña «Ajustes» del panel.
+      await panel.getByRole('tab', { name: 'Ajustes' }).click();
       const toggle = panel.getByRole('checkbox', {
         name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
       });
