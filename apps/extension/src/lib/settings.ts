@@ -1,14 +1,29 @@
 import { browser } from "wxt/browser";
 import { normalizeSymbol, parseIntervalLabel } from './market-context';
 import { isLocaleCode, type LocaleCode } from './i18n/locales';
+import { isReservedCombo, normalizeCombo } from './key-combo';
 import { TIMEFRAMES, type Timeframe } from './types';
 
-export const HOTKEY_KEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'] as const;
-export type HotkeyKey = (typeof HOTKEY_KEYS)[number];
-export type HotkeyMap = Record<HotkeyKey, Timeframe | null>;
+/**
+ * Seis huecos de atajo, uno por temporalidad dibujable. Cada uno guarda su
+ * combinación (editable) y la temporalidad que aplica. F1..F12 quedaron fuera:
+ * son teclas del navegador y del sistema.
+ */
+export const HOTKEY_SLOTS = ['1', '2', '3', '4', '5', '6'] as const;
+export type HotkeySlot = (typeof HOTKEY_SLOTS)[number];
+export interface HotkeyBinding {
+  /** Combinación canónica, p. ej. `Alt+Shift+5`. Cadena vacía = sin atajo. */
+  combo: string;
+  timeframe: Timeframe | null;
+}
+export type HotkeyMap = Record<HotkeySlot, HotkeyBinding>;
 export const DEFAULT_HOTKEY_MAP: HotkeyMap = {
-  F1: '1m', F2: '5m', F3: '15m', F4: '1h', F5: '4h',
-  F6: null, F7: null, F8: null, F9: null, F10: null, F11: null, F12: null,
+  '1': { combo: 'Alt+Shift+1', timeframe: '1m' },
+  '2': { combo: 'Alt+Shift+2', timeframe: '5m' },
+  '3': { combo: 'Alt+Shift+3', timeframe: '15m' },
+  '4': { combo: 'Alt+Shift+4', timeframe: '1h' },
+  '5': { combo: 'Alt+Shift+5', timeframe: '4h' },
+  '6': { combo: 'Alt+Shift+6', timeframe: '1d' },
 };
 
 export const AI_PROVIDERS = ['opencode', 'openrouter', 'openai', 'anthropic', 'gemini', 'local'] as const;
@@ -68,9 +83,9 @@ export interface ExtensionSettings {
    * Local, opt-in y sin pulsar nada: exige un `true` explícito.
    */
   readPageAccount: boolean;
-  /** Atajos de teclado habilitados para cambiar la temporalidad (F1..F12). */
+  /** Atajos de teclado habilitados para cambiar la temporalidad (Alt+Mayús...). */
   hotkeysEnabled: boolean;
-  /** Mapa de tecla de función a temporalidad (o null para ninguna). */
+  /** Seis huecos de atajo, cada uno con su combinación editable y su temporalidad. */
   hotkeyMap: HotkeyMap;
   /** Permite que un agente local (Claude Code) lea y pinte en el gráfico vía WebSocket. */
   claudeBridgeEnabled: boolean;
@@ -164,15 +179,47 @@ export function normalizeSymbolList(value: unknown): string[] {
 
 /** Nunca confía en lo que haya en disco: valida campo a campo. */
 
-export function normalizeHotkeyMap(raw: unknown): HotkeyMap {
-  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const out: HotkeyMap = { ...DEFAULT_HOTKEY_MAP };
-  for (const key of HOTKEY_KEYS) {
-    if (key in record) {
-      const val = record[key];
-      out[key] = val === null || val === '' || val === 'none' ? null : normalizeSettingsTimeframe(val);
-    }
+/** Temporalidad de un hueco: null explícito la deja sin efecto; basura vuelve al default. */
+function normalizeSlotTimeframe(value: unknown, fallback: Timeframe | null): Timeframe | null {
+  if (value === null || value === '' || value === 'none') return null;
+  return normalizeSettingsTimeframe(value) ?? fallback;
+}
+
+/**
+ * Atajos guardados. Acepta la forma nueva (`{ '1': {combo, timeframe}, ... }`)
+ * y migra la vieja (`{ F1: '1m', ... }`): las teclas de función desaparecen,
+ * pero la temporalidad que el usuario había elegido en cada hueco se queda y
+ * pasa al atajo Alt+Mayús por defecto. Un combo inválido o reservado vuelve al
+ * default de ese hueco; si el default ya está ocupado, el hueco queda sin atajo.
+ */
+export function normalizeHotkeyMap(raw: unknown, legacy?: unknown): HotkeyMap {
+  const record = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const old = legacy && typeof legacy === 'object' && !Array.isArray(legacy) ? (legacy as Record<string, unknown>) : {};
+  // `undefined` = la clave no estaba; `null` = estaba y decía «ninguna».
+  const legacyTimeframes: Array<Timeframe | null | undefined> = [];
+  for (const key of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']) {
+    legacyTimeframes.push(key in old ? normalizeSlotTimeframe(old[key], null) : undefined);
   }
+  // F6..F12 compartían hueco en el mapa viejo: si el usuario puso una
+  // temporalidad en cualquiera de ellos, el sexto hueco se la queda.
+  const firstLegacyAfterSix = legacyTimeframes.slice(5).find((tf) => tf !== undefined && tf !== null);
+
+  const out = {} as HotkeyMap;
+  const used = new Set<string>();
+  HOTKEY_SLOTS.forEach((slot, index) => {
+    const fallback = DEFAULT_HOTKEY_MAP[slot];
+    const entry = record[slot];
+    const row = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : null;
+    const legacyTimeframe = index === 5 && legacyTimeframes[5] === undefined ? firstLegacyAfterSix : legacyTimeframes[index];
+    const rawTimeframe = row ? row.timeframe : legacyTimeframe;
+    const timeframe =
+      rawTimeframe === undefined ? fallback.timeframe : normalizeSlotTimeframe(rawTimeframe, fallback.timeframe);
+    let combo = typeof row?.combo === 'string' ? normalizeCombo(row.combo) : null;
+    if (combo && isReservedCombo(combo)) combo = null;
+    if (!combo) combo = used.has(fallback.combo.toLowerCase()) ? '' : fallback.combo;
+    if (combo) used.add(combo.toLowerCase());
+    out[slot] = { combo, timeframe };
+  });
   return out;
 }
 function clampNumber(value: unknown, min: number, max: number, fallback: number, integer: boolean): number {
@@ -246,7 +293,7 @@ export function normalizeSettings(raw: unknown): ExtensionSettings {
     readPageAccount: record.readPageAccount === true,
     // Atajos de teclado activos por defecto; solo false explícito los desactiva.
     hotkeysEnabled: record.hotkeysEnabled === false ? false : DEFAULT_SETTINGS.hotkeysEnabled,
-    hotkeyMap: normalizeHotkeyMap(record.hotkeyMap),
+    hotkeyMap: normalizeHotkeyMap(record.hotkeys, record.hotkeyMap),
     claudeBridgeEnabled: record.claudeBridgeEnabled === true,
     claudeBridgePort:
       typeof record.claudeBridgePort === "number" &&

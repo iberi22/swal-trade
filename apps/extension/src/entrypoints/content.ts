@@ -11,7 +11,8 @@ import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
-import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
+import { SETTINGS_KEY, settingsFromStorage, type ExtensionSettings } from '../lib/settings';
+import { hotkeyTimeframe, showTimeframeToast } from '../lib/hotkeys';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
 import { binanceAdapter } from '../lib/exchanges/binance';
@@ -267,6 +268,33 @@ export default defineContentScript({
     let channel: BridgeChannel | null = null;
     const ackListeners = new Set<(data: unknown) => void>();
 
+    // --- Atajos de teclado de la extensión (Alt+Mayús...) ------------------
+    // Se escuchan en la página, no en un content script aparte. Las teclas de
+    // función (F1..F12) quedaron fuera: son del navegador y del sistema. Los
+    // atajos cambian la temporalidad del gráfico a través del background, que es
+    // quien conoce el puente con Trading View.
+    let hotkeySettings: ExtensionSettings | null = null;
+
+    const onPageKeyDown = (event: KeyboardEvent) => {
+      const current = hotkeySettings;
+      if (!current) return;
+      const timeframe = hotkeyTimeframe(event, current.hotkeyMap, current.hotkeysEnabled);
+      if (!timeframe) return;
+      event.preventDefault();
+      event.stopPropagation();
+      showTimeframeToast(document, timeframe);
+      try {
+        void browser.runtime.sendMessage({ type: 'swal:hotkey-set-timeframe', timeframe }).catch(() => {});
+      } catch {
+        // La extensión se recargó: este content script quedó viejo.
+      }
+    };
+
+    // Solo en Binance: en TradingView los atajos son del gráfico anfitrión.
+    if (location.hostname.includes('binance.com')) {
+      window.addEventListener('keydown', onPageKeyDown, true);
+    }
+
     // --- Lectura de la página (posiciones e historial) --------------------
     // Opt-in: solo con `readPageAccount` encendido. Lee el texto que el usuario
     // ya ve, no escribe en la página ni pulsa nada. Una lectura cada >= 2 s,
@@ -382,6 +410,7 @@ export default defineContentScript({
       const next = settingsFromStorage({ settings: changes[SETTINGS_KEY]?.newValue });
       applyReadSetting(next.readDrawings);
       applyPageReadSetting(next.readPageAccount);
+      hotkeySettings = next;
     };
     try {
       browser.storage?.onChanged?.addListener(onSettingsChanged as never);
@@ -395,6 +424,7 @@ export default defineContentScript({
           const next = settingsFromStorage(stored);
           applyReadSetting(next.readDrawings);
           applyPageReadSetting(next.readPageAccount);
+          hotkeySettings = next;
         })
         .catch(() => {});
     } catch {
@@ -624,6 +654,7 @@ export default defineContentScript({
       if (timer !== null) clearTimeout(timer);
       browser.runtime.onMessage.removeListener(onRuntimeMessage);
       document.removeEventListener('visibilitychange', onPageVisibility);
+      window.removeEventListener('keydown', onPageKeyDown, true);
       stopPageRead();
       try {
         browser.storage?.onChanged?.removeListener(onSettingsChanged as never);

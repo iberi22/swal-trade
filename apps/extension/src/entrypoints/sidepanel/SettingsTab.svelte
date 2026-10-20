@@ -1,7 +1,13 @@
 <script lang="ts">
   import { requestSwitchTab } from '../../lib/tv-paint-send';
   import { tvStateHint, type TvChartState } from '../../lib/tv-paint';
-  import { normalizeSymbolList, HOTKEY_KEYS, type ExtensionSettings } from '../../lib/settings';
+  import {
+    normalizeSymbolList,
+    HOTKEY_SLOTS,
+    DEFAULT_HOTKEY_MAP,
+    type ExtensionSettings,
+  } from '../../lib/settings';
+  import { comboProblem } from '../../lib/hotkeys';
   import { NEWS_REFRESH_MS } from '../../lib/news';
   import { TIMEFRAMES, type Timeframe } from '../../lib/types';
   import { LOCALES, isLocaleCode } from '../../lib/i18n/locales';
@@ -34,6 +40,38 @@
     applySettings: (next: ExtensionSettings) => void;
     checkClaudeStatus: () => void;
   } = $props();
+
+  /** Aviso del editor de atajos: solo texto, nunca un atajo guardado a medias. */
+  let hotkeyNote = $state<string | null>(null);
+
+  function setCombo(input: HTMLInputElement, slot: (typeof HOTKEY_SLOTS)[number]) {
+    hotkeyNote = null;
+    const problem = comboProblem(input.value, settings.hotkeyMap, slot);
+    if (problem) {
+      // El campo vuelve al atajo que sigue guardado: nada de estados a medias.
+      input.value = settings.hotkeyMap[slot].combo;
+      hotkeyNote =
+        problem === 'reserved'
+          ? `${input.value || 'Esa combinación'} no se puede usar: ${input.value} es un atajo del navegador.`
+          : problem === 'duplicate'
+            ? 'Esa combinación ya la usa otro atajo.'
+            : 'Atajo no válido: usa Alt, Ctrl o Meta con Mayús y una tecla (por ejemplo Alt+Shift+7).';
+      return;
+    }
+    const combo = input.value.trim();
+    input.value = combo;
+    applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [slot]: { ...settings.hotkeyMap[slot], combo } } });
+  }
+
+  function setSlotTimeframe(slot: (typeof HOTKEY_SLOTS)[number], raw: string) {
+    const timeframe = raw === '' ? null : (raw as ExtensionSettings['defaultTimeframe']);
+    applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [slot]: { ...settings.hotkeyMap[slot], timeframe } } });
+  }
+
+  function resetHotkeys() {
+    hotkeyNote = null;
+    applySettings({ ...settings, hotkeyMap: { ...DEFAULT_HOTKEY_MAP } });
+  }
 </script>
 
 <!-- Los interruptores de la página viven aquí pero fuera de .settings: son
@@ -168,26 +206,39 @@
     <label class="field check">
       <input
         type="checkbox"
+        data-testid="settings-hotkeys"
         disabled={!settingsLoaded}
         checked={settings.hotkeysEnabled}
         onchange={(e) => applySettings({ ...settings, hotkeysEnabled: (e.currentTarget as HTMLInputElement).checked })}
       />
-      <span>Atajos de teclado para temporalidad (F1..F12)</span>
+      <span>Atajos de teclado para temporalidad (Alt+Mayús)</span>
     </label>
-    <p class="hint">F1 a F5 cambian la temporalidad en Binance Futures y previenen acciones del navegador (F1 abre ayuda, F5 recarga la página).</p>
-    <div class="field">
-      <span>Asignación de teclas</span>
+    <p class="hint">
+      Los atajos de la extensión empiezan por Alt+Mayús para no chocar con los del navegador. Se
+      pueden editar; F1 a F12 no se aceptan porque son teclas del navegador y del sistema.
+    </p>
+    <div class="field" data-testid="hotkey-editor">
+      <span>Atajos y temporalidad</span>
       <div class="hotkeys-grid">
-        {#each HOTKEY_KEYS as key (key)}
+        {#each HOTKEY_SLOTS as slot (slot)}
           <div class="hotkey-row">
-            <span class="hotkey-label">{key}</span>
-            <select
+            <input
+              type="text"
+              class="hotkey-combo"
+              data-testid={`hotkey-combo-${slot}`}
+              aria-label={`Atajo ${slot}`}
               disabled={!settingsLoaded || !settings.hotkeysEnabled}
-              value={settings.hotkeyMap?.[key] ?? ''}
-              onchange={(e) => {
-                const val = (e.currentTarget as HTMLSelectElement).value;
-                applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [key]: val ? (val as Timeframe) : null } });
-              }}
+              value={settings.hotkeyMap[slot]?.combo ?? ''}
+              placeholder="Alt+Shift+{slot}"
+              spellcheck="false"
+              autocomplete="off"
+              onchange={(e) => setCombo(e.currentTarget as HTMLInputElement, slot)}
+            />
+            <select
+              aria-label={`Temporalidad del atajo ${slot}`}
+              disabled={!settingsLoaded || !settings.hotkeysEnabled}
+              value={settings.hotkeyMap[slot]?.timeframe ?? ''}
+              onchange={(e) => setSlotTimeframe(slot, (e.currentTarget as HTMLSelectElement).value)}
             >
               <option value="">—</option>
               {#each TIMEFRAMES as tf (tf)}<option value={tf}>{tf}</option>{/each}
@@ -195,6 +246,16 @@
           </div>
         {/each}
       </div>
+      <button
+        type="button"
+        class="btn small"
+        data-testid="hotkeys-reset"
+        disabled={!settingsLoaded || !settings.hotkeysEnabled}
+        onclick={resetHotkeys}
+      >Restablecer</button>
+      {#if hotkeyNote}
+        <p class="hint" role="status" data-testid="hotkey-note">{hotkeyNote}</p>
+      {/if}
     </div>
     <div class="claude-bridge-section">
       <label class="field check">

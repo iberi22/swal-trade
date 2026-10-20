@@ -18,6 +18,7 @@
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import { atrOf } from '../../lib/account/analysis-view';
   import { createPanelController, type PanelState, type PanelTab } from '../../lib/account/panel-controller';
+  import { hotkeyTimeframe } from '../../lib/hotkeys';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { fetchNews, type NewsItem } from '../../lib/news';
@@ -254,7 +255,19 @@
     window.addEventListener('pagehide', onPageHide);
     const onVisibility = () => controller.visibilityChanged();
     document.addEventListener('visibilitychange', onVisibility);
+    // Atajos del panel: la misma combinación que en la página cambia la
+    // temporalidad del análisis. Nunca mientras se escribe en un campo.
+    const onHotkey = (event: KeyboardEvent) => {
+      const next = hotkeyTimeframe(event, settings.hotkeyMap, settings.hotkeysEnabled && settingsLoaded);
+      if (!next) return;
+      event.preventDefault();
+      event.stopPropagation();
+      timeframe = next;
+      inferred = false;
+    };
+    window.addEventListener('keydown', onHotkey, true);
     return () => {
+      window.removeEventListener('keydown', onHotkey, true);
       controller.stop();
       document.removeEventListener('visibilitychange', onVisibility);
       browser.runtime.onMessage.removeListener(onMessage);

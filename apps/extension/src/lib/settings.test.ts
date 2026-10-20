@@ -107,7 +107,7 @@ describe('normalizeSettings', () => {
         symbols: "BTC, ETH",
         autoSync: false,
         hotkeysEnabled: false,
-        hotkeyMap: { F1: '15m' },
+        hotkeys: { '1': { combo: 'Ctrl+Alt+7', timeframe: '15m' } },
       }),
     ).toEqual({
       defaultTimeframe: "4h",
@@ -118,7 +118,7 @@ describe('normalizeSettings', () => {
       explainWithAi: false,
       readPageAccount: false,
       hotkeysEnabled: false,
-      hotkeyMap: { ...DEFAULT_HOTKEY_MAP, F1: '15m' },
+      hotkeyMap: { ...DEFAULT_HOTKEY_MAP, '1': { combo: 'Ctrl+Alt+7', timeframe: '15m' } },
       claudeBridgeEnabled: false,
       claudeBridgePort: 47321,
       claudeBridgeToken: "",
@@ -205,6 +205,38 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ hotkeysEnabled: 'false' }).hotkeysEnabled).toBe(true);
     expect(normalizeSettings({ hotkeysEnabled: 0 }).hotkeysEnabled).toBe(true);
     expect(normalizeSettings({}).hotkeysEnabled).toBe(true);
+  });
+
+  it('migra los atajos F1..F12 a Alt+Mayús conservando la temporalidad', () => {
+    const migrated = normalizeSettings({ hotkeyMap: { F1: '15m', F3: '4h', F12: '1d' } }).hotkeyMap;
+    expect(migrated).toEqual({
+      '1': { combo: 'Alt+Shift+1', timeframe: '15m' },
+      '2': { combo: 'Alt+Shift+2', timeframe: '5m' },
+      '3': { combo: 'Alt+Shift+3', timeframe: '4h' },
+      '4': { combo: 'Alt+Shift+4', timeframe: '1h' },
+      '5': { combo: 'Alt+Shift+5', timeframe: '4h' },
+      '6': { combo: 'Alt+Shift+6', timeframe: '1d' },
+    });
+    // La tecla de función no sobrevive en ninguna forma.
+    expect(JSON.stringify(migrated)).not.toContain('F1');
+  });
+
+  it('un atajo guardado inválido o reservado vuelve al default del hueco', () => {
+    const map = normalizeSettings({
+      hotkeys: {
+        '1': { combo: 'F5', timeframe: '1m' },
+        '2': { combo: 'Ctrl+T', timeframe: '5m' },
+        '3': { combo: 'Alt+Shift+9', timeframe: '15m' },
+      },
+    }).hotkeyMap;
+    expect(map['1']).toEqual({ combo: 'Alt+Shift+1', timeframe: '1m' });
+    expect(map['2']).toEqual({ combo: 'Alt+Shift+2', timeframe: '5m' });
+    expect(map['3']).toEqual({ combo: 'Alt+Shift+9', timeframe: '15m' });
+  });
+
+  it('un hueco sin temporalidad se conserva como tal', () => {
+    const map = normalizeSettings({ hotkeys: { '1': { combo: 'Alt+Shift+1', timeframe: null } } }).hotkeyMap;
+    expect(map['1']).toEqual({ combo: 'Alt+Shift+1', timeframe: null });
   });
 
   it('radarEnabled solo se apaga con false explícito', () => {
@@ -331,11 +363,26 @@ describe('settingsToInputs', () => {
 });
 
 describe('normalizeHotkeyMap', () => {
-  it('rellena con el mapa por defecto y normaliza teclas', () => {
+  it('rellena con el mapa por defecto y valida hueco a hueco', () => {
     expect(normalizeHotkeyMap(null)).toEqual(DEFAULT_HOTKEY_MAP);
-    const custom = normalizeHotkeyMap({ F1: '15m', F2: null, F3: 'ninguno', F4: 'invalido', F12: '1D', UNKNOWN: '1m' });
-    expect([custom.F1, custom.F2, custom.F3, custom.F4, custom.F12]).toEqual(['15m', null, null, null, '1d']);
+    const custom = normalizeHotkeyMap({
+      '1': { combo: 'Alt+Shift+7', timeframe: '15m' },
+      '2': { combo: '', timeframe: null },
+      '3': { combo: 'Ctrl+Shift+Q', timeframe: 'ninguno' },
+      UNKNOWN: { combo: 'Alt+Shift+8', timeframe: '1m' },
+    });
+    expect(custom['1']).toEqual({ combo: 'Alt+Shift+7', timeframe: '15m' });
+    expect(custom['2']).toEqual({ combo: 'Alt+Shift+2', timeframe: null });
+    expect(custom['3']).toEqual({ combo: 'Ctrl+Shift+Q', timeframe: '15m' });
+    expect(custom['4']).toEqual(DEFAULT_HOTKEY_MAP['4']);
     expect((custom as Record<string, unknown>).UNKNOWN).toBeUndefined();
+  });
+
+  it('migra el mapa de teclas de función al hueco correspondiente', () => {
+    const migrated = normalizeHotkeyMap(null, { F1: '15m', F2: null, F3: 'ninguno', F4: 'invalido', F12: '1D' });
+    expect(['1', '2', '3', '4', '5', '6'].map((s) => migrated[s as '1'].timeframe)).toEqual([
+      '15m', null, null, null, '4h', '1d',
+    ]);
   });
 });
 
