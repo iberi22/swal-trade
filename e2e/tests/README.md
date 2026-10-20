@@ -18,7 +18,7 @@ Playwright project `extension` picks up every `tests/ext-*.spec.ts`.
 
 | Export | What it does |
 |---|---|
-| `openSidePanel(fetchImpl?, klines?, initScript?)` | Loads `apps/extension/.output/chrome-mv3` in a persistent Chromium and returns `{ page, extensionId, errors, newsRequests, close() }`. Stubs klines, depth, premiumIndex, ticker, exchangeInfo, alternative.me, the local radar, the news endpoint and every websocket. `fetchImpl` answers the news call, `klines` overrides the candle window, `initScript` runs before the panel boots. Always `await panel.close()` in `finally`. |
+| `openSidePanel(fetchImpl?, klines?, initScript?)` | Loads the WXT build output of the extension (run `npm run build` in apps/extension first) in a persistent Chromium and returns `{ page, extensionId, errors, newsRequests, close() }`. Stubs klines, depth, premiumIndex, ticker, exchangeInfo, alternative.me, the local radar, the news endpoint and every websocket. `fetchImpl` answers the news call, `klines` overrides the candle window, `initScript` runs before the panel boots. Always `await panel.close()` in `finally`. |
 | `openTab(page, name)` | Clicks a tab by name and waits until it is selected. |
 | `openAnalysis(page)` | Opens «Mis trades» with the «Clave API» source. |
 | `seedSettings(page, settings)` | Writes `storage.local.settings` and reloads the panel. |
