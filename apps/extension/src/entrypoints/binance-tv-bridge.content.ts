@@ -146,8 +146,11 @@ export default defineContentScript({
       },
     );
 
-    // Establecer la comunicación síncrona
-    establishLink('bridge', 3000)
+    // Espera pasiva: no tocamos el DOM hasta que el aislado llama a la puerta.
+    // Así el hueco hasta `document_idle` (medido de 9 s a 54 s en Binance con
+    // red móvil lenta) no expone ningún nodo que un script de la página pueda
+    // capturar. El canal se enlaza en cuanto el aislado arranca.
+    establishLink('bridge')
       .then((ch) => {
         channel = ch;
         channel.onMessage((data: unknown) => handler(data));
