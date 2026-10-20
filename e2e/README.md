@@ -88,12 +88,12 @@ La extensión necesita el modo headless nuevo (`--headless=new` en `launchPersis
 | Sitio | `checkout.spec.ts` | secreto una vez, importe exacto, QR, sondeo hasta pago, licencia guardada |
 | Sitio | `guardian.spec.ts` | el plan gratis muestra el exceso diario y solo la posición mayor |
 | Sitio | `guardian.spec.ts` | una licencia Ed25519 válida desbloquea Pro |
-| Extensión | `extension.spec.ts` | el panel lateral renderiza el gráfico y hallazgos desde velas mockeadas |
-| Extensión | `extension.spec.ts` | la capa de gráfico renderiza cada hallazgo principal, no solo el seleccionado |
-| Extensión | `extension.spec.ts` | el panel de CVD pinta el flujo de volumen de las velas mockeadas |
-| Extensión | `extension.spec.ts` | la tarjeta de noticias muestra titulares de la api mockeada con tiempo relativo y sentimiento |
-| Extensión | `extension.spec.ts` | la tarjeta de noticias se degrada a una nota cuando el servicio no tiene nada |
-| Extensión | `extension.spec.ts` | los ajustes persisten en storage.local y controlan el símbolo y temporalidad |
+| Extensión | `ext-operacion.spec.ts` | el panel lateral renderiza el gráfico y hallazgos desde velas mockeadas |
+| Extensión | `ext-operacion.spec.ts` | la capa de gráfico renderiza cada hallazgo principal, no solo el seleccionado |
+| Extensión | `ext-operacion.spec.ts` | el panel de CVD pinta el flujo de volumen de las velas mockeadas |
+| Extensión | `ext-operacion.spec.ts` | la tarjeta de noticias muestra titulares de la api mockeada con tiempo relativo y sentimiento |
+| Extensión | `ext-operacion.spec.ts` | la tarjeta de noticias se degrada a una nota cuando el servicio no tiene nada |
+| Extensión | `ext-settings.spec.ts` | los ajustes persisten en storage.local y controlan el símbolo y temporalidad |
 | MCP | `stdio.test.mjs` | `listTools` (sin `SWAL_MCP_TRADING`) devuelve solo las 6 de lectura, incluido `grid_plan`, y ninguna es de escritura ni destructiva |
 | MCP | `stdio.test.mjs` | `analyze_chart` devuelve un doble suelo con fuerza y sin etiqueta de probabilidad |
 | MCP | `stdio.test.mjs` | `propose_order` formula una orden tipo MARKET con stop y `sent: false` |

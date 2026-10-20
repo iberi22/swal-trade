@@ -31,8 +31,10 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // Una prueba por área del panel: tests/ext-<area>.spec.ts, con el arnés
+      // compartido en tests/helpers/panel.ts (ver tests/README.md).
       name: 'extension',
-      testMatch: /tests\/extension\.spec\.ts/,
+      testMatch: /tests\/ext-[a-z-]+\.spec\.ts/,
     },
     {
       // Opcional: corre contra la página pública de Binance. Se salta si no está

@@ -1,5 +1,5 @@
 // Captura dos PNG 1280x800 del panel de la extensión para la ficha de la tienda.
-// Reutiliza el enfoque de e2e/tests/extension.spec.ts: Chromium con la extensión
+// Reutiliza el enfoque de e2e/tests/helpers/panel.ts: Chromium con la extensión
 // cargada, velas de Binance mockeadas y titulares mockeados. No llama a la red.
 //
 // Requiere apps/extension/.output/chrome-mv3 (npm run build o npm run zip) y
