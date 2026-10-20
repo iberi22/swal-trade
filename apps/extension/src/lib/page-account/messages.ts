@@ -7,6 +7,12 @@ import type { HistoryMetrics } from './metrics';
 import type { ClosedPosition } from './parse-history';
 import type { PageBalance } from './parse-balance';
 import type { PagePosition } from './parse-positions';
+import {
+  DIAGNOSE_REGION_KEYS,
+  DIAGNOSE_REGION_MAX_CHARS,
+  type DiagnoseRegionReport,
+  type DiagnoseRegions,
+} from './diagnose';
 import { historyMetrics } from './metrics';
 import type { MarginType, PositionSide } from '../account/types';
 
@@ -296,6 +302,40 @@ export function parsePageAccountDiagnoseResult(raw: unknown): string | null {
   if (!isRecord(raw) || raw.type !== PAGE_ACCOUNT_DIAGNOSE_RESULT) return null;
   if (typeof raw.outline !== 'string') return null;
   return raw.outline.slice(0, PAGE_DIAGNOSE_MAX_CHARS);
+}
+
+/** Cobertura de una región: se encontró o no, cuántos nodos y su esquema. */
+function parseDiagnoseRegion(raw: unknown): DiagnoseRegionReport {
+  if (!isRecord(raw) || raw.found !== true) return { found: false, nodes: 0, outline: '' };
+  const nodes =
+    typeof raw.nodes === 'number' && Number.isFinite(raw.nodes) && raw.nodes >= 0
+      ? Math.floor(raw.nodes)
+      : 0;
+  const outline = typeof raw.outline === 'string' ? raw.outline.slice(0, DIAGNOSE_REGION_MAX_CHARS) : '';
+  return { found: true, nodes, outline };
+}
+
+export interface PageAccountDiagnoseReport {
+  /** Volcado anonimizado que ya se copiaba antes (se mantiene tal cual). */
+  outline: string;
+  /** Esquema de cada región, con `found` para saber qué no se reconoció. */
+  regions: DiagnoseRegions;
+}
+
+/**
+ * Informe de diagnóstico completo. Nunca lanza: una respuesta sin `regions`
+ * (content script viejo ya inyectado) se acepta y las regiones quedan vacías.
+ */
+export function parsePageAccountDiagnoseReport(raw: unknown): PageAccountDiagnoseReport | null {
+  const outline = parsePageAccountDiagnoseResult(raw);
+  if (outline === null) return null;
+  const record = raw as Record<string, unknown>;
+  const rawRegions = isRecord(record.regions) ? record.regions : {};
+  const regions = {} as DiagnoseRegions;
+  for (const key of DIAGNOSE_REGION_KEYS) regions[key] = parseDiagnoseRegion(rawRegions[key]);
+  // Sin volcado y sin ninguna región no hay nada que enseñar: el panel lo dice.
+  if (outline === '' && !DIAGNOSE_REGION_KEYS.some((key) => regions[key].found)) return null;
+  return { outline, regions };
 }
 
 export type PageAccountMessage =

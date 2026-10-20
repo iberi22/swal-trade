@@ -7,11 +7,12 @@
   import { pageStaleLabel } from '../../lib/page-account/page-position';
   import {
     parsePageAccountResult,
-    parsePageAccountDiagnoseResult,
+    parsePageAccountDiagnoseReport,
     PAGE_ACCOUNT_CLEAR,
     PAGE_ACCOUNT_DIAGNOSE,
     PAGE_ACCOUNT_GET,
   } from '../../lib/page-account/messages';
+  import { composeDiagnoseText, regionSummary } from '../../lib/page-account/diagnose';
   import type { AiView } from '../../lib/ai/prompt';
   import { getProvider, isFreeModel } from '../../lib/ai/providers';
   import type { ExtensionSettings } from '../../lib/settings';
@@ -172,14 +173,16 @@
     note = null;
     try {
       const reply = await browser.runtime.sendMessage({ type: PAGE_ACCOUNT_DIAGNOSE });
-      const outline = parsePageAccountDiagnoseResult(reply);
-      if (!outline) {
+      const report = parsePageAccountDiagnoseReport(reply);
+      const text = report ? composeDiagnoseText(report.regions, report.outline) : '';
+      if (!text) {
         note = 'Abre la página de futuros de Binance para copiar el diagnóstico.';
         return;
       }
-      const copied = await copyText(outline);
+      const copied = await copyText(text);
+      const coverage = report ? regionSummary(report.regions) : '';
       note = copied
-        ? `Diagnóstico anonimizado copiado (${outline.length} caracteres).`
+        ? `Diagnóstico anonimizado copiado (${text.length} caracteres). ${coverage}`.trim()
         : 'No se pudo copiar el diagnóstico.';
     } catch {
       note = 'No se pudo leer la página.';

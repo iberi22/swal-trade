@@ -17,6 +17,7 @@ import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
 import { binanceAdapter } from '../lib/exchanges/binance';
 import { supportedAdapterForUrl } from '../lib/exchanges/registry';
+import { describeRegions } from '../lib/page-account/diagnose';
 import {
   PAGE_ACCOUNT_DIAGNOSE_REQUEST,
   PAGE_ACCOUNT_DIAGNOSE_RESULT,
@@ -529,7 +530,10 @@ export default defineContentScript({
         let tree = lastPageTree;
         if (!tree && pageReadWanted) tree = readPageNow().tree;
         const outline = tree ? treeToCompactText(anonymizeTree(tree)) : '';
-        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline });
+        // Cobertura por región: dice si la caja de cuenta y el historial se
+        // localizaron, que es justo lo que el volcado único no enseñaba.
+        const regions = describeRegions(document);
+        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline, regions });
         return;
       }
 
