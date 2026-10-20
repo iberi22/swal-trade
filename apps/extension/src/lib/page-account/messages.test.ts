@@ -7,6 +7,7 @@ import {
   PAGE_HISTORY_MAX,
   PAGE_POSITIONS_MAX,
   parseClosedPosition,
+  parsePageAccountDiagnoseReport,
   parsePageAccountDiagnoseResult,
   parsePageAccountMessage,
   parsePageAccountResult,
@@ -15,6 +16,7 @@ import {
   parsePagePosition,
   parseStoredPagePositions,
 } from './messages';
+import { DIAGNOSE_REGION_MAX_CHARS } from './diagnose';
 import type { ClosedPosition } from './parse-history';
 import type { PageBalance } from './parse-balance';
 import type { PagePosition } from './parse-positions';
@@ -340,5 +342,78 @@ describe('parsePageAccountDiagnoseResult', () => {
   it('rechaza lo que no es un diagnóstico', () => {
     expect(parsePageAccountDiagnoseResult({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT })).toBeNull();
     expect(parsePageAccountDiagnoseResult({ outline: 'x' })).toBeNull();
+  });
+});
+
+describe('parsePageAccountDiagnoseReport', () => {
+  const region = (over: Record<string, unknown> = {}) => ({
+    found: true,
+    nodes: 12,
+    outline: 'div "hola"',
+    ...over,
+  });
+
+  it('acepta la cobertura de las tres regiones', () => {
+    const report = parsePageAccountDiagnoseReport({
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: 'div',
+      regions: {
+        balance: region({ nodes: 7 }),
+        positions: region({ found: false, nodes: 0, outline: '' }),
+        history: region(),
+      },
+    });
+    expect(report).not.toBeNull();
+    expect(report?.outline).toBe('div');
+    expect(report?.regions.balance).toEqual({ found: true, nodes: 7, outline: 'div "hola"' });
+    expect(report?.regions.positions).toEqual({ found: false, nodes: 0, outline: '' });
+    expect(report?.regions.history.found).toBe(true);
+  });
+
+  it('un content script viejo sin regiones sigue valiendo', () => {
+    const report = parsePageAccountDiagnoseReport({
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: 'div "viejo"',
+    });
+    expect(report?.outline).toBe('div "viejo"');
+    expect(report?.regions.balance.found).toBe(false);
+    expect(report?.regions.history.found).toBe(false);
+  });
+
+  it('descarta nodos inventados y acota el esquema de cada región', () => {
+    const report = parsePageAccountDiagnoseReport({
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: 'div',
+      regions: {
+        balance: { found: true, nodes: -3, outline: 'x'.repeat(DIAGNOSE_REGION_MAX_CHARS + 10) },
+        positions: { found: 'si', nodes: 4, outline: 'div' },
+        history: 'nada',
+      },
+    });
+    expect(report?.regions.balance.nodes).toBe(0);
+    expect(report?.regions.balance.outline).toHaveLength(DIAGNOSE_REGION_MAX_CHARS);
+    expect(report?.regions.positions).toEqual({ found: false, nodes: 0, outline: '' });
+    expect(report?.regions.history).toEqual({ found: false, nodes: 0, outline: '' });
+  });
+
+  it('avisa cuando la lectura de página está apagada', () => {
+    const report = parsePageAccountDiagnoseReport({
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: '',
+      regions: null,
+      disabled: true,
+    });
+    expect(report).not.toBeNull();
+    expect(report?.disabled).toBe(true);
+    expect(report?.outline).toBe('');
+    expect(report?.regions.balance.found).toBe(false);
+    expect(report?.regions.history.found).toBe(false);
+  });
+
+  it('sin volcado y sin regiones no hay informe', () => {
+    expect(parsePageAccountDiagnoseReport({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '' })).toBeNull();
+    expect(
+      parsePageAccountDiagnoseReport({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '', regions: null }),
+    ).toBeNull();
   });
 });

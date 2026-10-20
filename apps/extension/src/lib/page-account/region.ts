@@ -22,11 +22,22 @@ export interface RegionSource {
 }
 
 export interface RegionOptions {
-  /** Tope de elementos inspeccionados (por defecto 6000). */
+  /** Tope de elementos inspeccionados (por defecto 20000). */
   maxElements?: number;
+  /**
+   * Tope de nodos que se serializan de cada región (por defecto 4000, el del
+   * lector). Lo usan el lector y el diagnóstico; la localización no lo necesita.
+   */
+  maxNodes?: number;
 }
 
-const DEFAULT_MAX_ELEMENTS = 6000;
+/**
+ * La página de futuros de Binance monta miles de nodos (gráfico, libros,
+ * tablas). Con 6000 el recorrido se quedaba antes de la caja de cuenta y del
+ * historial, que viven al final del documento. 20000 cubre la página real sin
+ * volver el escaneo caro: cada elemento se visita una sola vez.
+ */
+const DEFAULT_MAX_ELEMENTS = 20_000;
 const MAX_TEXT_FOR_LABEL = 120;
 
 const HEADER_KEYS: readonly LabelKey[] = [
@@ -116,7 +127,11 @@ export function findOpenPositionsRegion(
   }
   if (!best) return null;
   // La cabecera es una fila: las filas de datos viven en su contenedor.
-  return (best.el as DomElementLike).parentElement ?? best.el;
+  const container = (best.el as DomElementLike).parentElement ?? null;
+  if (container && isUsableRegion(container)) return container;
+  // Contenedor global o desmedido: la fila de cabecera sigue siendo una región
+  // acotada; el contenedor de la página no se serializa nunca.
+  return isUsableRegion(best.el) ? best.el : null;
 }
 
 interface HistoryInfo {
@@ -124,6 +139,10 @@ interface HistoryInfo {
   size: number;
   hasOpen: boolean;
   hasClosed: boolean;
+  /** Es una tarjeta por sí mismo (tiene las etiquetas y las dos fechas). */
+  isCard: boolean;
+  /** Cuántas tarjetas minimales hay en su subárbol, contando él mismo. */
+  cards: number;
 }
 
 function ownHistoryInfo(el: DomNodeLike): { hit: boolean; hasOpen: boolean; hasClosed: boolean } {
@@ -138,14 +157,102 @@ function ownHistoryInfo(el: DomNodeLike): { hit: boolean; hasOpen: boolean; hasC
   };
 }
 
+/** Cadena de padres de un elemento, de él mismo hacia arriba. */
+function ancestorChain(el: DomNodeLike): DomNodeLike[] {
+  const chain: DomNodeLike[] = [];
+  let current: DomNodeLike | null | undefined = el;
+  let guard = 0;
+  while (current && guard++ < 512) {
+    chain.push(current);
+    current = (current as DomElementLike).parentElement ?? null;
+  }
+  return chain;
+}
+
 /**
- * Región de las tarjetas de «Historial de posiciones»: el contenedor más
- * pequeño que reúne al menos tres etiquetas de valores del historial y las dos
- * marcas de fecha («Abierto» y «Cerrado»). Null si esa pestaña no está abierta.
+ * Tope de descendientes de una región. Por encima de esto lo «reconocido» ya no
+ * es una caja ni una lista: es la página entera, y serializarla no dice nada
+ * útil (y llena el informe de ruido). Una lista de historial real no pasa de
+ * unos cientos de nodos.
  */
-export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}): DomNodeLike | null {
+export const MAX_REGION_DESCENDANTS = 8000;
+
+const GLOBAL_ROOT_TAGS = new Set(['html', 'body', 'main']);
+const GLOBAL_ROOT_IDS = new Set(['__app', '__next', 'app', 'root', 'app-root']);
+
+function attributeOf(el: DomNodeLike, name: string): string {
+  if (typeof el.getAttribute !== 'function') return '';
+  try {
+    return (el.getAttribute(name) ?? '').trim().toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Raíz global del documento o de la aplicación. Nunca es una región: devolverla
+ * equivale a serializar la página entera.
+ */
+export function isGlobalRoot(el: DomNodeLike | null | undefined): boolean {
+  if (!el) return false;
+  const tag = String(el.tagName ?? el.nodeName ?? '').toLowerCase();
+  if (GLOBAL_ROOT_TAGS.has(tag)) return true;
+  const id = attributeOf(el, 'id');
+  return id !== '' && GLOBAL_ROOT_IDS.has(id);
+}
+
+/** Descendientes de un elemento, contando con tope (no recorre de más). */
+export function countDescendants(el: DomNodeLike, limit = MAX_REGION_DESCENDANTS + 1): number {
+  const cap = Number.isFinite(limit) && limit > 0 ? limit : MAX_REGION_DESCENDANTS + 1;
+  let count = 0;
+  const stack: DomNodeLike[] = [el];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    for (const kid of childElements(node)) {
+      count += 1;
+      if (count >= cap) return count;
+      stack.push(kid);
+    }
+  }
+  return count;
+}
+
+/** Una región utilizable no es una raíz global ni un subárbol desmedido. */
+export function isUsableRegion(el: DomNodeLike | null | undefined): boolean {
+  if (!el) return false;
+  if (isGlobalRoot(el)) return false;
+  return countDescendants(el, MAX_REGION_DESCENDANTS + 1) <= MAX_REGION_DESCENDANTS;
+}
+
+/**
+ * Une varios subárboles en un nodo virtual (sin tocar el DOM): los lectores
+ * reciben una sola región aunque Binance reparta las tarjetas por ramas.
+ */
+export function mergeRegions(roots: readonly DomNodeLike[]): DomNodeLike | null {
+  if (roots.length === 0) return null;
+  if (roots.length === 1) return roots[0]!;
+  const children = roots.slice();
+  return { tagName: 'section', nodeName: 'section', childNodes: children, children } as DomNodeLike;
+}
+
+function isAncestorOf(candidate: DomNodeLike, el: DomNodeLike): boolean {
+  return ancestorChain(el).includes(candidate);
+}
+
+/**
+ * Región de las tarjetas de «Historial de posiciones».
+ *
+ * Se localizan las tarjetas MINIMALES (las que cumplen las etiquetas y no
+ * contienen otra tarjeta) y se devuelven sus subárboles. Si todas cuelgan de un
+ * contenedor acotado, se devuelve ese contenedor (una sola región); si el
+ * ancestro común es `body`, `main` o un subárbol desmedido, se devuelven las
+ * tarjetas para que el lector las una sin serializar la página entera.
+ *
+ * Lista vacía si la pestaña de historial no está abierta.
+ */
+export function findHistoryRegions(source: RegionSource, opts: RegionOptions = {}): DomNodeLike[] {
   const elements = collectElements(source, opts.maxElements);
-  if (elements.length === 0) return null;
+  if (elements.length === 0) return [];
   const infos = new Map<DomNodeLike, HistoryInfo>();
   // `querySelectorAll('*')` llega en orden de documento: al revés, los hijos
   // se acumulan antes que sus padres.
@@ -157,7 +264,10 @@ export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}
       size: 1,
       hasOpen: own.hasOpen,
       hasClosed: own.hasClosed,
+      isCard: false,
+      cards: 0,
     };
+    let childCards = 0;
     for (const kid of childElements(el)) {
       const kidInfo = infos.get(kid);
       if (!kidInfo) continue;
@@ -165,51 +275,66 @@ export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}
       info.size += kidInfo.size;
       info.hasOpen = info.hasOpen || kidInfo.hasOpen;
       info.hasClosed = info.hasClosed || kidInfo.hasClosed;
+      childCards += kidInfo.cards;
     }
+    info.isCard = info.hits >= 3 && info.hasOpen && info.hasClosed && info.size >= 3;
+    info.cards = childCards > 0 ? childCards : info.isCard ? 1 : 0;
     infos.set(el, info);
   }
 
-  const isCard = (info: HistoryInfo): boolean =>
-    info.hits >= 3 && info.hasOpen && info.hasClosed && info.size >= 3;
-
-  const candidates: Array<{ el: DomNodeLike; info: HistoryInfo }> = [];
+  // Tarjetas minimales: cumplen la forma de tarjeta y ninguna de sus
+  // descendientes lo hace.
+  const cards: DomNodeLike[] = [];
   for (const [el, info] of infos) {
-    if (isCard(info)) candidates.push({ el, info });
+    if (!info.isCard) continue;
+    let childIsCard = false;
+    for (const kid of childElements(el)) {
+      const kidInfo = infos.get(kid);
+      if (kidInfo && kidInfo.cards > 0) {
+        childIsCard = true;
+        break;
+      }
+    }
+    if (!childIsCard) cards.push(el);
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.info.size - b.info.size);
+  // Una tarjeta desmedida tampoco vale: se descarta antes de unir nada.
+  const usable = cards.filter((card) => isUsableRegion(card));
+  if (usable.length === 0) return [];
+  if (usable.length === 1) return usable;
 
-  // Una sola tarjeta también cumple los mínimos. Se sube mientras el padre
-  // sea una lista de tarjetas (dos o más hijos que ya son tarjeta): así se coge
-  // el contenedor con todas ellas y no la primera.
-  let current = candidates[0]!;
-  for (;;) {
-    const parent = (current.el as DomElementLike).parentElement;
-    if (!parent) break;
-    const parentInfo = infos.get(parent);
-    if (!parentInfo || !isCard(parentInfo)) break;
-    const cards = childElements(parent).filter((kid) => {
-      const info = infos.get(kid);
-      return info ? isCard(info) : false;
-    }).length;
-    if (cards < 2) break;
-    current = { el: parent, info: parentInfo };
+  // Ancestro común más bajo, pero solo si es acotado: se cruzan las cadenas de
+  // padres de todas las tarjetas y se queda el primero que aparece en todas.
+  const restChains = usable.slice(1).map((card) => new Set(ancestorChain(card)));
+  for (const candidate of ancestorChain(usable[0]!)) {
+    if (!isUsableRegion(candidate)) continue;
+    if (restChains.every((chain) => chain.has(candidate))) return [candidate];
   }
-  return current.el;
+  // Sin ancestro acotado (p. ej. dos ramas hermanas de `body`): las tarjetas.
+  return usable;
+}
+
+/** La región del historial, uniendo las tarjetas si están en ramas distintas. */
+export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}): DomNodeLike | null {
+  return mergeRegions(findHistoryRegions(source, opts));
 }
 
 /**
  * Región de la caja de cuenta: el contenedor MÁS PEQUEÑO que reúne al menos
- * tres etiquetas de saldo (`Balance de margen`, `Disp.`, ...). Null si la
+ * tres etiquetas de saldo (`Balance de margen`, `Disp.`, ...). Lista vacía si la
  * página no muestra ninguna. Se agrega de hijos a padres (post-orden) para no
  * confundir una caja con el documento entero.
+ *
+ * Si el «contenedor más pequeño» que reúne las tres etiquetas resulta ser
+ * `main`/`body` o un subárbol desmedido (las etiquetas están repartidas por
+ * ramas), no se devuelve eso: se devuelven las ramas que llevan las etiquetas y
+ * el lector las une. Serializar `main` con 21.000 nodos no es un diagnóstico.
  */
-export function findAccountBalanceRegion(
+export function findAccountBalanceRegions(
   source: RegionSource,
   opts: RegionOptions = {},
-): DomNodeLike | null {
+): DomNodeLike[] {
   const elements = collectElements(source, opts.maxElements);
-  if (elements.length === 0) return null;
+  if (elements.length === 0) return [];
   interface Info {
     hits: number;
     keys: Set<LabelKey>;
@@ -239,5 +364,40 @@ export function findAccountBalanceRegion(
     if (info.hits < 3 || info.keys.size < 3) continue;
     if (!best || info.size < best.info.size) best = { el, info };
   }
-  return best ? best.el : null;
+  if (!best) return [];
+  if (isUsableRegion(best.el)) return [best.el];
+  return balanceBranchRoots(elements, best.el);
+}
+
+/**
+ * Ramas con etiquetas de saldo, subiendo desde cada etiqueta hasta el ancestro
+ * más alto que siga siendo acotado. Se quedan solo las de fuera: una rama que
+ * ya está dentro de otra no se repite.
+ */
+function balanceBranchRoots(
+  elements: readonly DomNodeLike[],
+  boundary: DomNodeLike,
+): DomNodeLike[] {
+  const roots: DomNodeLike[] = [];
+  for (const el of elements) {
+    const key = labelOf(el);
+    if (!key || !BALANCE_KEYS.has(key)) continue;
+    let node: DomNodeLike = el;
+    let parent = (el as DomElementLike).parentElement ?? null;
+    while (parent && parent !== boundary && isUsableRegion(parent)) {
+      node = parent;
+      parent = (parent as DomElementLike).parentElement ?? null;
+    }
+    roots.push(node);
+  }
+  const unique = [...new Set(roots)].filter((root) => isUsableRegion(root));
+  return unique.filter((root) => !unique.some((other) => other !== root && isAncestorOf(other, root)));
+}
+
+/** La caja de cuenta, uniendo sus ramas si las etiquetas están repartidas. */
+export function findAccountBalanceRegion(
+  source: RegionSource,
+  opts: RegionOptions = {},
+): DomNodeLike | null {
+  return mergeRegions(findAccountBalanceRegions(source, opts));
 }

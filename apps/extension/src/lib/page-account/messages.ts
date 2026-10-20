@@ -1,12 +1,18 @@
 // Mensajes de la lectura de página (fase 2): el content script manda lo que ya
 // se ve en la página de Binance y el background lo guarda en local. Aquí no hay
 // secretos, pero tampoco se confía en nada: cada fila se valida campo a campo y
-// los topes son duros (50 posiciones, 500 filas por aviso, 2000 guardadas).
+// los topes son duros (50 posiciones, 500 filas por aviso, 5000 guardadas).
 
 import type { HistoryMetrics } from './metrics';
 import type { ClosedPosition } from './parse-history';
 import type { PageBalance } from './parse-balance';
 import type { PagePosition } from './parse-positions';
+import {
+  DIAGNOSE_REGION_KEYS,
+  DIAGNOSE_REGION_MAX_CHARS,
+  type DiagnoseRegionReport,
+  type DiagnoseRegions,
+} from './diagnose';
 import { historyMetrics } from './metrics';
 import type { MarginType, PositionSide } from '../account/types';
 
@@ -21,13 +27,15 @@ export const PAGE_ACCOUNT_DIAGNOSE_RESULT = 'page-account:diagnose:result' as co
 
 /** Clave de `storage.session` con las posiciones abiertas de la página. */
 export const PAGE_ACCOUNT_SESSION_KEY = 'pageAccount.positions';
+/** Clave de `storage.session` con el instante de la última fusión del historial. */
+export const PAGE_ACCOUNT_SYNCED_KEY = 'pageAccount.syncedAt';
 
 /** Tope de posiciones abiertas por aviso. */
 export const PAGE_POSITIONS_MAX = 50;
 /** Tope de filas de historial por aviso. */
 export const PAGE_HISTORY_MAX = 500;
 /** Tope de filas de historial guardadas en total. */
-export const PAGE_HISTORY_KEEP = 2000;
+export const PAGE_HISTORY_KEEP = 5000;
 /** Tope de caracteres del diagnóstico copiable. */
 export const PAGE_DIAGNOSE_MAX_CHARS = 80_000;
 
@@ -49,6 +57,8 @@ export interface PageAccountResult {
   balance: PageBalance | null;
   positions: PagePosition[];
   capturedAt: number | null;
+  /** Instante en que el background fusionó el historial por última vez. */
+  syncedAt: number | null;
   history: ClosedPosition[];
   metrics: HistoryMetrics;
 }
@@ -280,6 +290,7 @@ export function parsePageAccountResult(raw: unknown): PageAccountResult | null {
     balance: parsePageBalance(raw.balance),
     positions,
     capturedAt: captured,
+    syncedAt: finitePositive(raw.syncedAt),
     history,
     // Las métricas se recalculan aquí: el background no manda números de confianza.
     metrics: historyMetrics(history),
@@ -291,6 +302,54 @@ export function parsePageAccountDiagnoseResult(raw: unknown): string | null {
   if (!isRecord(raw) || raw.type !== PAGE_ACCOUNT_DIAGNOSE_RESULT) return null;
   if (typeof raw.outline !== 'string') return null;
   return raw.outline.slice(0, PAGE_DIAGNOSE_MAX_CHARS);
+}
+
+/** Cobertura de una región: se encontró o no, cuántos nodos y su esquema. */
+function parseDiagnoseRegion(raw: unknown): DiagnoseRegionReport {
+  if (!isRecord(raw) || raw.found !== true) return { found: false, nodes: 0, outline: '' };
+  const nodes =
+    typeof raw.nodes === 'number' && Number.isFinite(raw.nodes) && raw.nodes >= 0
+      ? Math.floor(raw.nodes)
+      : 0;
+  const outline = typeof raw.outline === 'string' ? raw.outline.slice(0, DIAGNOSE_REGION_MAX_CHARS) : '';
+  return { found: true, nodes, outline };
+}
+
+export interface PageAccountDiagnoseReport {
+  /** Volcado anonimizado que ya se copiaba antes (se mantiene tal cual). */
+  outline: string;
+  /** Esquema de cada región, con `found` para saber qué no se reconoció. */
+  regions: DiagnoseRegions;
+  /**
+   * El content script no miró la página porque `readPageAccount` está apagado.
+   * Sin esto, el panel diría «abre la página de Binance» cuando lo que falta es
+   * el interruptor.
+   */
+  disabled: boolean;
+}
+
+/**
+ * Informe de diagnóstico completo. Nunca lanza: una respuesta sin `regions`
+ * (content script viejo ya inyectado) se acepta y las regiones quedan vacías.
+ */
+export function parsePageAccountDiagnoseReport(raw: unknown): PageAccountDiagnoseReport | null {
+  const outline = parsePageAccountDiagnoseResult(raw);
+  if (outline === null) return null;
+  const record = raw as Record<string, unknown>;
+  const emptyRegions = () => {
+    const regions = {} as DiagnoseRegions;
+    for (const key of DIAGNOSE_REGION_KEYS) regions[key] = { found: false, nodes: 0, outline: '' };
+    return regions;
+  };
+  if (record.disabled === true) {
+    return { outline: '', regions: emptyRegions(), disabled: true };
+  }
+  const rawRegions = isRecord(record.regions) ? record.regions : {};
+  const regions = {} as DiagnoseRegions;
+  for (const key of DIAGNOSE_REGION_KEYS) regions[key] = parseDiagnoseRegion(rawRegions[key]);
+  // Sin volcado y sin ninguna región no hay nada que enseñar: el panel lo dice.
+  if (outline === '' && !DIAGNOSE_REGION_KEYS.some((key) => regions[key].found)) return null;
+  return { outline, regions, disabled: false };
 }
 
 export type PageAccountMessage =

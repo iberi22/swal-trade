@@ -54,6 +54,9 @@ interface AnonymizeState {
   maxNodes: number;
 }
 
+/** Campos cuyo texto es del usuario: se serializa la etiqueta, nunca el texto. */
+const EDITABLE_TAGS = new Set(['input', 'textarea']);
+
 function anonymizeNode(
   node: TextNode,
   depth: number,
@@ -64,6 +67,17 @@ function anonymizeNode(
   if (!node || typeof node !== 'object') return null;
   state.count += 1;
   const out: TextNode = { tag: typeof node.tag === 'string' ? node.tag : 'unknown' };
+  // Un campo editable (textarea, input, contenteditable) puede llevar lo que el
+  // usuario escribió — una nota, media orden, una clave pegada por error. Se
+  // tapa el contenido entero, incluido el de los descendientes, y solo queda la
+  // etiqueta para saber que el campo existe.
+  if (EDITABLE_TAGS.has(out.tag) || node.attrs?.editable === true) {
+    // Se conservan role/aria-label (dicen que el campo existe y qué es), pero
+    // ni el texto ni los hijos.
+    const attrs = anonymizeAttrs(node.attrs, opts.maxTextLength);
+    if (attrs) out.attrs = attrs;
+    return out;
+  }
   if (typeof node.text === 'string') {
     const text = maskText(node.text, opts.maxTextLength);
     if (text) out.text = text;

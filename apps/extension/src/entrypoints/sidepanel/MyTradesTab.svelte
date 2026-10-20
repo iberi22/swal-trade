@@ -3,18 +3,22 @@
   import { aiErrorText } from '../../lib/account/analysis-view';
   import { pageHistoryAiPayload, pageHistoryAiText } from '../../lib/page-account/ai-payload';
   import { pageHistoryFilename, pageHistoryToCsv } from '../../lib/page-account/export';
-  import { pageHistoryTime } from '../../lib/page-account/page-history';
+  import { pageHistoryTime, pageSyncLabel } from '../../lib/page-account/page-history';
   import { pageStaleLabel } from '../../lib/page-account/page-position';
   import {
     parsePageAccountResult,
-    parsePageAccountDiagnoseResult,
+    parsePageAccountDiagnoseReport,
     PAGE_ACCOUNT_CLEAR,
     PAGE_ACCOUNT_DIAGNOSE,
     PAGE_ACCOUNT_GET,
   } from '../../lib/page-account/messages';
+  import { composeDiagnoseText, regionSummary } from '../../lib/page-account/diagnose';
   import type { AiView } from '../../lib/ai/prompt';
   import { getProvider, isFreeModel } from '../../lib/ai/providers';
   import type { ExtensionSettings } from '../../lib/settings';
+  import type { PanelState } from '../../lib/account/panel-controller';
+  import type { Finding } from '../../lib/types';
+  import AnalysisTab from './AnalysisTab.svelte';
   import {
     EVIDENCE_MIN_N,
     filterHistory,
@@ -27,17 +31,39 @@
 
   let {
     active = false,
+    symbol,
+    timeframe,
+    panel,
     settings,
     settingsLoaded,
     applySettings,
+    findings,
+    trend,
+    lastPrice,
+    atr,
     nowMs,
   }: {
     active?: boolean;
+    symbol: string;
+    timeframe: string;
+    panel: PanelState;
     settings: ExtensionSettings;
     settingsLoaded: boolean;
     applySettings: (next: ExtensionSettings) => void;
+    findings: readonly Finding[];
+    trend: string | null;
+    lastPrice: number | null;
+    atr: number | null;
     nowMs: number;
   } = $props();
+
+  /**
+   * De dónde salen los trades: la página abierta (lectura del DOM, sin clave) o
+   * la clave de solo lectura de la API. Antes eran dos pestañas; ahora es un
+   * selector dentro de «Mis trades». La página es el origen por defecto.
+   */
+  type TradesSource = 'page' | 'api';
+  let source = $state<TradesSource>('page');
 
   let state = $state.raw<ReturnType<typeof parsePageAccountResult> | null>(null);
   let filterSymbol = $state('');
@@ -88,6 +114,7 @@
   const metrics = $derived(state?.metrics ?? null);
   const capturedAt = $derived(state?.capturedAt ?? null);
   const stale = $derived(pageStaleLabel(capturedAt, nowMs));
+  const synced = $derived(pageSyncLabel(state?.syncedAt ?? null, nowMs));
   const symbols = $derived(historySymbols(history));
   const filtered = $derived(filterHistory(history, { symbol: filterSymbol, side: filterSide }));
   const newestFirst = $derived(
@@ -146,14 +173,20 @@
     note = null;
     try {
       const reply = await browser.runtime.sendMessage({ type: PAGE_ACCOUNT_DIAGNOSE });
-      const outline = parsePageAccountDiagnoseResult(reply);
-      if (!outline) {
+      const report = parsePageAccountDiagnoseReport(reply);
+      if (report?.disabled) {
+        note = 'El diagnóstico lee la página: activa «Leer mis posiciones e historial» en Ajustes y vuelve a intentarlo.';
+        return;
+      }
+      const text = report ? composeDiagnoseText(report.regions, report.outline) : '';
+      if (!text) {
         note = 'Abre la página de futuros de Binance para copiar el diagnóstico.';
         return;
       }
-      const copied = await copyText(outline);
+      const copied = await copyText(text);
+      const coverage = report ? regionSummary(report.regions) : '';
       note = copied
-        ? `Diagnóstico anonimizado copiado (${outline.length} caracteres).`
+        ? `Diagnóstico anonimizado copiado (${text.length} caracteres). ${coverage}`.trim()
         : 'No se pudo copiar el diagnóstico.';
     } catch {
       note = 'No se pudo leer la página.';
@@ -256,9 +289,38 @@
 <section class="mis-trades" data-testid="mytrades-tab" aria-label="Mis trades">
   <div class="card-head">
     <h2>Mis trades</h2>
-    <span class="head-hint">leído de tu página · solo lectura</span>
+    <span class="head-hint">
+      {source === 'page' ? 'leído de tu página · solo lectura' : 'leído con tu clave de solo lectura'}
+    </span>
   </div>
 
+  <label class="field source">
+    <span>Origen</span>
+    <select
+      data-testid="mytrades-source"
+      value={source}
+      onchange={(event) => (source = (event.currentTarget as HTMLSelectElement).value === 'api' ? 'api' : 'page')}
+    >
+      <option value="page">Página de Binance</option>
+      <option value="api">Clave API</option>
+    </select>
+  </label>
+
+  <div class="source-panel" hidden={source !== 'api'} data-testid="mytrades-api-panel">
+    <AnalysisTab
+      {symbol}
+      {timeframe}
+      {panel}
+      {settings}
+      {applySettings}
+      {findings}
+      {trend}
+      {lastPrice}
+      {atr}
+    />
+  </div>
+
+  <div class="source-panel" hidden={source !== 'page'} data-testid="mytrades-page-panel">
   {#if !enabled}
     <p class="hint">
       Lee el texto que ya ves en la página de futuros de Binance: tus posiciones abiertas y el
@@ -278,6 +340,9 @@
     {#if stale}
       <p class="hint" data-testid="mytrades-stale">{stale}</p>
     {/if}
+    {#if synced}
+      <p class="hint" data-testid="mytrades-synced">{synced}</p>
+    {/if}
 
     <h3>Posiciones abiertas</h3>
     <ul class="rows" data-testid="mytrades-positions">
@@ -289,6 +354,13 @@
         {/each}
       {/if}
     </ul>
+    {#if positions.length > 0}
+      <p class="hint" data-testid="mytrades-positions-count">
+        {positions.length}
+        {positions.length === 1 ? 'posición leída' : 'posiciones leídas'} · desliza la lista en
+        Binance para cargar más
+      </p>
+    {/if}
 
     <h3>Historial de posiciones</h3>
     {#if history.length === 0}
@@ -417,6 +489,7 @@
       {/if}
     </div>
   {/if}
+  </div>
 </section>
 
 <style>
@@ -439,6 +512,17 @@
   .head-hint {
     font-size: 0.7rem;
     color: hsl(var(--muted-foreground));
+  }
+  .source {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .source select {
+    flex: 1;
+  }
+  .source-panel[hidden] {
+    display: none;
   }
   h3 {
     margin: 0;

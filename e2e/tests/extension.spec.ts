@@ -142,10 +142,17 @@ async function openSidePanel(
 /** Abre una pestaña del panel por su nombre. */
 async function openTab(
   page: import('@playwright/test').Page,
-  name: 'Operación' | 'Análisis' | 'Aprender' | 'Ajustes' | 'Escáner',
+  name: 'Operación' | 'Aprender' | 'Ajustes' | 'Escáner' | 'Mis trades',
 ) {
   await page.getByRole('tab', { name }).click();
   await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+}
+
+/** Historial de la clave de la API: «Mis trades» con el origen «Clave API». */
+async function openAnalysis(page: import('@playwright/test').Page) {
+  await openTab(page, 'Mis trades');
+  await page.getByTestId('mytrades-source').selectOption('api');
+  await expect(page.getByTestId('mytrades-api-panel')).toBeVisible();
 }
 
 /** Cinco titulares con tonos distintos: positivo, negativo y neutral. */
@@ -441,7 +448,7 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
 
     // La temporalidad por defecto se guarda y sobrevive a una recarga.
     await timeframeSelect.selectOption('1h');
-    const symbolInput = settings.locator('input[type="text"]');
+    const symbolInput = settings.getByPlaceholder('BTC, ETH');
     await symbolInput.fill('ETH');
     await symbolInput.blur();
 
@@ -481,6 +488,67 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
 
     await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');
     expect(extensionId.length).toBeGreaterThan(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('hotkeys: the edited combo and timeframe survive a reload, and browser shortcuts are refused', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    // Los controles se habilitan cuando storage.local ha respondido.
+    await expect(page.locator('section.settings select').first()).toBeEnabled();
+
+    const combo = page.getByTestId('hotkey-combo-1');
+    const slotTimeframe = page.getByLabel('Temporalidad del atajo 1');
+    await combo.fill('shift+alt+a');
+    await combo.blur();
+    await slotTimeframe.selectOption('4h');
+
+    const readSettings = () =>
+      page.evaluate(
+        () =>
+          new Promise<{ settings?: { hotkeyMap?: Record<string, { combo?: string; timeframe?: string | null }> } }>(
+            (resolve) => {
+              const api = (
+                window as unknown as {
+                  chrome: { storage: { local: { get(k: string, cb: (v: unknown) => void): void } } };
+                }
+              ).chrome;
+              api.storage.local.get('settings', (value) => resolve(value as never));
+            },
+          ),
+      );
+
+    // Se guarda la forma canónica, no el texto tecleado.
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.combo).toBe('Alt+Shift+A');
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.timeframe).toBe('4h');
+    await expect(combo).toHaveValue('Alt+Shift+A');
+
+    // Ctrl+D es del navegador: se rechaza y el campo vuelve a lo guardado.
+    await combo.fill('ctrl+d');
+    await combo.blur();
+    await expect(page.getByTestId('hotkey-note')).toContainText('atajo del navegador');
+    await expect(combo).toHaveValue('Alt+Shift+A');
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.combo).toBe('Alt+Shift+A');
+
+    // Recarga de verdad: antes de este arreglo el editor leía otra clave y los
+    // atajos volvían a los valores por defecto.
+    await page.reload();
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('hotkey-combo-1')).toHaveValue('Alt+Shift+A');
+    await expect(page.getByLabel('Temporalidad del atajo 1')).toHaveValue('4h');
+
+    // Las acciones nuevas viven en la misma sección con sus defaults.
+    await expect(page.getByTestId('hotkey-combo-next-symbol')).toHaveValue('Alt+Shift+ArrowRight');
+    await expect(page.getByTestId('hotkey-combo-prev-symbol')).toHaveValue('Alt+Shift+ArrowLeft');
+    await expect(page.getByTestId('hotkey-combo-toggle-paint')).toHaveValue('Alt+Shift+L');
+    await expect(page.getByTestId('hotkey-combo-focus-drawing')).toHaveValue('Alt+Shift+D');
+    await expect(page.getByTestId('hotkey-action-focus-drawing')).toContainText('Tu dibujo');
+
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
@@ -613,13 +681,15 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
   try {
     const { page } = panel;
     const tablist = page.getByRole('tablist');
-    // Por nombre, no por número: otras pestañas pueden añadirse.
-    for (const name of ['Operación', 'Análisis', 'Aprender', 'Ajustes', 'Escáner', 'Mis trades']) {
+    // Por nombre, no por número: otras pestañas pueden añadirse. «Análisis» ya
+    // no es una pestaña: su contenido vive dentro de «Mis trades».
+    for (const name of ['Operación', 'Aprender', 'Ajustes', 'Escáner', 'Mis trades']) {
       await expect(tablist.getByRole('tab', { name })).toHaveCount(1);
     }
+    await expect(tablist.getByRole('tab', { name: 'Análisis' })).toHaveCount(0);
     const tabs = tablist.getByRole('tab');
     const tabCount = await tabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(6);
+    expect(tabCount).toBeGreaterThanOrEqual(5);
     await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
 
     // Sin posición conocida y sin clave: modo unknown, con el aviso y el dimensionador.
@@ -641,8 +711,15 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
     // Teclado: flechas cambian de pestaña y la elegida sobrevive a una recarga.
     await page.getByRole('tab', { name: 'Operación' }).focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', { name: 'Análisis' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Aprender' })).toHaveAttribute('aria-selected', 'true');
+    // «Mis trades» arranca en la página de Binance y ofrece el historial de la
+    // clave al cambiar de origen.
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
+    await page.getByTestId('mytrades-source').selectOption('api');
     await expect(page.getByTestId('history-card')).toBeVisible();
+    await page.getByTestId('mytrades-source').selectOption('page');
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
     // Inicio y Fin van a la primera y a la última pestaña, sean cuantas sean.
     await page.keyboard.press('End');
     await expect(tabs.nth(tabCount - 1)).toHaveAttribute('aria-selected', 'true');
@@ -653,6 +730,64 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
     await expect(tabs.nth(tabCount - 2)).toHaveAttribute('aria-selected', 'true');
     await page.reload();
     await expect(tabs.nth(tabCount - 2)).toHaveAttribute('aria-selected', 'true');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('hotkey «Tu dibujo» from Ajustes selects Operación and focuses the drawing card', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('drawing-card')).toBeHidden();
+
+    // Alt+Shift+D es el atajo por defecto de «Tu dibujo». Antes de este
+    // arreglo el panel cambiaba su pestaña activa pero la barra seguía
+    // mostrando Ajustes, así que la tarjeta nunca se veía.
+    await page.keyboard.press('Alt+Shift+D');
+
+    await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'false');
+    const card = page.getByTestId('drawing-card');
+    await expect(card).toBeVisible();
+    await expect(card).toBeFocused();
+    // La pestaña elegida por el atajo también se guarda.
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('drawing-card')).toBeVisible();
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('symbol hotkey resolves bare list entries to full pairs before loading klines', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');
+
+    // Lista blanca de bases sueltas, como la escribe el usuario.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: { storage: { local: { set(v: unknown, cb: () => void): void } } };
+          }).chrome;
+          api.storage.local.set({ settings: { symbols: ['BTC', 'ETH'] } }, resolve);
+        }),
+    );
+    await page.reload();
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');
+
+    // Sin resolver la entrada a ETHUSDT el panel pedía velas de «ETH», que no
+    // es un par: el análisis se quedaba en error.
+    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('ETHUSDT');
+    await expect(page.locator('.header p.hint')).not.toContainText('Fuera de tu lista de símbolos');
+    await expect(page.getByRole('region', { name: 'Hallazgos' })).toBeVisible();
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
@@ -996,7 +1131,7 @@ test('analysis tab without a key points to Ajustes and has nothing to export', a
   const panel = await openSidePanel();
   try {
     const { page } = panel;
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await expect(page.getByTestId('history-no-key')).toContainText('Ajustes');
     await expect(page.getByRole('button', { name: /Cargar historial/ })).toHaveCount(0);
     await expect(page.getByTestId('metrics-card')).toContainText('Aún no hay historial');
@@ -1017,7 +1152,7 @@ test('analysis tab loads a mocked history, shows sin evidencia for n<30 and expo
   try {
     const { page } = panel;
     await seedSettings(page, KEY_META);
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await page.getByRole('button', { name: 'Cargar historial (6 meses)' }).click();
 
     const card = page.getByTestId('metrics-card');
@@ -1062,7 +1197,7 @@ test('AI card asks for consent before the first ai:analyze, then answers as plai
       ...KEY_META,
       ai: { provider: 'opencode', model: 'qwen-test-free', redaction: 'relative', consentedProviders: [] },
     });
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     const aiRequests = () => page.evaluate(() => (window as unknown as { __aiRequests: unknown[] }).__aiRequests.length);
 
     // Aviso de modelo gratuito antes de enviar nada.
@@ -1123,7 +1258,7 @@ test('"Ver lo que se envía" shows the exact JSON and relative mode carries no U
       ...KEY_META,
       ai: { provider: 'opencode', model: 'qwen-test', redaction: 'relative', consentedProviders: [] },
     });
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     const details = page.getByTestId('ai-preview');
     await details.locator('summary').click();
     const pre = page.getByTestId('ai-preview-position');
@@ -1185,7 +1320,7 @@ test('prompt settings: custom preferences travel inside the delimited block with
     expect(stored['ai.promptConfig']).toMatchObject({ version: 1, extra });
 
     // «Ver lo que se envía» muestra el prompt ensamblado, con el marco al final.
-    await openTab(page, 'Análisis');
+    await openAnalysis(page);
     await page.getByTestId('ai-preview').locator('summary').click();
     const pre = page.getByTestId('ai-preview-system');
     await expect(pre).toBeVisible();
@@ -1458,6 +1593,110 @@ test('operación: sin clave usa la posición leída de la página y la marca com
     await expect(card).toContainText('página de Binance');
     await expect(page.getByTestId('sizing-card')).toHaveCount(0);
     await expect(page.getByTestId('mode-notice')).toHaveCount(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operación: el saldo de la página en USDC se usa como capital con un par USDC', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // Lo que el content script deja tras leer la caja de cuenta: 71,9636 USDC.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                balance: {
+                  asset: 'USDC',
+                  marginBalance: 71.9636,
+                  walletBalance: 72.4075,
+                  available: 70.83,
+                  unrealizedPnl: -0.4439,
+                  maintenanceMargin: 0.9782,
+                  marginMode: 'cross',
+                },
+                positions: [],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    // Un par que cotiza en USDC: el saldo de la página es del mismo activo.
+    const symbolInput = page.getByRole('textbox', { name: 'Símbolo', exact: true });
+    await symbolInput.fill('BTCUSDC');
+    await symbolInput.press('Enter');
+    await expect(page.getByTestId('sizing-card')).toBeVisible();
+
+    const pageButton = page.getByTestId('capital-source-page');
+    await expect(pageButton).toBeVisible();
+    await pageButton.click();
+    await expect(pageButton).toHaveAttribute('aria-pressed', 'true');
+
+    const line = page.getByTestId('capital-page-line');
+    await expect(line).toContainText('saldo de la página: 71,96 USDC');
+    await expect(line).toContainText('capital 71,96 USDC');
+    // Nada de respaldo manual: hay dato de la página que sirve.
+    await expect(page.getByTestId('capital-fallback-note')).toHaveCount(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operación: un saldo en otra moneda no se ofrece como capital', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // La página dice USDT; el par cotiza en USDC: no puede usarse ese saldo.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                balance: { asset: 'USDT', marginBalance: 71.9636, walletBalance: 72.4075 },
+                positions: [],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    const symbolInput = page.getByRole('textbox', { name: 'Símbolo', exact: true });
+    await symbolInput.fill('BTCUSDC');
+    await symbolInput.press('Enter');
+    await expect(page.getByTestId('sizing-card')).toBeVisible();
+    await expect(page.getByTestId('capital-source-page')).toHaveCount(0);
+    await expect(page.getByTestId('capital-source-manual')).toHaveAttribute('aria-pressed', 'true');
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();

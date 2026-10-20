@@ -295,6 +295,8 @@ export function createScannerRunner(deps: RunnerDeps): ScannerRunner {
   let generation = 0;
   let destroyed = false;
   let lastBadge: string | null = null;
+  /** Cola de guardados: un cambio nunca pisa al anterior con datos viejos. */
+  let settingsQueue: Promise<unknown> = Promise.resolve();
 
   function snapshot(): RunnerState {
     return { ...state, settings, events: log.list().map((e) => ({ ...e })), unseen: log.unseenCount(), running };
@@ -533,13 +535,25 @@ export function createScannerRunner(deps: RunnerDeps): ScannerRunner {
       emit({ loaded: true });
       if (settings.enabled) start();
     },
-    async setSettings(patch) {
-      const next = await saveScannerSettings(deps.storage, { ...settings, ...patch });
-      settings = next;
-      emit();
-      if (next.enabled && !running) start();
-      else if (!next.enabled && running) stop();
-      return next;
+    setSettings(patch) {
+      // Cada guardado se aplica sobre el resultado del anterior. Sin esta cola,
+      // dos cambios seguidos (elegir USDC y luego tocar otro interruptor)
+      // partían del mismo `settings` viejo y el segundo volvía a escribir
+      // USDT: la preferencia se perdía.
+      const run = async (): Promise<ScannerSettings> => {
+        const next = await saveScannerSettings(deps.storage, { ...settings, ...patch });
+        settings = next;
+        emit();
+        if (next.enabled && !running) start();
+        else if (!next.enabled && running) stop();
+        return next;
+      };
+      const queued = settingsQueue.then(run, run);
+      settingsQueue = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
     },
     setVisible(v) {
       if (visible === v) return;

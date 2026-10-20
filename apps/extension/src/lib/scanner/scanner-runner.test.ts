@@ -258,6 +258,29 @@ describe('runner', () => {
     expect(second.fetch).not.toHaveBeenCalled();
   });
 
+  it('the universe survives two quick setting changes (no stale write)', async () => {
+    const t = setup({ enabled: false });
+    await t.runner.init();
+    // Dos cambios sin esperar al primero: antes el segundo escribía USDT otra vez.
+    const first = t.runner.setSettings({ universe: 'USDC' });
+    const second = t.runner.setSettings({ sound: true });
+    await Promise.all([first, second]);
+    const stored = t.storage.data.get(SCANNER_SETTINGS_KEY) as { universe: string; sound: boolean };
+    expect(stored.universe).toBe('USDC');
+    expect(stored.sound).toBe(true);
+    expect(t.runner.getState().settings.universe).toBe('USDC');
+    t.runner.destroy();
+  });
+
+  it('restores a stored USDC universe on open', async () => {
+    const t = setup({ enabled: false }, {}, {
+      [SCANNER_SETTINGS_KEY]: { ...defaultScannerSettings(), universe: 'USDC' },
+    });
+    await t.runner.init();
+    expect(t.runner.getState().settings.universe).toBe('USDC');
+    t.runner.destroy();
+  });
+
   it('turning the switch on and off starts and stops the loop', async () => {
     const t = setup({ enabled: false });
     await t.runner.init();

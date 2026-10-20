@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, tick } from 'svelte';
   import { browser } from 'wxt/browser';
   import { analyze, usingAnalysisStub, volumeFlowOf } from '../../lib/analysis';
   import { mountChart, mountFlowPane, type ChartHandle, type FlowPaneHandle } from '../../lib/chart';
@@ -18,6 +18,8 @@
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import { atrOf } from '../../lib/account/analysis-view';
   import { createPanelController, type PanelState, type PanelTab } from '../../lib/account/panel-controller';
+  import { hotkeyAction, hotkeyEffect, focusDrawingCard, symbolPool, type HotkeyAction, type HotkeyEffect, type HotkeyPanelState } from '../../lib/hotkeys';
+  import { parseStoredEvents, EVENTS_KEY } from '../../lib/scanner/scanner-runner';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { fetchNews, type NewsItem } from '../../lib/news';
@@ -31,7 +33,6 @@
   import { TIMEFRAMES, type AnalysisResult, type Candle, type Timeframe } from '../../lib/types';
   import { CVD_LEGEND_TEXT, cvdLineData, flowLegendText } from '../../lib/volume-flow-view';
   import { browserLanguages, initI18n } from '../../lib/i18n/i18n.svelte';
-  import AnalysisTab from './AnalysisTab.svelte';
   import MyTradesTab from './MyTradesTab.svelte';
   import OperationTab from './OperationTab.svelte';
   import LearnTab from './LearnTab.svelte';
@@ -211,8 +212,74 @@
     });
   });
 
+  // Hotkeys: the same combo works on the page and in the panel. The page
+  // forwards its four actions (symbol, paint, drawing) as runtime messages;
+  // both paths end in this handler.
+  async function scannerSymbols(): Promise<string[]> {
+    try {
+      const stored = await browser.storage.local?.get(EVENTS_KEY);
+      return symbolPool([], parseStoredEvents(stored?.[EVENTS_KEY]));
+    } catch {
+      return [];
+    }
+  }
+
+  function applyHotkeyEffect(effect: HotkeyEffect | null) {
+    if (!effect) return;
+    if (effect.kind === 'timeframe') {
+      timeframe = effect.timeframe;
+      inferred = false;
+      return;
+    }
+    if (effect.kind === 'paint') {
+      applySettings({ ...settings, paintOnChart: effect.paintOnChart });
+      return;
+    }
+    if (effect.kind === 'drawing') {
+      const focus = () => {
+        focusDrawingCard(document);
+      };
+      // The card lives in Operación: switch first and wait for the DOM, so
+      // the focus lands on a visible card instead of a hidden one.
+      if (untrack(() => activeTab) !== 'operacion') {
+        activeTab = 'operacion';
+        void tick().then(focus);
+        return;
+      }
+      focus();
+      return;
+    }
+    // Symbol: already resolved to a full pair.
+    symbol = effect.symbol;
+    draft = effect.symbol;
+  }
+
+  function panelHotkeyState(): HotkeyPanelState {
+    return { symbol: untrack(() => symbol), paintOnChart: untrack(() => settings.paintOnChart) };
+  }
+
+  function runHotkeyAction(action: HotkeyAction) {
+    if (action.type !== 'symbol') {
+      applyHotkeyEffect(hotkeyEffect(action, panelHotkeyState()));
+      return;
+    }
+    // The user's list wins; empty, the scanner's symbols.
+    const own = untrack(() => settings.symbols);
+    if (own.length > 0) {
+      applyHotkeyEffect(hotkeyEffect(action, panelHotkeyState(), own));
+      return;
+    }
+    const state = panelHotkeyState();
+    void scannerSymbols().then((pool) => applyHotkeyEffect(hotkeyEffect(action, state, pool)));
+  }
+
   onMount(() => {
     const onMessage = (message: unknown) => {
+      const parsed = parseRuntimeMessage(message);
+      if (parsed?.type === 'swal:hotkey-action') {
+        runHotkeyAction(parsed.action);
+        return;
+      }
       applyContext(message);
     };
     browser.runtime.onMessage.addListener(onMessage);
@@ -254,7 +321,18 @@
     window.addEventListener('pagehide', onPageHide);
     const onVisibility = () => controller.visibilityChanged();
     document.addEventListener('visibilitychange', onVisibility);
+    // Panel hotkeys: the same combo as on the page, sharing the same handler.
+    // They never fire while typing in a field.
+    const onHotkey = (event: KeyboardEvent) => {
+      const action = hotkeyAction(event, settings.hotkeyMap, settings.hotkeysEnabled && settingsLoaded);
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runHotkeyAction(action);
+    };
+    window.addEventListener('keydown', onHotkey, true);
     return () => {
+      window.removeEventListener('keydown', onHotkey, true);
       controller.stop();
       document.removeEventListener('visibilitychange', onVisibility);
       browser.runtime.onMessage.removeListener(onMessage);
@@ -476,7 +554,7 @@
     </details>
   </section>
 
-  <Tabs onTabChange={(tab) => (activeTab = tab)}>
+  <Tabs bind:selected={activeTab}>
     {#snippet operacion()}
       <OperationTab
         {symbol}
@@ -499,19 +577,6 @@
         {settings}
         {settingsLoaded}
         {applySettings}
-      />
-    {/snippet}
-    {#snippet analisis()}
-      <AnalysisTab
-        {symbol}
-        {timeframe}
-        {panel}
-        {settings}
-        {applySettings}
-        findings={topFindings}
-        {trend}
-        {lastPrice}
-        {atr}
       />
     {/snippet}
     {#snippet aprender()}
@@ -537,9 +602,16 @@
     {#snippet mistrades()}
       <MyTradesTab
         active={activeTab === 'mistrades'}
+        {symbol}
+        {timeframe}
+        {panel}
         {settings}
         {settingsLoaded}
         {applySettings}
+        findings={topFindings}
+        {trend}
+        {lastPrice}
+        {atr}
         nowMs={nowMs}
       />
     {/snippet}

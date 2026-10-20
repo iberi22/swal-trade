@@ -11,11 +11,14 @@ import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
 import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
-import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
+import { SETTINGS_KEY, settingsFromStorage, type ExtensionSettings } from '../lib/settings';
+import { hotkeyAction, showTimeframeToast, isSyntheticKeyEvent } from '../lib/hotkeys';
+import { pageHotkeyMessage } from '../lib/messages';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
 import { binanceAdapter } from '../lib/exchanges/binance';
 import { supportedAdapterForUrl } from '../lib/exchanges/registry';
+import { describeRegions } from '../lib/page-account/diagnose';
 import {
   PAGE_ACCOUNT_DIAGNOSE_REQUEST,
   PAGE_ACCOUNT_DIAGNOSE_RESULT,
@@ -267,6 +270,39 @@ export default defineContentScript({
     let channel: BridgeChannel | null = null;
     const ackListeners = new Set<(data: unknown) => void>();
 
+    // --- Atajos de teclado de la extensión (Alt+Mayús...) ------------------
+    // Se escuchan en la página, no en un content script aparte. Las teclas de
+    // función (F1..F12) quedaron fuera: son del navegador y del sistema. Los
+    // atajos cambian la temporalidad del gráfico a través del background, que es
+    // quien conoce el puente con Trading View. Las otras cuatro acciones
+    // (símbolo, pintado y «Tu dibujo») se reenvían al panel, que es quien las
+    // aplica; la página solo las reconoce y las valida.
+    let hotkeySettings: ExtensionSettings | null = null;
+
+    const onPageKeyDown = (event: KeyboardEvent) => {
+      // Solo teclas reales: un script de la página puede despachar KeyboardEvent
+      // sintéticos (isTrusted=false) y no debe poder cambiar par, pintado ni temporalidad.
+      if (isSyntheticKeyEvent(event)) return;
+      const current = hotkeySettings;
+      if (!current) return;
+      const action = hotkeyAction(event, current.hotkeyMap, current.hotkeysEnabled);
+      const message = pageHotkeyMessage(action);
+      if (!message) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (message.type === 'swal:hotkey-set-timeframe') showTimeframeToast(document, message.timeframe);
+      try {
+        void browser.runtime.sendMessage(message).catch(() => {});
+      } catch {
+        // La extensión se recargó: este content script quedó viejo.
+      }
+    };
+
+    // Solo en Binance: en TradingView los atajos son del gráfico anfitrión.
+    if (location.hostname.includes('binance.com')) {
+      window.addEventListener('keydown', onPageKeyDown, true);
+    }
+
     // --- Lectura de la página (posiciones e historial) --------------------
     // Opt-in: solo con `readPageAccount` encendido. Lee el texto que el usuario
     // ya ve, no escribe en la página ni pulsa nada. Una lectura cada >= 2 s,
@@ -382,6 +418,7 @@ export default defineContentScript({
       const next = settingsFromStorage({ settings: changes[SETTINGS_KEY]?.newValue });
       applyReadSetting(next.readDrawings);
       applyPageReadSetting(next.readPageAccount);
+      hotkeySettings = next;
     };
     try {
       browser.storage?.onChanged?.addListener(onSettingsChanged as never);
@@ -395,6 +432,7 @@ export default defineContentScript({
           const next = settingsFromStorage(stored);
           applyReadSetting(next.readDrawings);
           applyPageReadSetting(next.readPageAccount);
+          hotkeySettings = next;
         })
         .catch(() => {});
     } catch {
@@ -495,11 +533,25 @@ export default defineContentScript({
       };
 
       if (record.type === PAGE_ACCOUNT_DIAGNOSE_REQUEST) {
+        // El diagnóstico LEE la página, así que respeta el mismo opt-in que el
+        // resto de la lectura: sin `readPageAccount` no se mira nada y se dice.
+        if (!pageReadWanted) {
+          sendResponse({
+            type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+            outline: '',
+            regions: null,
+            disabled: true,
+          });
+          return;
+        }
         // Solo el esquema anonimizado: el árbol crudo no sale de la página.
         let tree = lastPageTree;
-        if (!tree && pageReadWanted) tree = readPageNow().tree;
+        if (!tree) tree = readPageNow().tree;
         const outline = tree ? treeToCompactText(anonymizeTree(tree)) : '';
-        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline });
+        // Cobertura por región: dice si la caja de cuenta y el historial se
+        // localizaron, que es justo lo que el volcado único no enseñaba.
+        const regions = describeRegions(document);
+        sendResponse({ type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline, regions, disabled: false });
         return;
       }
 
@@ -624,6 +676,7 @@ export default defineContentScript({
       if (timer !== null) clearTimeout(timer);
       browser.runtime.onMessage.removeListener(onRuntimeMessage);
       document.removeEventListener('visibilitychange', onPageVisibility);
+      window.removeEventListener('keydown', onPageKeyDown, true);
       stopPageRead();
       try {
         browser.storage?.onChanged?.removeListener(onSettingsChanged as never);

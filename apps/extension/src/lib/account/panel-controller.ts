@@ -7,10 +7,9 @@ export const SNAPSHOT_POLL_MS = 10_000;
 /** Paso del reloj interno: reevalúa el modo (p. ej. fin de `loading`) sin red. */
 export const CLOCK_MS = 1_000;
 
-export type PanelTab = 'operacion' | 'analisis' | 'aprender' | 'ajustes' | 'escaner' | 'mistrades';
+export type PanelTab = 'operacion' | 'aprender' | 'ajustes' | 'escaner' | 'mistrades';
 export const PANEL_TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'operacion', label: 'Operación' },
-  { id: 'analisis', label: 'Análisis' },
   { id: 'aprender', label: 'Aprender' },
   { id: 'ajustes', label: 'Ajustes' },
   { id: 'escaner', label: 'Escáner' },
@@ -18,7 +17,13 @@ export const PANEL_TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
 ];
 export const PANEL_TAB_KEY = 'panelTab';
 
+/**
+ * Pestaña guardada. «Análisis» ya no existe: su contenido vive dentro de
+ * «Mis trades» con el origen «Clave API», así que una elección vieja se migra
+ * ahí en vez de perderse.
+ */
 export function parsePanelTab(value: unknown): PanelTab {
+  if (value === 'analisis') return 'mistrades';
   return PANEL_TABS.some((tab) => tab.id === value) ? (value as PanelTab) : 'operacion';
 }
 

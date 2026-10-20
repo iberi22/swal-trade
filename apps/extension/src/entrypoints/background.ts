@@ -26,8 +26,9 @@ import {
   PAGE_ACCOUNT_GET,
   PAGE_ACCOUNT_RESULT,
   PAGE_ACCOUNT_SESSION_KEY,
+  PAGE_ACCOUNT_SYNCED_KEY,
   PAGE_ACCOUNT_UPDATE,
-  parsePageAccountDiagnoseResult,
+  parsePageAccountDiagnoseReport,
   parsePageAccountMessage,
   parseStoredPagePositions,
   type PageAccountUpdate,
@@ -168,7 +169,16 @@ async function storePageAccountUpdate(update: PageAccountUpdate): Promise<void> 
   } catch {
     // Sin storage.session las posiciones no llegan al panel; no es un error de la página.
   }
-  await pageHistory.merge(update.history);
+  const merged = await pageHistory.merge(update.history);
+  // Instante de la última fusión: el panel lo enseña como «última
+  // sincronización hace X». Vive en la sesión: no hace falta en disco.
+  if (merged.length > 0) {
+    try {
+      await browser.storage.session?.set({ [PAGE_ACCOUNT_SYNCED_KEY]: Date.now() });
+    } catch {
+      // Sin storage.session el panel no puede fechar la sincronización.
+    }
+  }
 }
 
 async function readPageAccountState(): Promise<Record<string, unknown>> {
@@ -179,6 +189,13 @@ async function readPageAccountState(): Promise<Record<string, unknown>> {
     stored = undefined;
   }
   const session = parseStoredPagePositions(stored);
+  let syncedAt: number | null = null;
+  try {
+    const raw = (await browser.storage.session?.get(PAGE_ACCOUNT_SYNCED_KEY))?.[PAGE_ACCOUNT_SYNCED_KEY];
+    syncedAt = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : null;
+  } catch {
+    syncedAt = null;
+  }
   const history = await pageHistory.load();
   return {
     type: PAGE_ACCOUNT_RESULT,
@@ -186,6 +203,7 @@ async function readPageAccountState(): Promise<Record<string, unknown>> {
     positions: session?.positions ?? [],
     capturedAt: session?.capturedAt ?? null,
     tzOffsetMinutes: session?.tzOffsetMinutes ?? 0,
+    syncedAt,
     history,
     metrics: historyMetrics(history),
   };
@@ -193,7 +211,7 @@ async function readPageAccountState(): Promise<Record<string, unknown>> {
 
 async function clearPageAccount(): Promise<Record<string, unknown>> {
   try {
-    await browser.storage.session?.remove(PAGE_ACCOUNT_SESSION_KEY);
+    await browser.storage.session?.remove([PAGE_ACCOUNT_SESSION_KEY, PAGE_ACCOUNT_SYNCED_KEY]);
   } catch {
     // nada que borrar
   }
@@ -203,13 +221,18 @@ async function clearPageAccount(): Promise<Record<string, unknown>> {
 
 /** Pide al content script la pestaña de futuros el esquema ya anonimizado. */
 async function requestPageDiagnose(): Promise<Record<string, unknown>> {
-  const empty = { type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '' };
+  const empty = { type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: '', regions: null };
   try {
     const tabs = await browser.tabs.query({ url: 'https://www.binance.com/*/futures/*' }).catch(() => []);
     const tab = tabs.find((candidate) => candidate.active) ?? tabs[0];
     if (tab?.id == null) return empty;
     const reply = await browser.tabs.sendMessage(tab.id, { type: PAGE_ACCOUNT_DIAGNOSE_REQUEST });
-    return { type: PAGE_ACCOUNT_DIAGNOSE_RESULT, outline: parsePageAccountDiagnoseResult(reply) ?? '' };
+    const report = parsePageAccountDiagnoseReport(reply);
+    return {
+      type: PAGE_ACCOUNT_DIAGNOSE_RESULT,
+      outline: report?.outline ?? '',
+      regions: report?.regions ?? null,
+    };
   } catch {
     return empty;
   }
