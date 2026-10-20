@@ -94,7 +94,7 @@
   }
 
   const usd = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const pct = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 });
+  const pct = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2, roundingMode: 'floor' } as Intl.NumberFormatOptions);
 
   async function copy(id: string, ticket: TradeTicket) {
     const text = formatTicketText(ticket);

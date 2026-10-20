@@ -59,12 +59,23 @@ export const QUANTITY_DISPLAY_DECIMALS = 8;
 export function floorToDecimals(value: number, decimals = QUANTITY_DISPLAY_DECIMALS): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   const factor = 10 ** decimals;
-  // Se tolera el ruido de la coma flotante de un paso de rejilla (0,0091 × 1e8
-  // = 909.999,9999…), pero el resultado NUNCA puede superar al original: limpiar
-  // el ruido redondeando primero subía 909.999,9999999 a 910.000 y devolvía
-  // 0,0091 para una cantidad de 0,009099999999999 (más de lo presupuestado).
-  let n = Math.floor(value * factor + 1e-9);
-  while (n > 0 && n / factor > value) n -= 1;
+  const scaled = value * factor;
+  // Fuera del rango de enteros seguros no quedan decimales que recortar: el
+  // valor se devuelve tal cual (nunca mayor). Antes un bucle `n -= 1` no
+  // avanzaba aquí (n - 1 === n) y congelaba el panel.
+  if (!Number.isFinite(scaled) || scaled >= Number.MAX_SAFE_INTEGER) return value;
+  let n = Math.floor(scaled);
+  // Ruido de la coma flotante de un paso de rejilla (0,0091 × 1e8 = 909.999,9999…):
+  // se acepta el entero siguiente solo si no supera al original salvo por unas
+  // pocas unidades de precisión (ruido de representación, ~1e-15 relativo). Un
+  // exceso real (0,019999999995 frente a 0,02, ~1e-10) se rechaza.
+  if (n > 0 && n / factor > value) {
+    // La división flotante quedó por encima: un único paso hacia abajo.
+    n -= 1;
+  } else {
+    const next = (n + 1) / factor;
+    if (next <= value || next - value <= value * Number.EPSILON * 8) n += 1;
+  }
   return n / factor;
 }
 
@@ -80,9 +91,8 @@ export function floorToDecimals(value: number, decimals = QUANTITY_DISPLAY_DECIM
  */
 export function floorLossUsdForDisplay(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
-  const decimals = value >= 0.01 ? 2 : QUANTITY_DISPLAY_DECIMALS;
-  const factor = 10 ** decimals;
-  return Math.floor(value * factor + 1e-9) / factor;
+  // Sin tolerancia hacia arriba: 0,019999999995 se muestra 0,01, nunca 0,02.
+  return floorToDecimals(value, value >= 0.01 ? 2 : QUANTITY_DISPLAY_DECIMALS);
 }
 
 // `roundingMode: 'floor'` evita que el propio formateador vuelva a redondear

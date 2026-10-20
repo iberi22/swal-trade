@@ -4,6 +4,7 @@ import {
   calculatePositionSizeWithFees,
   defaultScaleEntries,
   floorLossUsdForDisplay,
+  floorToDecimals,
   floorToStep,
   formatQuantityPlain,
   planScaleIn,
@@ -252,7 +253,9 @@ function build(input: BuildTicketInput): TicketResult {
   // cercano podía mostrar más de lo que realmente cuesta el stop.
   const lossAtStopUsd = floorLossUsdForDisplay(priceLoss + entryFeeUsd + exitFeeUsd);
   const lossIncludesFees = true;
-  const lossPct = roundToDecimals((lossAtStopUsd / capital) * 100, 2);
+  // Exacto para las reglas; recortado (nunca hacia arriba) para enseñarlo.
+  const exactLossPct = (lossAtStopUsd / capital) * 100;
+  const lossPct = floorToDecimals(exactLossPct, 2);
   const notionalUsd = roundToDecimals(notionalRaw, 2);
   const marginUsd = roundToDecimals(notionalRaw / leverage, 2);
   const weightsOut = entries.map((e) => ({ ...e, weightPct: Math.round(((e.qty * e.price) / notionalRaw) * 100) }));
@@ -281,7 +284,7 @@ function build(input: BuildTicketInput): TicketResult {
   tps.splice(MAX_TPS);
 
   /* Avisos (texto llano, sin lenguaje de compra/venta). */
-  if (lossPct > rules.maxRiskPct + 0.005) {
+  if (exactLossPct > rules.maxRiskPct + 1e-9) {
     warnings.push(warn('risk_above_rule', `supera tu regla de riesgo (${fmt(rules.maxRiskPct)} %)`));
   }
   if (leverage > rules.maxLeverage) {
@@ -333,7 +336,7 @@ function build(input: BuildTicketInput): TicketResult {
     lossAtStopUsd,
     lossIncludesFees,
     lossAtStopPctOfCapital: lossPct,
-    highRisk: lossPct > 2,
+    highRisk: exactLossPct > 2,
     feeUsd,
     fees: {
       makerRate: MAKER_FEE_RATE,
