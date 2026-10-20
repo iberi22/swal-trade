@@ -12,7 +12,8 @@ import { buildHello, createSession, establishLink, type BridgeChannel } from '..
 import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 import { SETTINGS_KEY, settingsFromStorage, type ExtensionSettings } from '../lib/settings';
-import { hotkeyTimeframe, showTimeframeToast } from '../lib/hotkeys';
+import { hotkeyAction, showTimeframeToast } from '../lib/hotkeys';
+import { pageHotkeyMessage } from '../lib/messages';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
 import { binanceAdapter } from '../lib/exchanges/binance';
@@ -273,19 +274,22 @@ export default defineContentScript({
     // Se escuchan en la página, no en un content script aparte. Las teclas de
     // función (F1..F12) quedaron fuera: son del navegador y del sistema. Los
     // atajos cambian la temporalidad del gráfico a través del background, que es
-    // quien conoce el puente con Trading View.
+    // quien conoce el puente con Trading View. Las otras cuatro acciones
+    // (símbolo, pintado y «Tu dibujo») se reenvían al panel, que es quien las
+    // aplica; la página solo las reconoce y las valida.
     let hotkeySettings: ExtensionSettings | null = null;
 
     const onPageKeyDown = (event: KeyboardEvent) => {
       const current = hotkeySettings;
       if (!current) return;
-      const timeframe = hotkeyTimeframe(event, current.hotkeyMap, current.hotkeysEnabled);
-      if (!timeframe) return;
+      const action = hotkeyAction(event, current.hotkeyMap, current.hotkeysEnabled);
+      const message = pageHotkeyMessage(action);
+      if (!message) return;
       event.preventDefault();
       event.stopPropagation();
-      showTimeframeToast(document, timeframe);
+      if (message.type === 'swal:hotkey-set-timeframe') showTimeframeToast(document, message.timeframe);
       try {
-        void browser.runtime.sendMessage({ type: 'swal:hotkey-set-timeframe', timeframe }).catch(() => {});
+        void browser.runtime.sendMessage(message).catch(() => {});
       } catch {
         // La extensión se recargó: este content script quedó viejo.
       }

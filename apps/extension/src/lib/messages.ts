@@ -1,6 +1,7 @@
 import { isMarketContext } from './market-context';
 import { parsePositionToolsMessage, type BridgePositionToolsMessage } from './tv-bridge/schema';
 import { TV_GET_STATE, TV_POSITION_TOOLS, TV_STATE, type TvChartState } from './tv-paint';
+import type { HotkeyAction } from './hotkeys';
 import type { MarketContext } from './types';
 
 export interface MarketContextMessage {
@@ -46,6 +47,21 @@ export interface HotkeySetTimeframeMessage {
   timeframe: string;
 }
 
+/**
+ * Hotkey actions the page forwards to the panel (symbol, paint and drawing).
+ * Timeframes keep their own message: the background needs them to drive the
+ * chart bridge.
+ */
+export type PageHotkeyAction =
+  | { type: 'symbol'; direction: 1 | -1 }
+  | { type: 'paint' }
+  | { type: 'drawing' };
+
+export interface HotkeyActionMessage {
+  type: 'swal:hotkey-action';
+  action: PageHotkeyAction;
+}
+
 /** El content script releva las herramientas de posición leídas del gráfico. */
 export interface TvPositionToolsMessage {
   type: typeof TV_POSITION_TOOLS;
@@ -60,6 +76,7 @@ export type RuntimeMessage =
   | GetTvStateMessage
   | TvStateResultMessage
   | HotkeySetTimeframeMessage
+  | HotkeyActionMessage
   | TvPositionToolsMessage;
 
 const TV_STATES: readonly TvChartState[] = [
@@ -82,6 +99,34 @@ export function parseTvChartState(value: unknown): TvChartState | null {
   return typeof value === 'string' && (TV_STATES as readonly string[]).includes(value)
     ? (value as TvChartState)
     : null;
+}
+
+/**
+ * Message the page uses to forward a hotkey. Timeframes travel on their own
+ * type (the background uses them to drive the chart); the other four actions
+ * go to the panel. Null when the action is not forwarded.
+ */
+export function pageHotkeyMessage(
+  action: HotkeyAction | null | undefined,
+): HotkeySetTimeframeMessage | HotkeyActionMessage | null {
+  if (!action) return null;
+  if (action.type === 'timeframe') {
+    return { type: 'swal:hotkey-set-timeframe', timeframe: action.timeframe };
+  }
+  return { type: 'swal:hotkey-action', action };
+}
+
+/** Closed shape of a forwarded hotkey action. */
+export function parsePageHotkeyAction(value: unknown): PageHotkeyAction | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const action = value as { type?: unknown; direction?: unknown };
+  if (action.type === 'paint') return { type: 'paint' };
+  if (action.type === 'drawing') return { type: 'drawing' };
+  if (action.type === 'symbol') {
+    if (action.direction === 1) return { type: 'symbol', direction: 1 };
+    if (action.direction === -1) return { type: 'symbol', direction: -1 };
+  }
+  return null;
 }
 
 export function parseRuntimeMessage(message: unknown): RuntimeMessage | null {
@@ -113,6 +158,10 @@ export function parseRuntimeMessage(message: unknown): RuntimeMessage | null {
       return { type: 'swal:hotkey-set-timeframe', timeframe };
     }
     return null;
+  }
+  if (type === 'swal:hotkey-action') {
+    const action = parsePageHotkeyAction((message as { action?: unknown }).action);
+    return action ? { type: 'swal:hotkey-action', action } : null;
   }
   if (type === TV_POSITION_TOOLS) {
     const tools = parsePositionToolsMessage((message as { tools?: unknown }).tools);
