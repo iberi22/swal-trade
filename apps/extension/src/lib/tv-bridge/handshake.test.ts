@@ -164,6 +164,29 @@ describe('establishLink', () => {
     expect(legit).toEqual({ type: 'swal:hello', session: 's', enabled: true });
   });
 
+  it('un <swal-link> plantado antes no secuestra el enlace', async () => {
+    // La página deja su propio nodo en el DOM antes de que llegue el aislado.
+    const planted = document.createElement(LINK_TAG);
+    document.documentElement.appendChild(planted);
+
+    let ackOnPlanted: Event | null = null;
+    planted.addEventListener('swal:link', (ev) => { ackOnPlanted = ev; });
+
+    const [bridge, content] = await linked();
+
+    // El enlace usa el nodo real y el plantado no recibe ni el ack ni el nonce.
+    expect(ackOnPlanted).toBeNull();
+    expect(planted.parentNode).not.toBeNull();
+    expect(document.documentElement.lastElementChild).toBe(planted);
+
+    let received: unknown = null;
+    content.onMessage((msg) => { received = msg; });
+    bridge.send({ type: 'swal:hello', session: 's', enabled: true });
+    expect(received).toEqual({ type: 'swal:hello', session: 's', enabled: true });
+
+    planted.remove();
+  });
+
   it('es one-shot: una segunda campana no crea otro canal', async () => {
     const [bridge, content] = await linked();
 

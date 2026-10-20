@@ -265,8 +265,12 @@ function waitForRendezvous(): Promise<BridgeChannel> {
       if (!(ev instanceof CustomEvent)) return;
       const nonce = readNonceDetail(ev.detail);
       if (!nonce) return;
-      const node = document.documentElement.querySelector(LINK_TAG);
-      if (!(node instanceof HTMLElement)) return;
+      // El nodo válido es el ÚLTIMO hijo: el aislado lo cuelga y lanza la
+      // campana en el mismo turno, así que nadie pudo añadir nada después. Un
+      // `<swal-link>` plantado antes por la página no sirve para secuestrar el
+      // ack (y con él el nonce).
+      const node = document.documentElement.lastElementChild;
+      if (!node || node.localName !== LINK_TAG) return;
 
       // Fuera del DOM antes de devolver el control: desde aquí solo lo
       // referencian las dos partes.
