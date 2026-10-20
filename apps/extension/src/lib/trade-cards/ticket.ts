@@ -3,7 +3,9 @@ import type { RulesSettings } from '../settings';
 import {
   calculatePositionSizeWithFees,
   defaultScaleEntries,
+  floorLossUsdForDisplay,
   floorToStep,
+  formatQuantityPlain,
   planScaleIn,
   roundToDecimals,
   roundToTick,
@@ -55,6 +57,11 @@ export interface BuildTicketInput {
 /** Formato corto con coma decimal para los avisos. */
 function fmt(value: number, digits = 2): string {
   return String(roundToDecimals(value, digits)).replace('.', ',');
+}
+
+/** Presupuesto en USD para un aviso: recortado, nunca por encima del elegido. */
+function fmtUsdBudget(value: number): string {
+  return String(floorLossUsdForDisplay(value)).replace('.', ',');
 }
 
 /** Formato para el portapapeles: punto decimal, sin separador de miles. */
@@ -241,7 +248,9 @@ function build(input: BuildTicketInput): TicketResult {
   const entryFeeUsd = entries.reduce((s, e) => s + e.qty * e.price * entryFeeRate, 0);
   const exitFeeUsd = totalQty * stop * TAKER_FEE_RATE;
   const feeUsd = roundToDecimals(entryFeeUsd + exitFeeUsd, 2);
-  const lossAtStopUsd = roundToDecimals(priceLoss + entryFeeUsd + exitFeeUsd, 2);
+  // La pérdida se enseña recortada hacia abajo: redondearla al céntimo más
+  // cercano podía mostrar más de lo que realmente cuesta el stop.
+  const lossAtStopUsd = floorLossUsdForDisplay(priceLoss + entryFeeUsd + exitFeeUsd);
   const lossIncludesFees = true;
   const lossPct = roundToDecimals((lossAtStopUsd / capital) * 100, 2);
   const notionalUsd = roundToDecimals(notionalRaw, 2);
@@ -281,7 +290,7 @@ function build(input: BuildTicketInput): TicketResult {
   if (marginUsd > capital) warnings.push(warn('margin_over_capital', 'el margen necesario supera tu capital'));
   const dailyLeft = input.dailyLossRemainingUsd ?? (rules.dailyLossUsd > 0 ? rules.dailyLossUsd : null);
   if (dailyLeft !== null && lossAtStopUsd > dailyLeft) {
-    warnings.push(warn('daily_loss', `la pérdida en el stop supera tu límite diario (${fmt(dailyLeft)} USD)`));
+    warnings.push(warn('daily_loss', `la pérdida en el stop supera tu límite diario (${fmtUsdBudget(dailyLeft)} USD)`));
   }
   const stopPct = (unit / avgEntry) * 100;
   if (stopPct < MIN_STOP_PCT) {
@@ -350,14 +359,14 @@ export function formatTicketText(t: TradeTicket): string {
     `Par: ${t.symbol} · ${dir} · ${t.orderType === 'LIMIT' ? 'Límite' : 'Mercado'} (${t.orderType})`,
   ];
   t.entries.forEach((e, i) => {
-    lines.push(`Entrada ${t.entries.length > 1 ? i + 1 : ''}`.trim() + `: precio ${plain(e.price)} · cantidad ${plain(e.qty)} (${e.weightPct} %)`);
+    lines.push(`Entrada ${t.entries.length > 1 ? i + 1 : ''}`.trim() + `: precio ${plain(e.price)} · cantidad ${formatQuantityPlain(e.qty)} (${e.weightPct} %)`);
   });
   if (t.entries.length > 1) lines.push(`Entrada media: ${plain(t.avgEntry)}`);
   lines.push(`Stop: ${plain(t.stop)} (${t.stopSource === 'invalidation' ? 'invalidación' : t.stopSource === 'atr' ? 'ATR' : '%'})`);
   t.tps.forEach((tp, i) => lines.push(`Objetivo ${i + 1}: ${plain(tp.price)} (${plain(tp.rMultiple)}R${tp.label ? ` · ${tp.label}` : ''})`));
   lines.push(`Apalancamiento: ${t.leverage}× · Margen: ${plain(t.marginUsd)} USD · Nocional: ${plain(t.notionalUsd)} USD`);
   lines.push(
-    `Pérdida en el stop: ${plain(t.lossAtStopUsd)} USD (${plain(t.lossAtStopPctOfCapital)} % de la cuenta${t.lossIncludesFees ? ', con comisiones' : ''})`,
+    `Pérdida en el stop: ${String(t.lossAtStopUsd)} USD (${plain(t.lossAtStopPctOfCapital)} % de la cuenta${t.lossIncludesFees ? ', con comisiones' : ''})`,
   );
   lines.push(`Comisiones: ~${plain(t.feeUsd)} USD (${t.fees.note})`);
   if (t.scaleInNote) lines.push(t.scaleInNote);

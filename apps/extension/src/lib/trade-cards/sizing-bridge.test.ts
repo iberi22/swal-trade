@@ -10,6 +10,7 @@ import {
   feeInclusiveRiskUsd,
   publishSizingLoad,
   sizingLoadFromTicket,
+  sizingStateFromLoad,
   subscribeSizingLoad,
 } from './sizing-bridge';
 import { buildTicket } from './ticket';
@@ -147,6 +148,42 @@ describe('sizingLoadFromTicket', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.riskPct).toBe(load.riskPct);
     expect(seen[0]?.riskUsd).toBe(load.riskUsd);
+  });
+});
+
+describe('aplicar una carga al panel', () => {
+  it('adopta el capital del ticket (2.000) y con él enseña la cantidad exacta (3), no 1,49977', () => {
+    // Tarjeta calculada con 2.000: 1,5 % de margen a 10x son 3 unidades de 100.
+    const t = ticket(marketPreset({ size: { basis: 'margin', pct: 1.5 }, leverage: 10 }), { capital: 2000 });
+    expect(t.entries[0]?.qty).toBe(3);
+    const load = sizingLoadFromTicket(t);
+    expect(load.capital).toBe(2000);
+
+    const state = sizingStateFromLoad(load);
+    expect(state.capital).toBe(2000);
+    expect(state.direction).toBe(load.direction);
+    expect(state.entryStr).toBe(String(load.entry));
+    expect(state.stopStr).toBe(String(load.stop));
+    expect(state.riskPct).toBe(displayRiskPct(load));
+
+    // Con el panel en 1.000 la cifra exacta del ticket se descartaba y el
+    // recálculo daba ~1,49977 en vez de las 3 unidades de la tarjeta.
+    expect(exactSizingFromLoad(load, { ...state, capital: 1000 })).toBeNull();
+    const fromOldCapital = calculatePositionSizeWithFees({
+      capital: 1000,
+      riskPct: state.riskPct,
+      direction: state.direction,
+      entry: load.entry,
+      stop: load.stop,
+      entryFeeRate: load.entryFeeRate,
+      exitFeeRate: load.exitFeeRate,
+    });
+    expect(fromOldCapital.valid).toBe(true);
+    if (!fromOldCapital.valid) return;
+    expect(fromOldCapital.quantity).toBeCloseTo(1.4998, 3);
+
+    // Aplicando el capital del ticket, el panel enseña la cantidad exacta.
+    expect(exactSizingFromLoad(load, state)).toEqual({ quantity: 3, lossUsd: load.riskUsd });
   });
 });
 

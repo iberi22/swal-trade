@@ -158,9 +158,11 @@ describe('analyzeDrawing · tamaño al riesgo de la regla', () => {
     expect(a.size.notionalUsd).toBe(476.42);
     expect(a.size.minLeverage).toBe(1);
     expect(a.size.marginUsd).toBe(476.42);
-    // La pérdida con comisiones no supera el presupuesto (antes 4,7642 → 10,000037).
-    expect(a.size.lossUsd).toBe(10);
-    expect(a.size.lossPct).toBe(1);
+    // La pérdida con comisiones no supera el presupuesto y se RECORTA hacia
+    // abajo: la real es 9,999999… (no se sube a 10,00).
+    expect(a.size.lossUsd).toBe(9.99);
+    expect(a.size.lossUsd).toBeLessThanOrEqual(10);
+    expect(a.size.lossPct).toBe(0.999);
     expect(a.size.lossIncludesFees).toBe(true);
   });
 
@@ -181,7 +183,7 @@ describe('analyzeDrawing · tamaño al riesgo de la regla', () => {
     expect(a.size.qty).toBe(4.7);
     const b = run({ filters: { stepSize: 3 } });
     expect(b.size.qty).toBe(3); // floor(4,7619 / 3) * 3
-    expect(b.size.lossUsd).toBe(6.3); // 3 * (2 + 0,05 + 0,049)
+    expect(b.size.lossUsd).toBe(6.29); // 3 * (2 + 0,05 + 0,049) = 6,297, recortado
   });
 
   it('devuelve tamaño 0 si el mínimo del contrato obligaría a arriesgar más', () => {

@@ -1,6 +1,6 @@
 import type { LevelRow } from '../context/levels';
 import { expectedRange } from '../context/levels';
-import { calculatePositionSizeWithFees, floorToStep, roundToDecimals } from '../sizing';
+import { calculatePositionSizeWithFees, floorLossUsdForDisplay, floorToStep, roundToDecimals } from '../sizing';
 import type {
   AnalyzeDrawingInput,
   DrawingAnalysisResult,
@@ -92,7 +92,9 @@ function sizeAtRule(input: {
   filters?: DrawingFilters;
 }): DrawingSize {
   const { capital, riskPct, direction, entry, stop, entryFeeRate, exitFeeRate, filters } = input;
-  const riskUsd = r2(capital * (riskPct / 100));
+  // El presupuesto y la pérdida se recortan hacia abajo: 0,005 USD de riesgo no
+  // puede enseñarse como 0,01 (el doble de lo permitido).
+  const riskUsd = floorLossUsdForDisplay(capital * (riskPct / 100));
   const base = calculatePositionSizeWithFees({ capital, riskPct, direction, entry, stop, entryFeeRate, exitFeeRate });
   if (!base.valid) return emptySize(riskUsd);
 
@@ -107,13 +109,16 @@ function sizeAtRule(input: {
     !!minNotional && Number.isFinite(minNotional) && minNotional > 0 && qty * entry < minNotional;
   if (belowMinQty || belowMinNotional) return emptySize(riskUsd);
 
-  const notionalUsd = r2(qty * entry);
-  const lossUsd = r2(qty * Math.abs(entry - stop) + qty * entry * entryFeeRate + qty * stop * exitFeeRate);
+  // La cantidad que se devuelve y la pérdida que se enseña salen de la MISMA
+  // cifra, recortada: así ninguna de las dos supera lo presupuestado.
+  const qtyOut = floorToStep(qty, 1e-8);
+  const notionalUsd = r2(qtyOut * entry);
+  const lossUsd = floorLossUsdForDisplay(qtyOut * Math.abs(entry - stop) + qtyOut * entry * entryFeeRate + qtyOut * stop * exitFeeRate);
   const minLeverage = Math.max(1, Math.ceil(notionalUsd / capital));
   const marginUsd = r2(notionalUsd / minLeverage);
   const lossPct = r4((lossUsd / capital) * 100);
   return {
-    qty: floorToStep(qty, 1e-8),
+    qty: qtyOut,
     notionalUsd,
     marginUsd,
     minLeverage,

@@ -5,7 +5,7 @@
   import { buildLevels, computeAtrs, type FindingLevelInput } from '../../lib/context/levels';
   import { formatPanelPrice } from '../../lib/price-format';
   import type { RulesSettings } from '../../lib/settings';
-  import { DEFAULT_SIZING_PREFERENCES, normalizeSizingPreferences, SIZING_STORAGE_KEY } from '../../lib/sizing';
+  import { DEFAULT_SIZING_PREFERENCES, formatLossUsd, normalizeSizingPreferences, SIZING_STORAGE_KEY } from '../../lib/sizing';
   import { fetchSymbolFilters } from '../../lib/trade-cards/filters';
   import { defaultPresets } from '../../lib/trade-cards/presets';
   import { publishSizingLoad, sizingLoadFromTicket } from '../../lib/trade-cards/sizing-bridge';
@@ -156,7 +156,7 @@
         <span class="t-name">{c.preset.name}</span>
         {#if ticket}
           <span class="t-line">entrada {formatPanelPrice(ticket.entries[0]?.price ?? 0)} · stop {formatPanelPrice(ticket.stop)}</span>
-          <span class="t-line">pierdes {usd.format(ticket.lossAtStopUsd)} USD ({pct.format(ticket.lossAtStopPctOfCapital)} %)</span>
+          <span class="t-line">pierdes {formatLossUsd(ticket.lossAtStopUsd)} USD ({pct.format(ticket.lossAtStopPctOfCapital)} %)</span>
           {#if ticket.warnings.some((w) => w.code === 'risk_above_rule')}
             <span class="badge" class:inverted={ticket.highRisk}>{ticket.warnings.find((w) => w.code === 'risk_above_rule')?.text}</span>
           {/if}
@@ -195,7 +195,7 @@
             <dt>Apalancamiento</dt><dd>{t.leverage}×</dd>
             <dt>Margen</dt><dd>{usd.format(t.marginUsd)} USD</dd>
             <dt>Nocional</dt><dd>{usd.format(t.notionalUsd)} USD</dd>
-            <dt>Pérdida en stop</dt><dd>{usd.format(t.lossAtStopUsd)} USD ({pct.format(t.lossAtStopPctOfCapital)} %)</dd>
+            <dt>Pérdida en stop</dt><dd>{formatLossUsd(t.lossAtStopUsd)} USD ({pct.format(t.lossAtStopPctOfCapital)} %)</dd>
             <dt>Comisiones</dt><dd>~{usd.format(t.feeUsd)} USD · {t.fees.note}</dd>
           </dl>
           {#if t.scaleInNote}<p class="note">{t.scaleInNote}</p>{/if}

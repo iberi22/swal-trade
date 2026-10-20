@@ -24,13 +24,15 @@ function ok(r: ReturnType<typeof buildTicket>): TradeTicket {
 }
 
 describe('buildTicket sizing', () => {
-  it('risk basis includes round-trip fees: 1 % of 1000, entry 100 stop 99 -> qty 9,095043 (floor a 6), loss 10 with fees', () => {
+  it('risk basis includes round-trip fees: 1 % of 1000, entry 100 stop 99 -> qty 9,095043 (floor a 6), loss 9,99 floored with fees', () => {
     const t = ok(buildTicket({ ...base, preset: marketPreset() }));
     expect(t.orderType).toBe('MARKET');
     expect(t.stop).toBe(99);
     // La cantidad no se redondea hacia arriba: se pisa al sexto decimal (antes 9,095).
     expect(t.entries).toEqual([{ price: 100, qty: 9.095043, weightPct: 100 }]);
-    expect(t.lossAtStopUsd).toBe(10);
+    // La pérdida mostrada se recorta: la real es 9,999999…, no 10,00.
+    expect(t.lossAtStopUsd).toBe(9.99);
+    expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
     expect(t.lossIncludesFees).toBe(true);
     expect(t.lossAtStopPctOfCapital).toBe(1);
     expect(t.notionalUsd).toBe(909.5);
@@ -65,12 +67,14 @@ describe('buildTicket sizing', () => {
     expect(t.feeUsd).toBeGreaterThan(0);
   });
 
-  it('margin basis: 5 % of 1000 at 10x -> notional 500, loss 5,50 with fees', () => {
+  it('margin basis: 5 % of 1000 at 10x -> notional 500, loss 5,49 floored with fees (not 5,50)', () => {
     const t = ok(buildTicket({ ...base, preset: marketPreset({ size: { basis: 'margin', pct: 5 }, leverage: 10 }) }));
     expect(t.marginUsd).toBe(50);
     expect(t.notionalUsd).toBe(500);
     expect(t.entries[0]?.qty).toBe(5);
-    expect(t.lossAtStopUsd).toBe(5.5);
+    // La pérdida real con comisiones es 5,4975: el redondeo la subía a 5,50.
+    expect(t.lossAtStopUsd).toBe(5.49);
+    expect(t.lossAtStopUsd).toBeLessThanOrEqual(5.4975);
     expect(t.lossIncludesFees).toBe(true);
     expect(t.leverage).toBe(10);
   });
@@ -79,7 +83,8 @@ describe('buildTicket sizing', () => {
     // margen 100, stop 1 %: sin comisiones 10x cabría justo; con comisiones la pérdida sería 10,995 -> 9x.
     const t = ok(buildTicket({ ...base, preset: marketPreset({ size: { basis: 'margin', pct: 10 }, leverage: 'min' }) }));
     expect(t.leverage).toBe(9);
-    expect(t.lossAtStopUsd).toBe(9.9);
+    // 9 × 1,0995 = 9,8955 de pérdida real: se recorta a 9,89 (antes se subía a 9,90).
+    expect(t.lossAtStopUsd).toBe(9.89);
     expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
     expect(t.warnings.some((w) => w.code === 'risk_above_rule')).toBe(false);
   });
@@ -202,6 +207,14 @@ describe('buildTicket sides, rounding and warnings', () => {
     expect(t.warnings.some((w) => w.code === 'daily_loss')).toBe(true);
   });
 
+  it('shows the daily-loss budget floored, never above the one chosen', () => {
+    // 0,005 USD de límite diario: el redondeo al céntimo lo enseñaba como 0,01.
+    const t = ok(buildTicket({ ...base, preset: marketPreset(), dailyLossRemainingUsd: 0.005 }));
+    const text = t.warnings.find((w) => w.code === 'daily_loss')?.text;
+    expect(text).toContain('0,005 USD');
+    expect(text).not.toContain('0,01 USD');
+  });
+
   it('fails when the stop ends on the wrong side after rounding', () => {
     const filters = { tickSize: 5, stepSize: 0.1, minNotional: 0, minQty: 0 };
     const r = buildTicket({ ...base, filters, preset: marketPreset({ stop: { kind: 'pct', pct: 0.1 } }) });
@@ -227,6 +240,14 @@ describe('buildTicket sides, rounding and warnings', () => {
 });
 
 describe('ticket text', () => {
+  it('copies the floored loss and quantity, not a rounded-up one', () => {
+    const t = ok(buildTicket({ ...base, preset: marketPreset() }));
+    const text = formatTicketText(t);
+    // La real con comisiones es 9,999999…; el texto no la infla a 10.
+    expect(text).toContain('Pérdida en el stop: 9.99 USD');
+    expect(text).toContain('cantidad 9.095043');
+  });
+
   it('has the honest line and no forbidden words, for every default card and side', () => {
     const levels = [row(105, 'r1', 'R1'), row(95, 's1', 'S1')];
     for (const preset of defaultPresets()) {

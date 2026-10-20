@@ -5,6 +5,7 @@
     calculatePositionSize,
     calculatePositionSizeWithFees,
     defaultScaleEntries,
+    formatLossUsd,
     formatQuantity,
     planScaleIn,
     DEFAULT_SIZING_PREFERENCES,
@@ -16,9 +17,9 @@
   } from '../../lib/sizing';
   import type { Finding } from '../../lib/types';
   import {
-    displayRiskPct,
     exactSizingFromLoad,
     parseSizingLoad,
+    sizingStateFromLoad,
     subscribeSizingLoad,
     TRANCHES_NOTE,
     type SizingLoad,
@@ -60,14 +61,18 @@
       // o sin riesgo no se pinta (antes salía «La comisión no es válida»).
       const load = parseSizingLoad(incoming);
       if (!load) return;
-      direction = load.direction;
+      // El capital del panel pasa a ser el del ticket: si no, una tarjeta de
+      // 2.000 con el panel en 1.000 daba otra cantidad (1,49977 en vez de 3).
+      const state = sizingStateFromLoad(load);
+      direction = state.direction;
       // El campo enseña el % con 4 decimales; la cantidad y la pérdida que se
       // ven abajo salen del payload EXACTO (ver `exactSizingFromLoad`). En
       // cuanto se toca el riesgo, la cifra exacta deja de valer y el panel
       // recalcula con lo escrito.
-      riskPct = displayRiskPct(load);
-      entryStr = String(load.entry);
-      stopStr = String(load.stop);
+      riskPct = state.riskPct;
+      entryStr = state.entryStr;
+      stopStr = state.stopStr;
+      capital = state.capital;
       userEditedEntry = true;
       userEditedStop = true;
       fromCard = true;
@@ -221,7 +226,7 @@
     {#if result.valid}
       <div class="metrics-grid" data-testid="sizing-results">
         <div class="metric"><span class="m-title">Distancia stop</span><span class="m-val">{pctFmt.format(result.distancePct)} %</span></div>
-        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{shownLossUsd !== null ? usdFmt.format(shownLossUsd) : usdFmt.format(result.lossUsd)} USD</span></div>
+        <div class="metric"><span class="m-title">Pérdida en stop</span><span class="m-val">{formatLossUsd(shownLossUsd ?? result.lossUsd)} USD</span></div>
         <div class="metric"><span class="m-title">Cantidad</span><span class="m-val">{formatQuantity(shownQuantity ?? result.quantity)}</span></div>
         <div class="metric"><span class="m-title">Nocional</span><span class="m-val">{usdFmt.format(result.notionalUsd)} USD</span></div>
         <div class="metric"><span class="m-title">Apalancamiento mín.</span><span class="m-val">{result.minLeverage}×</span></div>
@@ -250,8 +255,8 @@
             </ul>
             <p class="sz-line" data-testid="scale-in-avg">Media si se llenan todos: {priceFmt.format(scalePlan.avgByFill[scalePlan.avgByFill.length - 1])}</p>
             <p class="sz-line">Punto de equilibrio con comisión: {priceFmt.format(scalePlan.breakEvenByFill[scalePlan.breakEvenByFill.length - 1])}</p>
-            <p class="sz-line" data-testid="scale-in-loss-all">Si se llenan todos y salta el stop: -{usdFmt.format(scalePlan.lossIfAllFillAndStop)} USD</p>
-            <p class="sz-line" data-testid="scale-in-loss-first">Si solo se llena el primero: -{usdFmt.format(scalePlan.lossIfOnlyFirstFillsAndStop)} USD</p>
+            <p class="sz-line" data-testid="scale-in-loss-all">Si se llenan todos y salta el stop: -{formatLossUsd(scalePlan.lossIfAllFillAndStop)} USD</p>
+            <p class="sz-line" data-testid="scale-in-loss-first">Si solo se llena el primero: -{formatLossUsd(scalePlan.lossIfOnlyFirstFillsAndStop)} USD</p>
             {#each scalePlan.notes as n}<p class="sz-line">{n}</p>{/each}
             <p class="sz-note" data-testid="scale-in-honest">{scalePlan.honestNote}</p>
           {:else if scalePlan}

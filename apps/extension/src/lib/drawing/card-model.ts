@@ -16,6 +16,7 @@ import type {
   DrawingSide,
 } from './types';
 import { feeInclusiveRiskUsd, FROM_DRAWING_NOTE, type SizingLoad } from '../trade-cards/sizing-bridge';
+import { formatLossUsd, formatQuantityPlain } from '../sizing';
 
 /** Cuántas herramientas se enseñan a la vez (la última y la anterior). */
 export const DRAWING_MAX_SHOWN = 2;
@@ -191,10 +192,10 @@ export function numberLines(analysis: DrawingAnalysis): DrawingNumber[] {
       label: size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop',
       value:
         size.lossUsd > 0
-          ? `${decimals(size.lossUsd, 2)} USD`
+          ? `${formatLossUsd(size.lossUsd)} USD`
           : 'el mínimo del contrato no cabe en tu regla',
     },
-    { label: 'Cantidad', value: size.qty > 0 ? plain(size.qty) : '—' },
+    { label: 'Cantidad', value: size.qty > 0 ? formatQuantityPlain(size.qty) : '—' },
   ];
 }
 
@@ -207,8 +208,8 @@ export function drawingTicketText(analysis: DrawingAnalysis): string {
     `Objetivo: ${plain(analysis.drawing.target)}`,
     `R:R: ${plain(analysis.geometry.rr)} (neto ${plain(analysis.costs.netRr)})`,
     `Stop: ${plain(analysis.geometry.riskPct)} % del precio`,
-    `Cantidad a tu regla: ${analysis.size.qty > 0 ? plain(analysis.size.qty) : 'no cabe en el mínimo del contrato'}`,
-    `${analysis.size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop'}: ${plain(analysis.size.lossUsd)} USD`,
+    `Cantidad a tu regla: ${analysis.size.qty > 0 ? formatQuantityPlain(analysis.size.qty) : 'no cabe en el mínimo del contrato'}`,
+    `${analysis.size.lossIncludesFees ? 'Pérdida en el stop, con comisiones' : 'Pérdida en el stop'}: ${String(analysis.size.lossUsd)} USD`,
     `Funding: ${fundingText(analysis)}`,
     DRAWING_HONEST_LINE,
   ];

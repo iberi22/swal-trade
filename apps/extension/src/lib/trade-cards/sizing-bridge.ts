@@ -98,6 +98,22 @@ export interface SizingDisplayState {
 export const RISK_DISPLAY_DECIMALS = 4;
 
 /**
+ * Campos que el panel adopta al cargar un payload. El CAPITAL pasa a ser el del
+ * ticket: si el panel estaba en 1.000 y la tarjeta se calculó con 2.000, seguir
+ * con 1.000 daba otra cantidad (~1,49977 en vez de 3). Es lo mismo que hace una
+ * edición normal, y se persiste con el resto de preferencias.
+ */
+export function sizingStateFromLoad(load: SizingLoad): SizingDisplayState {
+  return {
+    direction: load.direction,
+    capital: load.capital,
+    riskPct: displayRiskPct(load),
+    entryStr: String(load.entry),
+    stopStr: String(load.stop),
+  };
+}
+
+/**
  * Riesgo (%) que escribe el panel al cargar una cifra: el payload trae el riesgo
  * EXACTO (0,32985 %) y el campo solo puede enseñar 4 decimales. La cifra exacta
  * de cantidad y pérdida sigue saliendo del payload, no de este número.
