@@ -20,6 +20,7 @@
     normalizeCapitalSource,
     pageCapitalAvailable,
     resolveCapital,
+    resolveCapitalOnLoad,
     type CapitalSource,
   } from '../../lib/sizing-capital';
   import { formatBalanceAmount } from '../../lib/page-account/page-balance';
@@ -76,6 +77,8 @@
   let cardExitFeeRate = $state(TAKER_FEE_RATE);
   /** Payload validado de la tarjeta o del dibujo (contrato `SizingLoad`). */
   let cardLoad = $state<SizingLoad | null>(null);
+  /** Aviso al pasar a capital manual porque el ticket trae el suyo. */
+  let loadCapitalNote = $state<string | null>(null);
 
   onMount(() => {
     void browser.storage.local?.get(SIZING_STORAGE_KEY).then((stored) => {
@@ -107,9 +110,20 @@
       riskPct = state.riskPct;
       entryStr = state.entryStr;
       stopStr = state.stopStr;
-      // Con «saldo de la página» el capital manda desde la página: no se pisa el
-      // valor manual con el del ticket (queda como respaldo si falta el saldo).
-      if (capitalSource !== 'page') capital = state.capital;
+      // El ticket trae su propio capital: se pasa a «manual» CON ese capital
+      // para que `exactSizingFromLoad` siga valiendo. Con «saldo de la página»
+      // el capital efectivo era el de la página (p. ej. 1.000) y la carga de
+      // 100 enseñaba otra cantidad y otra pérdida (1 y 10,09 en vez de 0,1 y
+      // 1,0095). La nota dice cómo volver al saldo de la página.
+      const capitalOnCard = resolveCapitalOnLoad(capitalSource, load);
+      capitalSource = capitalOnCard.source;
+      capital = capitalOnCard.capital;
+      loadCapitalNote = capitalOnCard.note;
+      if (capitalOnCard.note) {
+        void browser.storage.local
+          ?.set({ [CAPITAL_SOURCE_STORAGE_KEY]: capitalOnCard.source })
+          .catch(() => {});
+      }
       userEditedEntry = true;
       userEditedStop = true;
       fromCard = true;
@@ -139,6 +153,8 @@
   function chooseCapitalSource(next: CapitalSource) {
     if (next === 'page' && !pageOfferAvailable) return;
     capitalSource = next;
+    // Elegir a mano cierra el aviso de la carga: ya manda lo que pidió el usuario.
+    loadCapitalNote = null;
     void browser.storage.local?.set({ [CAPITAL_SOURCE_STORAGE_KEY]: next }).catch(() => {});
   }
 
@@ -161,12 +177,10 @@
   );
   const effectiveCapital = $derived(resolvedCapital.capital);
 
-  $effect(() => {
-    if (!pageOfferAvailable && capitalSource === 'page') {
-      capitalSource = 'manual';
-      void browser.storage.local?.set({ [CAPITAL_SOURCE_STORAGE_KEY]: 'manual' }).catch(() => {});
-    }
-  });
+  // La fuente elegida NO se cambia sola: si el saldo de la página deja de servir
+  // (otro par, otra moneda) se sigue mostrando «saldo de la página» con el
+  // respaldo manual y su nota. Cambiarla aquí borraba el aviso y ocultaba por
+  // qué las tarjetas usaban otro capital.
 
   $effect(() => {
     if (!userEditedEntry && lastPrice !== null && Number.isFinite(lastPrice)) entryStr = String(lastPrice);
@@ -271,7 +285,10 @@
           data-testid="capital-source-manual"
           onclick={() => chooseCapitalSource('manual')}
         >manual</button>
-        {#if pageOfferAvailable}
+        {#if pageOfferAvailable || capitalSource === 'page'}
+          <!-- Se sigue enseñando si el usuario la eligió: al cambiar de par el
+               saldo deja de servir, pero la fuente NO se cambia sola y el
+               botón tiene que seguir marcado junto a la nota de respaldo. -->
           <button
             type="button"
             class="src-btn"
@@ -328,6 +345,10 @@
     <p class="page-capital note" data-testid="capital-fallback-note">
       {resolvedCapital.fallbackNote} ({formatBalanceAmount(resolvedCapital.capital, resolvedCapital.asset)})
     </p>
+  {/if}
+
+  {#if loadCapitalNote}
+    <p class="page-capital note" data-testid="capital-load-note">{loadCapitalNote}</p>
   {/if}
 
   {#if exact && (cardNote || cardTranchesNote)}

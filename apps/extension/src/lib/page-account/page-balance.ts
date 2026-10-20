@@ -17,9 +17,10 @@ export const MANUAL_CAPITAL_ASSET = 'USDT';
 
 /**
  * Activos de cotizacion conocidos, del mas largo al mas corto: `BTCUSDC` tiene
- * que casar con `USDC` (4 letras) antes que con nada de 3.
+ * que casar con `USDC` (4 letras) antes que con nada de 3. `parse-balance` usa
+ * esta misma lista para aceptar un activo suelto del encabezado.
  */
-const KNOWN_QUOTES: readonly string[] = ['USDE', 'USDT', 'USDC', 'FDUSD', 'TUSD', 'USDP', 'BUSD', 'DAI'];
+export const KNOWN_QUOTES: readonly string[] = ['USDE', 'USDT', 'USDC', 'FDUSD', 'TUSD', 'USDP', 'BUSD', 'DAI'];
 
 /** Activo de cotizacion de un par (`BTCUSDC` -> `USDC`); null si no se sabe. */
 export function quoteAssetOf(symbol: unknown): string | null {

@@ -133,6 +133,7 @@ describe('readPageAccount', () => {
       unrealizedPnl: -0.4439,
       maintenanceMargin: 0.9782,
       marginMode: 'cross',
+      unusableReason: null,
     });
   });
 

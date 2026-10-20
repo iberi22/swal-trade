@@ -8,11 +8,11 @@
   import { DEFAULT_SIZING_PREFERENCES, formatLossUsd, normalizeSizingPreferences, SIZING_STORAGE_KEY } from '../../lib/sizing';
   import {
     CAPITAL_SOURCE_STORAGE_KEY,
+    formatCapitalHeadline,
     normalizeCapitalSource,
     resolveCapital,
     type CapitalSource,
   } from '../../lib/sizing-capital';
-  import { formatBalanceAmount } from '../../lib/page-account/page-balance';
   import type { PageBalance } from '../../lib/page-account/parse-balance';
   import { fetchSymbolFilters } from '../../lib/trade-cards/filters';
   import { defaultPresets } from '../../lib/trade-cards/presets';
@@ -174,8 +174,8 @@
 <section class="cards" data-testid="trade-cards" aria-label="Tarjetas de operación">
   <div class="card-head">
     <h2>Tarjetas de operación</h2>
-    <span class="head-hint">
-      capital {formatBalanceAmount(effectiveCapital, resolvedCapital.asset)}{#if resolvedCapital.source === 'page'} · saldo de la página{:else if resolvedCapital.fallbackNote} · manual{/if}
+    <span class="head-hint" data-testid="trade-cards-capital">
+      {formatCapitalHeadline(resolvedCapital)}
     </span>
   </div>
   <p class="foot">{CARDS_FOOTER}</p>

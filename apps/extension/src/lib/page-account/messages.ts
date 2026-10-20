@@ -81,6 +81,13 @@ const symbol = (value: unknown): string | null =>
 const asset = (value: unknown): string | null =>
   typeof value === 'string' && ASSET_RE.test(value) ? value : null;
 
+/** Motivo legible y acotado de una caja que no se puede usar; null si no hay. */
+const unusableReason = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text.slice(0, 160) : null;
+};
+
 /** `0 < leverage <= 125`, o null. */
 const leverage = (value: unknown): number | null => {
   const n = finite(value);
@@ -110,6 +117,7 @@ export function parsePageBalance(raw: unknown): PageBalance | null {
     unrealizedPnl: finite(raw.unrealizedPnl),
     maintenanceMargin: finiteNonNegative(raw.maintenanceMargin),
     marginMode: marginMode(raw.marginMode),
+    unusableReason: unusableReason(raw.unusableReason),
   };
   const numbers = [
     balance.marginBalance,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseHTML } from 'linkedom';
-import { parseBalance } from './parse-balance';
+import { MIXED_CURRENCY_REASON, parseBalance } from './parse-balance';
+import { balanceForSymbol } from './page-balance';
 import { findAccountBalanceRegion } from './region';
 import { readPageAccount } from './content-reader';
 import { n } from './fixtures';
@@ -44,6 +45,7 @@ describe('parseBalance (Spanish account box)', () => {
       unrealizedPnl: -0.4439,
       maintenanceMargin: 0.9782,
       marginMode: 'cross',
+      unusableReason: null,
     });
   });
 
@@ -63,6 +65,7 @@ describe('parseBalance (English account box)', () => {
       unrealizedPnl: 2.5,
       maintenanceMargin: 1.5,
       marginMode: 'cross',
+      unusableReason: null,
     });
   });
 
@@ -84,6 +87,90 @@ describe('parseBalance (English account box)', () => {
   });
 });
 
+describe('parseBalance (una sola moneda por recuadro)', () => {
+  /**
+   * Hallazgo P1: el encabezado decia USDT, el margen venia SIN sufijo y la
+   * billetera en USDC. Antes, `asset` salia del primer sufijo que apareciera
+   * (USDC) y el margen de 1.000 se ofrecia como 1.000 USDC para BTCUSDC.
+   */
+  it('rechaza el recuadro que mezcla encabezado y sufijos y dice por que', () => {
+    const mixed = n('div', undefined, [
+      n('div', undefined, [span('USDT Cross')]),
+      n('div', undefined, [span('Margin Balance'), span('1000')]),
+      n('div', undefined, [span('Wallet Balance'), span('2 USDC')]),
+    ]);
+    const balance = parseBalance(mixed);
+    expect(balance).toMatchObject({
+      asset: null,
+      marginBalance: 1000,
+      walletBalance: 2,
+      unusableReason: 'monedas distintas en el recuadro',
+    });
+    // El motivo es el mismo constante que exporta el parser.
+    expect(balance?.unusableReason).toBe(MIXED_CURRENCY_REASON);
+    // Nunca capital: sin activo no hay saldo para el par.
+    expect(balanceForSymbol(balance, 'BTCUSDC')).toBeNull();
+    expect(balanceForSymbol(balance, 'BTCUSDT')).toBeNull();
+  });
+
+  it('rechaza lo mismo con el encabezado partido en dos nodos (USDT + Cruzado)', () => {
+    const mixed = n('div', undefined, [
+      n('div', undefined, [span('USDT'), span('Cruzado')]),
+      n('div', undefined, [span('Balance de margen'), span('1000')]),
+      n('div', undefined, [span('Balance de Billetera'), span('2 USDC')]),
+    ]);
+    expect(parseBalance(mixed)).toMatchObject({
+      asset: null,
+      marginMode: 'cross',
+      marginBalance: 1000,
+      unusableReason: MIXED_CURRENCY_REASON,
+    });
+  });
+
+  it('rechaza que los sufijos se contradigan entre si aunque no haya encabezado', () => {
+    const mixed = n('div', undefined, [
+      n('div', undefined, [span('Balance de margen'), span('1000 USDC')]),
+      n('div', undefined, [span('Balance de Billetera'), span('2 USDT')]),
+    ]);
+    expect(parseBalance(mixed)).toMatchObject({
+      asset: null,
+      marginBalance: 1000,
+      walletBalance: 2,
+      unusableReason: MIXED_CURRENCY_REASON,
+    });
+  });
+
+  it('un numero sin sufijo hereda el activo cuando todo lo demas coincide', () => {
+    const coherent = n('div', undefined, [
+      n('div', undefined, [span('USDT Cross')]),
+      n('div', undefined, [span('Margin Balance'), span('1000')]),
+      n('div', undefined, [span('Wallet Balance'), span('2 USDT')]),
+    ]);
+    const balance = parseBalance(coherent);
+    expect(balance).toMatchObject({
+      asset: 'USDT',
+      marginBalance: 1000,
+      walletBalance: 2,
+      unusableReason: null,
+    });
+    expect(balanceForSymbol(balance, 'BTCUSDT')).toEqual({ asset: 'USDT', value: 1000 });
+  });
+
+  it('el encabezado partido en ingles (USDT + Cross) no toma Cross por moneda', () => {
+    const split = n('div', undefined, [
+      n('div', undefined, [span('USDT'), span('Cross')]),
+      n('div', undefined, [span('Margin Balance'), span('1000')]),
+      n('div', undefined, [span('Wallet Balance'), span('2 USDT')]),
+    ]);
+    expect(parseBalance(split)).toMatchObject({
+      asset: 'USDT',
+      marginMode: 'cross',
+      marginBalance: 1000,
+      unusableReason: null,
+    });
+  });
+});
+
 describe('parseBalance (partial and garbage)', () => {
   it('keeps missing numbers as null instead of throwing', () => {
     const onlyAvailable = n('div', undefined, [n('div', undefined, [span('Disp.'), span('70.83 USDC')])]);
@@ -95,6 +182,7 @@ describe('parseBalance (partial and garbage)', () => {
       unrealizedPnl: null,
       maintenanceMargin: null,
       marginMode: null,
+      unusableReason: null,
     });
   });
 
