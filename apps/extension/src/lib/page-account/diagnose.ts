@@ -67,10 +67,13 @@ export function describeRegions(source: RegionSource, opts: RegionOptions = {}):
     Number.isFinite(requested) && (requested as number) > 0
       ? Math.floor(requested as number)
       : DIAGNOSE_MAX_NODES;
+  // El tope viaja también a la localización: así el diagnóstico mira lo mismo
+  // que el lector y no serializa más de lo que el lector vería.
+  const regionOpts: RegionOptions = { ...opts, maxNodes };
   return {
-    balance: reportOf(findAccountBalanceRegion(source, opts), maxNodes),
-    positions: reportOf(findOpenPositionsRegion(source, opts), maxNodes),
-    history: reportOf(findHistoryRegion(source, opts), maxNodes),
+    balance: reportOf(findAccountBalanceRegion(source, regionOpts), maxNodes),
+    positions: reportOf(findOpenPositionsRegion(source, regionOpts), maxNodes),
+    history: reportOf(findHistoryRegion(source, regionOpts), maxNodes),
   };
 }
 

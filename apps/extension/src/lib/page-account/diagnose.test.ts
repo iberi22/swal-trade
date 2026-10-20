@@ -8,6 +8,7 @@ import {
   type DiagnoseRegions,
 } from './diagnose';
 import type { RegionSource } from './region';
+import { anonymizeTree, treeToCompactText } from './snapshot';
 
 const PAGE = `
 <html><body>
@@ -146,5 +147,67 @@ describe('composeDiagnoseText', () => {
     expect(composeDiagnoseText(regions, '')).toBe(
       'Regiones: caja de cuenta ✗ · posiciones ✗ · historial ✗',
     );
+  });
+});
+
+describe('diagnóstico: campos editables nunca se serializan', () => {
+  /** Historial con un textarea, un campo y un contenteditable con secretos. */
+  const WITH_FIELDS = `
+<html><body><div id="app">
+  <div id="history">
+    <div id="card-btc">
+      <div><span>BTCUSDC</span><span>Perp.</span><span>30x</span><span>Cruzado Short</span><span>Cerrado</span></div>
+      <div><span>10/18/2026 23:45:54 Abierto</span><span>|</span><span>10/19/2026 10:21:28 Cerrado</span></div>
+      <div><span>PnL realizado (USDC)</span><span>+1.01 USDC</span></div>
+      <div><span>ROI</span><span>+9.25%</span></div>
+      <div><span>Precio de entrada</span><span>82,644.1</span></div>
+      <textarea>SECRET_ALPHA</textarea>
+      <input value="SECRET_CHARLIE" />
+      <div contenteditable="true"><span>SECRET_BRAVO</span></div>
+    </div>
+  </div>
+</div></body></html>`;
+
+  it('el texto de textarea, input y contenteditable no llega al informe', () => {
+    const regions = regionsOf(WITH_FIELDS);
+    const text = Object.values(regions)
+      .map((report) => report.outline)
+      .join('\n');
+    for (const secret of ['SECRET_ALPHA', 'SECRET_BRAVO', 'SECRET_CHARLIE']) {
+      expect(text, secret).not.toContain(secret);
+    }
+    // La estructura y las etiquetas sí se conservan: el informe sigue sirviendo.
+    expect(text).toContain('textarea');
+    expect(text).toContain('PnL realizado');
+    expect(text).toContain('BTCUSDC');
+    expect(regions.history.found).toBe(true);
+  });
+
+  it('anonymizeTree tapa el subárbol de un contenteditable entero', () => {
+    const tree = {
+      tag: 'div',
+      children: [
+        { tag: 'span', text: 'BTCUSDC' },
+        { tag: 'div', attrs: { editable: true as const }, children: [{ tag: 'span', text: 'SECRET_DELTA' }] },
+        { tag: 'textarea', text: 'SECRET_ECHO' },
+        { tag: 'p', text: 'PnL realizado' },
+      ],
+    };
+    const outline = treeToCompactText(anonymizeTree(tree));
+    expect(outline).toContain('BTCUSDC');
+    expect(outline).toContain('PnL realizado');
+    expect(outline).not.toContain('SECRET_DELTA');
+    expect(outline).not.toContain('SECRET_ECHO');
+  });
+
+  it('respeta el tope de nodos que se le pide (RegionOptions.maxNodes)', () => {
+    const regions = describeRegions(page(PAGE), { maxNodes: 5 });
+    for (const report of Object.values(regions)) {
+      if (!report.found) continue;
+      expect(report.nodes).toBeLessThanOrEqual(5);
+    }
+    // Sin tope explícito sigue usando el del lector.
+    const full = describeRegions(page(PAGE));
+    expect(full.history.nodes).toBeGreaterThan(5);
   });
 });

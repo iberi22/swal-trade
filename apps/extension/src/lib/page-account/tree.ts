@@ -11,6 +11,8 @@ export interface TextNodeAttrs {
   ariaLabel?: string;
   type?: string;
   value?: string;
+  /** El elemento acepta texto del usuario (`contenteditable`). */
+  editable?: true;
 }
 
 /** Nodo serializable. Solo guarda texto DIRECTO, nunca el de sus descendientes. */
@@ -137,6 +139,10 @@ function buildNode(el: DomNodeLike, depth: number, state: BuildState, maxDepth: 
     const rawValue = typeof el.value === 'string' ? el.value : attr(el, 'value');
     if (rawValue && rawValue.trim()) attrs.value = rawValue.trim();
   }
+  // `contenteditable` no se guarda como atributo: solo se marca para que el
+  // diagnóstico sepa que su texto es del usuario y no de la página.
+  const editable = attr(el, 'contenteditable');
+  if (editable === 'true' || editable === '' || editable === 'plaintext-only') attrs.editable = true;
   if (Object.keys(attrs).length > 0) node.attrs = attrs;
 
   if (kids && depth < maxDepth) {

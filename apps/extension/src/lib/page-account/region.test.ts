@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { parseHTML } from 'linkedom';
-import { findAccountBalanceRegion, findHistoryRegion, findOpenPositionsRegion } from './region';
+import {
+  countDescendants,
+  findAccountBalanceRegion,
+  findAccountBalanceRegions,
+  findHistoryRegion,
+  findHistoryRegions,
+  findOpenPositionsRegion,
+  isGlobalRoot,
+  MAX_REGION_DESCENDANTS,
+} from './region';
 import { fingerprintOf, readPageAccount } from './content-reader';
 import { anonymizeTree, treeToCompactText } from './snapshot';
 
@@ -250,5 +259,111 @@ describe('fingerprintOf', () => {
     expect(fingerprintOf('abc')).toBe(fingerprintOf('abc'));
     expect(fingerprintOf('abc')).not.toBe(fingerprintOf('abd'));
     expect(fingerprintOf('')).toBe('1505:0');
+  });
+});
+
+describe('regiones acotadas (nunca la página entera)', () => {
+  it('el ancestro común es body: se devuelven las tarjetas, no body', () => {
+    // Dos ramas hermanas directamente bajo body: el LCA es body y serializarlo
+    // es volcar la página. Antes se devolvía body como «región».
+    const html = `<html><body>
+      <div id="branch-a">${historyCard('BTCUSDC')}</div>
+      <div id="branch-b">${historyCard('ETHUSDC')}</div>
+    </body></html>`;
+    const roots = findHistoryRegions(page(html));
+    expect(roots).toHaveLength(2);
+    for (const root of roots) {
+      const tag = String((root as { tagName?: string }).tagName ?? '').toLowerCase();
+      expect(tag).toBe('div');
+      expect(isGlobalRoot(root)).toBe(false);
+    }
+    const merged = findHistoryRegion(page(html));
+    expect(String((merged as { tagName?: string }).tagName).toLowerCase()).toBe('section');
+    // Las dos tarjetas se leen aunque vivan en ramas distintas.
+    const result = readPageAccount(page(html), { tzOffsetMinutes: 0 });
+    expect(result.history.map((row) => row.symbol).sort()).toEqual(['BTCUSDC', 'ETHUSDC']);
+  });
+
+  it('rechaza html, body, main y #__app como región', () => {
+    for (const [html, label] of [
+      ['<html><body></body></html>', 'body'],
+      ['<html><body><main><span>Hola</span></main></body></html>', 'main'],
+      ['<html><body><div id="__app"><span>Hola</span></div></body></html>', '#__app'],
+    ] as const) {
+      const doc = parseHTML(html).document as unknown as {
+        body: { tagName: string };
+        documentElement: { tagName: string };
+        getElementById: (id: string) => unknown;
+      };
+      const body = doc.body as unknown as Parameters<typeof isGlobalRoot>[0];
+      expect(isGlobalRoot(body), label).toBe(true);
+      expect(isGlobalRoot(doc.documentElement as unknown as Parameters<typeof isGlobalRoot>[0]), label).toBe(true);
+      const app = doc.getElementById('__app') as Parameters<typeof isGlobalRoot>[0] | null;
+      if (app) expect(isGlobalRoot(app), label).toBe(true);
+    }
+    expect(isGlobalRoot({ tagName: 'DIV' } as Parameters<typeof isGlobalRoot>[0])).toBe(false);
+  });
+
+  it('un contenedor con más de 8000 descendientes no es región: se bajan sus ramas', () => {
+    // El contenedor que reúne las etiquetas de saldo tiene 8.200 nodos: es la
+    // página, no la caja de cuenta. Antes se devolvía igual y el informe
+    // serializaba `main` con 21.008 nodos.
+    const noise = Array.from({ length: 8_200 }, (_, i) => `<span>n${i}</span>`).join('');
+    const html = `<html><body>
+      <div id="shell">
+        <div id="noise">${noise}</div>
+        <div id="acc-left"><span>Balance de margen</span><span>71.9636 USDC</span></div>
+        <div id="acc-right">
+          <span>Balance de Billetera</span><span>72.4075 USDC</span>
+          <span>Disp.</span><span>70.83 USDC</span>
+        </div>
+      </div>
+    </body></html>`;
+    const roots = findAccountBalanceRegions(page(html), { maxElements: 40_000 });
+    expect(roots.length).toBeGreaterThan(0);
+    expect(roots).not.toContainEqual(expect.objectContaining({ tagName: 'MAIN' }));
+    let total = 0;
+    for (const root of roots) {
+      const id = (root as { getAttribute?: (n: string) => string | null }).getAttribute?.('id');
+      expect(id).not.toBe('shell');
+      expect(isGlobalRoot(root)).toBe(false);
+      expect(countDescendants(root)).toBeLessThanOrEqual(MAX_REGION_DESCENDANTS);
+      total += countDescendants(root);
+    }
+    expect(total).toBeLessThan(MAX_REGION_DESCENDANTS);
+    // Y la unión sí trae las etiquetas: el saldo se lee.
+    const result = readPageAccount(page(html), { tzOffsetMinutes: 0, maxNodes: 4000 });
+    expect(result.balance?.marginBalance).toBe(71.9636);
+    expect(result.balance?.available).toBe(70.83);
+  });
+
+  it('con `main` como único contenedor reconocido se unen las ramas de la caja', () => {
+    const html = `<html><body><main>
+      <div><span>Balance de margen</span><span>71.9636 USDC</span></div>
+      <div><span>Balance de Billetera</span><span>72.4075 USDC</span></div>
+      <div><span>Disp.</span><span>70.83 USDC</span></div>
+    </main></body></html>`;
+    const region = findAccountBalanceRegion(page(html));
+    expect(region).not.toBeNull();
+    const tag = String((region as { tagName?: string }).tagName ?? '').toLowerCase();
+    expect(tag).not.toBe('main');
+    expect(countDescendants(region!)).toBeLessThanOrEqual(MAX_REGION_DESCENDANTS);
+    expect(readPageAccount(page(html), { tzOffsetMinutes: 0 }).balance?.marginBalance).toBe(71.9636);
+  });
+
+  it('la tabla de posiciones tampoco cuelga de body', () => {
+    const html = `<html><body>
+      <div role="row" id="header">
+        <div><span>Símbolo</span></div>
+        <div><span>Tamaño</span></div>
+        <div><span>PnL (%ROI)</span></div>
+        <div><span>Precio de entrada</span></div>
+        <div><span>Precio de marca</span></div>
+      </div>
+    </body></html>`;
+    const region = findOpenPositionsRegion(page(html));
+    expect(region).not.toBeNull();
+    expect(isGlobalRoot(region)).toBe(false);
+    expect(String((region as { tagName?: string }).tagName).toLowerCase()).not.toBe('body');
   });
 });
