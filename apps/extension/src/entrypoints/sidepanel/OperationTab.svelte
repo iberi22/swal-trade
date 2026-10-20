@@ -23,6 +23,7 @@
     withPagePosition,
   } from '../../lib/page-account/page-position';
   import type { PagePosition } from '../../lib/page-account/parse-positions';
+  import type { PageBalance } from '../../lib/page-account/parse-balance';
   import { fetchKlines } from '../../lib/market-feed';
   import { FEAR_GREED_KEY, browserCache } from '../../lib/market-pulse';
   import { positionFor, sectionsForMode, type PanelState } from '../../lib/account/panel-controller';
@@ -99,7 +100,11 @@
   // Posición leída de la página (opt-in, sin credenciales): el content script
   // deja las posiciones abiertas en storage.session y aquí se usan cuando la
   // cuenta por API no dice nada. La instantánea de API siempre manda.
-  let pageAccount = $state<{ positions: PagePosition[]; capturedAt: number } | null>(null);
+  let pageAccount = $state<{
+    positions: PagePosition[];
+    balance: PageBalance | null;
+    capturedAt: number;
+  } | null>(null);
 
   // Posición escrita a mano (sin credenciales): vive en storage.session y, si el
   // panel no sabe si hay posición, se trata como una de snapshot con fuente `manual`.
@@ -133,7 +138,9 @@
         .then((stored) => {
           if (!alive) return;
           const parsed = parseStoredPagePositions(stored?.[PAGE_ACCOUNT_SESSION_KEY]);
-          pageAccount = parsed ? { positions: parsed.positions, capturedAt: parsed.capturedAt } : null;
+          pageAccount = parsed
+            ? { positions: parsed.positions, balance: parsed.balance, capturedAt: parsed.capturedAt }
+            : null;
         })
         .catch(() => {});
     };
@@ -335,7 +342,16 @@
   />
   <RulesList results={ruleResults} />
 {:else if sections.sizing}
-  <SizingCard {lastPrice} finding={selectedFinding} compact />
+  <SizingCard
+    {lastPrice}
+    finding={selectedFinding}
+    compact
+    {symbol}
+    pageBalance={pageAccount?.balance ?? null}
+    pageBalanceCapturedAt={pageAccount?.capturedAt ?? null}
+    {nowMs}
+    readPageAccount={settings.readPageAccount}
+  />
 {/if}
 
 <DrawingCard
@@ -350,7 +366,18 @@
   canLoad={sections.sizing}
 />
 
-<TradeCards {symbol} {lastPrice} snapshot={contextSnapshot} {findingsLevels} rules={settings.rules} canLoad={sections.sizing} />
+<TradeCards
+  {symbol}
+  {lastPrice}
+  snapshot={contextSnapshot}
+  {findingsLevels}
+  rules={settings.rules}
+  canLoad={sections.sizing}
+  pageBalance={pageAccount?.balance ?? null}
+  pageBalanceCapturedAt={pageAccount?.capturedAt ?? null}
+  {nowMs}
+  readPageAccount={settings.readPageAccount}
+/>
 
 <!-- Leyenda del gráfico. Vive fuera del canvas a propósito: dentro, el lienzo
      de lightweight-charts se come los clics. -->

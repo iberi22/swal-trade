@@ -6,6 +6,7 @@
 // se desciende por cada uno con `querySelectorAll`.
 
 import { HISTORY_VALUE_KEYS, matchLabel, matchLabelPrefix, normalizeLabel, type LabelKey } from './labels';
+import { BALANCE_VALUE_KEYS } from './parse-balance';
 import type { DomNodeLike } from './tree';
 
 export interface DomElementLike extends DomNodeLike {
@@ -39,6 +40,7 @@ const HEADER_KEYS: readonly LabelKey[] = [
 ];
 
 const HISTORY_KEYS = new Set<LabelKey>(HISTORY_VALUE_KEYS);
+const BALANCE_KEYS = new Set<LabelKey>(BALANCE_VALUE_KEYS);
 
 function collapse(value: string): string {
   return value.replace(/[\s\u00a0\u202f]+/g, ' ').trim();
@@ -194,4 +196,48 @@ export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}
     current = { el: parent, info: parentInfo };
   }
   return current.el;
+}
+
+/**
+ * Región de la caja de cuenta: el contenedor MÁS PEQUEÑO que reúne al menos
+ * tres etiquetas de saldo (`Balance de margen`, `Disp.`, ...). Null si la
+ * página no muestra ninguna. Se agrega de hijos a padres (post-orden) para no
+ * confundir una caja con el documento entero.
+ */
+export function findAccountBalanceRegion(
+  source: RegionSource,
+  opts: RegionOptions = {},
+): DomNodeLike | null {
+  const elements = collectElements(source, opts.maxElements);
+  if (elements.length === 0) return null;
+  interface Info {
+    hits: number;
+    keys: Set<LabelKey>;
+    size: number;
+  }
+  const infos = new Map<DomNodeLike, Info>();
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const el = elements[i]!;
+    const key = labelOf(el);
+    const info: Info = { hits: 0, keys: new Set<LabelKey>(), size: 1 };
+    if (key && BALANCE_KEYS.has(key)) {
+      info.hits += 1;
+      info.keys.add(key);
+    }
+    for (const kid of childElements(el)) {
+      const kidInfo = infos.get(kid);
+      if (!kidInfo) continue;
+      info.hits += kidInfo.hits;
+      info.size += kidInfo.size;
+      for (const kidKey of kidInfo.keys) info.keys.add(kidKey);
+    }
+    infos.set(el, info);
+  }
+
+  let best: { el: DomNodeLike; info: Info } | null = null;
+  for (const [el, info] of infos) {
+    if (info.hits < 3 || info.keys.size < 3) continue;
+    if (!best || info.size < best.info.size) best = { el, info };
+  }
+  return best ? best.el : null;
 }

@@ -26,7 +26,13 @@ export type LabelKey =
   | 'long'
   | 'short'
   | 'duration'
-  | 'perp';
+  | 'perp'
+  // Caja de cuenta (arriba del formulario de orden y en el panel de la cuenta).
+  | 'marginBalance'
+  | 'walletBalance'
+  | 'unrealizedPnl'
+  | 'maintenanceMargin'
+  | 'available';
 
 /** Etiquetas por idioma, en la forma en que aparecen en pantalla. */
 export const LABELS: Record<LabelLang, Record<LabelKey, string[]>> = {
@@ -53,6 +59,11 @@ export const LABELS: Record<LabelLang, Record<LabelKey, string[]>> = {
     short: ['Short', 'Corto'],
     duration: ['Duración'],
     perp: ['Perp.', 'Perp'],
+    marginBalance: ['Balance de margen'],
+    walletBalance: ['Balance de Billetera', 'Balance de cartera'],
+    unrealizedPnl: ['PNL no realizado', 'PnL no realizado', 'PNL no realizada'],
+    maintenanceMargin: ['Margen de mantenimiento'],
+    available: ['Disp.', 'Disponible'],
   },
   en: {
     symbol: ['Symbol'],
@@ -77,6 +88,11 @@ export const LABELS: Record<LabelLang, Record<LabelKey, string[]>> = {
     short: ['Short'],
     duration: ['Duration'],
     perp: ['Perp.', 'Perp'],
+    marginBalance: ['Margin Balance'],
+    walletBalance: ['Wallet Balance'],
+    unrealizedPnl: ['Unrealized PNL', 'Unrealized PnL', 'Unrealised PNL'],
+    maintenanceMargin: ['Maintenance Margin'],
+    available: ['Avbl', 'Available'],
   },
 };
 

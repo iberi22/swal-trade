@@ -126,3 +126,33 @@ describe('HISTORY_VALUE_KEYS', () => {
     ]);
   });
 });
+
+describe('account box labels', () => {
+  it('matches the Spanish account box labels', () => {
+    expect(matchLabel('Balance de margen')?.key).toBe('marginBalance');
+    expect(matchLabel('Balance de Billetera')?.key).toBe('walletBalance');
+    expect(matchLabel('Balance de cartera')?.key).toBe('walletBalance');
+    expect(matchLabel('PNL no realizado')?.key).toBe('unrealizedPnl');
+    expect(matchLabel('PnL no realizado')?.key).toBe('unrealizedPnl');
+    expect(matchLabel('Margen de mantenimiento')?.key).toBe('maintenanceMargin');
+    expect(matchLabel('Disp.')?.key).toBe('available');
+    expect(matchLabel('Disponible')?.key).toBe('available');
+  });
+
+  it('matches the English account box labels', () => {
+    expect(matchLabel('Margin Balance')?.key).toBe('marginBalance');
+    expect(matchLabel('Wallet Balance')?.key).toBe('walletBalance');
+    expect(matchLabel('Unrealized PNL')?.key).toBe('unrealizedPnl');
+    expect(matchLabel('Maintenance Margin')?.key).toBe('maintenanceMargin');
+    expect(matchLabel('Avbl')?.key).toBe('available');
+    expect(matchLabel('Available')?.key).toBe('available');
+  });
+
+  it('does not confuse realized with unrealized PnL', () => {
+    // La caja pone 'PNL no realizado'; el historial, 'PnL realizado'.
+    expect(matchLabel('PnL realizado (USDC)')?.key).toBe('realizedPnl');
+    expect(matchLabel('PNL no realizado')?.key).toBe('unrealizedPnl');
+    expect(matchLabelPrefix('PNL no realizado-0.4439 USDC')?.key).toBe('unrealizedPnl');
+  });
+});
+

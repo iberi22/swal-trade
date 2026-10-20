@@ -5,6 +5,7 @@
 
 import type { HistoryMetrics } from './metrics';
 import type { ClosedPosition } from './parse-history';
+import type { PageBalance } from './parse-balance';
 import type { PagePosition } from './parse-positions';
 import { historyMetrics } from './metrics';
 import type { MarginType, PositionSide } from '../account/types';
@@ -36,6 +37,8 @@ const KEY_RE = /^[0-9A-Za-z|._:-]{1,120}$/;
 const MAX_TZ_MINUTES = 14 * 60;
 
 export interface PageAccountUpdate {
+  /** Caja de cuenta (saldo), o null si la página no la muestra. */
+  balance: PageBalance | null;
   positions: PagePosition[];
   history: ClosedPosition[];
   tzOffsetMinutes: number;
@@ -43,6 +46,7 @@ export interface PageAccountUpdate {
 }
 
 export interface PageAccountResult {
+  balance: PageBalance | null;
   positions: PagePosition[];
   capturedAt: number | null;
   history: ClosedPosition[];
@@ -89,6 +93,33 @@ function parseSizeQuote(value: unknown): PagePosition['sizeQuote'] {
   const currency = asset(value.asset);
   if (amount === null || currency === null) return null;
   return { value: amount, asset: currency };
+}
+
+/**
+ * Caja de cuenta tal como la manda el content script. Se valida campo a campo:
+ * cualquier número que no sea finito o un modo de margen inventado se descarta,
+ * y si no queda ni un dato útil el saldo es null. Nunca lanza.
+ */
+export function parsePageBalance(raw: unknown): PageBalance | null {
+  if (!isRecord(raw)) return null;
+  const balance: PageBalance = {
+    asset: asset(raw.asset),
+    marginBalance: finiteNonNegative(raw.marginBalance),
+    walletBalance: finiteNonNegative(raw.walletBalance),
+    available: finiteNonNegative(raw.available),
+    unrealizedPnl: finite(raw.unrealizedPnl),
+    maintenanceMargin: finiteNonNegative(raw.maintenanceMargin),
+    marginMode: marginMode(raw.marginMode),
+  };
+  const numbers = [
+    balance.marginBalance,
+    balance.walletBalance,
+    balance.available,
+    balance.unrealizedPnl,
+    balance.maintenanceMargin,
+  ];
+  if (numbers.every((value) => value === null)) return null;
+  return balance;
 }
 
 /** Una posición abierta de la tabla. Null si no pasa el filtro. */
@@ -191,10 +222,12 @@ export function parsePageAccountUpdate(raw: unknown): PageAccountUpdate | null {
     (row) => row.key,
   ).slice(0, PAGE_HISTORY_MAX);
 
-  return { positions, history, tzOffsetMinutes, capturedAt };
+  return { balance: parsePageBalance(raw.balance), positions, history, tzOffsetMinutes, capturedAt };
 }
 
 export interface StoredPagePositions {
+  /** Caja de cuenta guardada junto a las posiciones, con el mismo `capturedAt`. */
+  balance: PageBalance | null;
   positions: PagePosition[];
   capturedAt: number;
   tzOffsetMinutes: number;
@@ -214,7 +247,12 @@ export function parseStoredPagePositions(raw: unknown): StoredPagePositions | nu
       .filter((row): row is PagePosition => row !== null),
     (row) => `${row.symbol}|${row.side ?? ''}|${row.sizeBase ?? row.sizeQuote?.value ?? ''}`,
   );
-  return { positions, capturedAt, tzOffsetMinutes };
+  return {
+    balance: parsePageBalance(raw.balance),
+    positions,
+    capturedAt,
+    tzOffsetMinutes,
+  };
 }
 
 /** Respuesta del background a `page-account:get`. */
@@ -231,6 +269,7 @@ export function parsePageAccountResult(raw: unknown): PageAccountResult | null {
     .filter((row): row is ClosedPosition => row !== null);
   const captured = finitePositive(raw.capturedAt);
   return {
+    balance: parsePageBalance(raw.balance),
     positions,
     capturedAt: captured,
     history,
