@@ -4,17 +4,21 @@ import { DEFAULT_HOTKEY_MAP, type HotkeyMap } from './settings';
 import {
   comboFromEvent,
   comboProblem,
+  composedTarget,
   conflictingSlots,
   editCombo,
   focusDrawingCard,
   formatCombo,
   hotkeyAction,
+  hotkeyEffect,
   hotkeyTimeframe,
   isEditableTarget,
   isReservedCombo,
   matchHotkey,
   normalizeCombo,
   parseCombo,
+  resolveSymbolPair,
+  resolveSymbolPool,
   showTimeframeToast,
   stepSymbol,
   symbolPool,
@@ -280,8 +284,7 @@ describe('hotkeyAction: despacho de cada acción', () => {
   });
 });
 
-describe('symbolPool / stepSymbol', () => {
-  it('usa los símbolos del usuario y, si no hay, los del escáner', () => {
+describe('symbolPool / stepSymbol', () => {  it('usa los símbolos del usuario y, si no hay, los del escáner', () => {
     expect(symbolPool(['btc', 'ETH'], [{ symbol: 'SOLUSDT' }])).toEqual(['BTC', 'ETH', 'SOLUSDT']);
     expect(symbolPool([], [{ symbol: 'SOLUSDT' }, { symbol: 'MARKET', symbols: ['XRPUSDT', 'SOLUSDT'] }])).toEqual([
       'SOLUSDT',
@@ -299,6 +302,103 @@ describe('symbolPool / stepSymbol', () => {
     expect(stepSymbol('XRPUSDT', pool, 1)).toBe('BTCUSDT');
     expect(stepSymbol('XRPUSDT', pool, -1)).toBe('SOLUSDT');
     expect(stepSymbol('BTCUSDT', [], 1)).toBeNull();
+  });
+});
+
+describe('resolveSymbolPair / resolveSymbolPool', () => {
+  it('completa una entrada suelta con la cotizada del par mostrado', () => {
+    expect(resolveSymbolPair('ETH', 'BTCUSDC')).toBe('ETHUSDC');
+    expect(resolveSymbolPair('eth', 'BTCUSDT')).toBe('ETHUSDT');
+    expect(resolveSymbolPair('$SOL', 'BTCUSDT')).toBe('SOLUSDT');
+    // Ya es un par: se respeta, aunque el panel muestre otra cotizada.
+    expect(resolveSymbolPair('ETHUSDC', 'BTCUSDT')).toBe('ETHUSDC');
+    expect(resolveSymbolPair('ETHBUSD', 'BTCUSDC')).toBe('ETHBUSD');
+    // Sin cotizada reconocible en el símbolo actual, USDT.
+    expect(resolveSymbolPair('ETH', 'BTCUSD')).toBe('ETHUSDT');
+    expect(resolveSymbolPair('', 'BTCUSDT')).toBeNull();
+    expect(resolveSymbolPair('   ', 'BTCUSDT')).toBeNull();
+    expect(resolveSymbolPair('ETH/USDT', 'BTCUSDT')).toBeNull();
+  });
+
+  it('el pool sale como pares completos, sin duplicados', () => {
+    expect(resolveSymbolPool(['BTC', 'ETH'], 'BTCUSDC')).toEqual(['BTCUSDC', 'ETHUSDC']);
+    expect(resolveSymbolPool(['BTC', 'btc', 'ETHUSDT'], 'BTCUSDT')).toEqual(['BTCUSDT', 'ETHUSDT']);
+    expect(resolveSymbolPool([], 'BTCUSDT')).toEqual([]);
+  });
+
+  it('avanzar por el pool resuelto nunca pide un símbolo suelto', () => {
+    const pool = resolveSymbolPool(['BTC', 'ETH'], 'BTCUSDC');
+    expect(stepSymbol('BTCUSDC', pool, 1)).toBe('ETHUSDC');
+    expect(stepSymbol('ETHUSDC', pool, 1)).toBe('BTCUSDC');
+    expect(stepSymbol('BTCUSDC', pool, -1)).toBe('ETHUSDC');
+  });
+});
+
+describe('hotkeyEffect: del atajo al efecto en el panel', () => {
+  const state = { symbol: 'BTCUSDC', paintOnChart: false };
+
+  it('mapea cada acción del panel', () => {
+    expect(hotkeyEffect({ type: 'timeframe', timeframe: '4h' }, state)).toEqual({ kind: 'timeframe', timeframe: '4h' });
+    expect(hotkeyEffect({ type: 'paint' }, state)).toEqual({ kind: 'paint', paintOnChart: true });
+    expect(hotkeyEffect({ type: 'paint' }, { ...state, paintOnChart: true })).toEqual({
+      kind: 'paint',
+      paintOnChart: false,
+    });
+    expect(hotkeyEffect({ type: 'drawing' }, state)).toEqual({ kind: 'drawing' });
+    expect(hotkeyEffect(null, state)).toBeNull();
+  });
+
+  it('el símbolo sale como par completo y da la vuelta al pool', () => {
+    const pool = ['BTC', 'ETH'];
+    expect(hotkeyEffect({ type: 'symbol', direction: 1 }, state, pool)).toEqual({
+      kind: 'symbol',
+      symbol: 'ETHUSDC',
+    });
+    expect(hotkeyEffect({ type: 'symbol', direction: -1 }, state, pool)).toEqual({
+      kind: 'symbol',
+      symbol: 'ETHUSDC',
+    });
+    // Sin pool no hay a dónde ir: no se inventa un símbolo.
+    expect(hotkeyEffect({ type: 'symbol', direction: 1 }, state, [])).toBeNull();
+  });
+});
+
+describe('focus dentro de un Shadow DOM', () => {
+  /** Evento con el host como target y el campo real dentro del shadow tree. */
+  const shadowEvent = (host: unknown, path: unknown[]) => ({
+    key: '',
+    code: 'KeyL',
+    altKey: true,
+    shiftKey: true,
+    target: host,
+    composedPath: () => path,
+  });
+
+  it('no dispara el atajo si el campo con foco está en el camino compuesto', () => {
+    const input = { tagName: 'INPUT' };
+    const host = { tagName: 'DIV' };
+    const event = shadowEvent(host, [input, host, { tagName: 'BODY' }]);
+    expect(composedTarget(event)).toBe(input);
+    expect(hotkeyAction(event, DEFAULT_HOTKEY_MAP, true)).toBeNull();
+    expect(matchHotkey(event, DEFAULT_HOTKEY_MAP, true)).toBeNull();
+  });
+
+  it('encuentra el campo bajando por shadowRoot.activeElement', () => {
+    const host = { tagName: 'DIV', shadowRoot: { activeElement: { tagName: 'TEXTAREA' } } };
+    const event = { key: '', code: 'KeyL', altKey: true, shiftKey: true, target: host };
+    expect(isEditableTarget(host)).toBe(true);
+    expect(hotkeyAction(event, DEFAULT_HOTKEY_MAP, true)).toBeNull();
+    // Con el foco del documento en el host (document.activeElement === host).
+    const docHost = { ...host, ownerDocument: { activeElement: host } };
+    expect(
+      hotkeyAction({ key: '', code: 'KeyL', altKey: true, shiftKey: true, target: docHost }, DEFAULT_HOTKEY_MAP, true),
+    ).toBeNull();
+  });
+
+  it('un shadow tree sin campo editable no bloquea el atajo', () => {
+    const host = { tagName: 'DIV', shadowRoot: { activeElement: { tagName: 'SPAN' } }, ownerDocument: {} };
+    expect(hotkeyAction(shadowEvent(host, [host]), DEFAULT_HOTKEY_MAP, true)).toEqual({ type: 'paint' });
+    expect(isEditableTarget(host)).toBe(false);
   });
 });
 

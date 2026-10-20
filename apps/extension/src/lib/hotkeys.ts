@@ -46,9 +46,17 @@ export interface KeyboardEventLike {
   metaKey?: boolean;
   shiftKey?: boolean;
   target?: unknown;
+  /**
+   * Event path. Inside a Shadow DOM the `target` is the host, not the field
+   * holding focus: this is how the real element is found.
+   */
+  composedPath?: () => ArrayLike<unknown>;
 }
 
 export type ComboProblem = 'invalid' | 'reserved' | 'duplicate';
+
+/** Quote assets the panel resolves a bare base against. */
+export const PAIR_QUOTES = ['USDT', 'USDC', 'BUSD'] as const;
 
 /** Motivo por el que un combo no se puede usar en ese hueco, o null si vale. */
 export function comboProblem(
@@ -85,22 +93,70 @@ export function conflictingSlots(bindings: HotkeyMap): HotkeySlot[] {
   return out;
 }
 
-export function isEditableTarget(target: unknown): boolean {
+/**
+ * First element of the event's composed path, or `target` when there is no
+ * `composedPath` (synthetic events, old browsers). Inside a Shadow DOM the
+ * `target` is the host: looking at the host let hotkeys fire while typing in a
+ * field of the shadow tree.
+ */
+export function composedTarget(event: KeyboardEventLike | null | undefined): unknown {
+  if (!event || typeof event !== 'object') return null;
+  try {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : null;
+    if (path && typeof path.length === 'number') {
+      for (let i = 0; i < path.length; i += 1) {
+        const item = path[i];
+        if (item && typeof item === 'object') return item;
+      }
+    }
+  } catch {
+    // `composedPath` no disponible: se usa el target.
+  }
+  return event.target;
+}
+
+/** `document.activeElement`, descending through `shadowRoot` to the real field. */
+function activeElementDeep(start: unknown): unknown {
+  if (!start || typeof start !== 'object') return null;
+  const seen = new Set<unknown>();
+  let active: unknown = start;
+  try {
+    while (active && typeof active === 'object' && !seen.has(active)) {
+      seen.add(active);
+      const inner = (active as { shadowRoot?: { activeElement?: unknown } | null }).shadowRoot?.activeElement;
+      if (!inner) break;
+      active = inner;
+    }
+  } catch {
+    return active;
+  }
+  return active;
+}
+
+/** One concrete element is editable (field, select or contenteditable). */
+function isEditableElement(target: unknown): boolean {
   if (!target || typeof target !== 'object') return false;
   const el = target as {
-    tagName?: unknown; isContentEditable?: unknown; getAttribute?: (attr: string) => string | null;
-    closest?: (s: string) => unknown; ownerDocument?: { activeElement?: { tagName?: unknown; isContentEditable?: unknown } };
+    tagName?: unknown;
+    isContentEditable?: unknown;
+    getAttribute?: (attr: string) => string | null;
+    closest?: (s: string) => unknown;
   };
   const tag = typeof el.tagName === 'string' ? el.tagName.toUpperCase() : '';
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || el.isContentEditable === true) return true;
   if (typeof el.getAttribute === 'function' && ['true', ''].includes(el.getAttribute('contenteditable') ?? 'x')) return true;
-  try { if (el.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return true; } catch {}
-  const active = el.ownerDocument?.activeElement;
-  if (active && active !== el) {
-    const atag = typeof active.tagName === 'string' ? active.tagName.toUpperCase() : '';
-    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(atag) || active.isContentEditable === true) return true;
-  }
+  try {
+    if (el.closest?.('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return true;
+  } catch {}
   return false;
+}
+
+export function isEditableTarget(target: unknown): boolean {
+  if (!target || typeof target !== 'object') return false;
+  if (isEditableElement(target)) return true;
+  const docActive = (target as { ownerDocument?: { activeElement?: unknown } }).ownerDocument?.activeElement;
+  const active = activeElementDeep(docActive ?? target);
+  return active != null && active !== target && isEditableElement(active);
 }
 
 /**
@@ -128,18 +184,10 @@ export function comboFromEvent(event: KeyboardEventLike): Combo | null {
   return hasCommandModifier(combo) ? combo : null;
 }
 
-/**
- * Atajo que dispara el evento, o null. Exige los modificadores EXACTOS: si
- * `Alt+Shift+1` está asignado, `Ctrl+Alt+Shift+1` no dispara nada. Nunca
- * dispara mientras se escribe en un campo.
- */
-export function matchHotkey(
-  event: KeyboardEventLike,
-  map: HotkeyMap,
-  enabled: boolean,
-): HotkeyBinding | null {
+/** Hueco y enlace que dispara el evento, o null. */
+function hitFor(event: KeyboardEventLike, map: HotkeyMap, enabled: boolean): { slot: HotkeySlot; binding: HotkeyBinding } | null {
   if (!enabled) return null;
-  if (isEditableTarget(event.target)) return null;
+  if (isEditableTarget(composedTarget(event))) return null;
   const combo = comboFromEvent(event);
   if (!combo) return null;
   const wanted = formatCombo(combo).toLowerCase();
@@ -147,9 +195,22 @@ export function matchHotkey(
     const binding = map[slot];
     if (!binding || typeof binding.combo !== 'string' || !binding.combo) continue;
     if (binding.combo.toLowerCase() !== wanted) continue;
-    return binding;
+    return { slot, binding };
   }
   return null;
+}
+
+/**
+ * Atajo que dispara el evento, o null. Exige los modificadores EXACTOS: si
+ * `Alt+Shift+1` está asignado, `Ctrl+Alt+Shift+1` no dispara nada. Nunca
+ * dispara mientras se escribe en un campo, tampoco dentro de un Shadow DOM.
+ */
+export function matchHotkey(
+  event: KeyboardEventLike,
+  map: HotkeyMap,
+  enabled: boolean,
+): HotkeyBinding | null {
+  return hitFor(event, map, enabled)?.binding ?? null;
 }
 
 /** Acción que dispara un hueco. Los huecos de temporalidad se guardan aparte. */
@@ -192,18 +253,8 @@ export function hotkeyAction(
   map: HotkeyMap,
   enabled: boolean,
 ): HotkeyAction | null {
-  if (!enabled) return null;
-  if (isEditableTarget(event.target)) return null;
-  const combo = comboFromEvent(event);
-  if (!combo) return null;
-  const wanted = formatCombo(combo).toLowerCase();
-  for (const slot of HOTKEY_SLOTS) {
-    const binding = map[slot];
-    if (!binding || typeof binding.combo !== 'string' || !binding.combo) continue;
-    if (binding.combo.toLowerCase() !== wanted) continue;
-    return actionOfSlot(slot, binding);
-  }
-  return null;
+  const hit = hitFor(event, map, enabled);
+  return hit ? actionOfSlot(hit.slot, hit.binding) : null;
 }
 
 /** Resultado de editar un atajo: el combo canónico a guardar y su problema. */
@@ -281,6 +332,79 @@ export function stepSymbol(
   if (index === -1) return direction === 1 ? pool[0]! : pool[pool.length - 1]!;
   const next = (index + direction + pool.length) % pool.length;
   return pool[next]!;
+}
+
+/**
+ * Suffix of a full pair, or null. Only the quotes the panel can trade on
+ * Binance Futures: anything else is a base that needs a quote appended.
+ */
+export function quoteAssetOf(symbol: string): string | null {
+  const upper = typeof symbol === 'string' ? symbol.trim().toUpperCase() : '';
+  return PAIR_QUOTES.find((quote) => upper.endsWith(quote) && upper.length > quote.length) ?? null;
+}
+
+/**
+ * Full pair for one entry of the user's list. An entry that already is a pair
+ * (`ETHUSDC`) is kept; a bare base (`ETH`) takes the quote of the pair the
+ * panel is showing (`BTCUSDC` -> `ETHUSDC`), falling back to USDT. Without
+ * this, stepping over `BTC, ETH` requested klines for the base itself.
+ */
+export function resolveSymbolPair(entry: string, currentSymbol: string): string | null {
+  if (typeof entry !== 'string') return null;
+  const trimmed = entry.trim().toUpperCase().replace(/^\$/, '');
+  if (!trimmed) return null;
+  const base = trimmed.includes(':') ? (trimmed.split(':').pop() ?? '') : trimmed;
+  if (!base) return null;
+  const pair = quoteAssetOf(base) ? base : `${base}${quoteAssetOf(currentSymbol) ?? 'USDT'}`;
+  return /^[A-Z0-9]{4,30}$/.test(pair) ? pair : null;
+}
+
+/**
+ * Pool of full pairs in the received order, resolved against the pair the
+ * panel is showing and without duplicates. Entries that cannot become a pair
+ * are dropped.
+ */
+export function resolveSymbolPool(pool: readonly string[], currentSymbol: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of pool) {
+    const pair = resolveSymbolPair(entry, currentSymbol);
+    if (!pair || seen.has(pair)) continue;
+    seen.add(pair);
+    out.push(pair);
+  }
+  return out;
+}
+
+/** Panel state the hotkeys need to decide their effect. */
+export interface HotkeyPanelState {
+  symbol: string;
+  paintOnChart: boolean;
+}
+
+/** What a hotkey asks from the panel. Pure: the panel applies it. */
+export type HotkeyEffect =
+  | { kind: 'timeframe'; timeframe: Timeframe }
+  | { kind: 'symbol'; symbol: string }
+  | { kind: 'paint'; paintOnChart: boolean }
+  | { kind: 'drawing' };
+
+/**
+ * Effect of an action on the panel, or null when there is nothing to do. Pool
+ * symbols are resolved to full pairs before stepping, so the panel always
+ * requests klines for a real pair.
+ */
+export function hotkeyEffect(
+  action: HotkeyAction | null | undefined,
+  state: HotkeyPanelState,
+  pool: readonly string[] = [],
+): HotkeyEffect | null {
+  if (!action) return null;
+  if (action.type === 'timeframe') return { kind: 'timeframe', timeframe: action.timeframe };
+  if (action.type === 'paint') return { kind: 'paint', paintOnChart: !state.paintOnChart };
+  if (action.type === 'drawing') return { kind: 'drawing' };
+  const next = stepSymbol(state.symbol, resolveSymbolPool(pool, state.symbol), action.direction);
+  return next ? { kind: 'symbol', symbol: next } : null;
 }
 
 /** Selector de la tarjeta «Tu dibujo» en el panel. */
