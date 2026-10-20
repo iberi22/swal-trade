@@ -6,6 +6,14 @@
   import { formatPanelPrice } from '../../lib/price-format';
   import type { RulesSettings } from '../../lib/settings';
   import { DEFAULT_SIZING_PREFERENCES, formatLossUsd, normalizeSizingPreferences, SIZING_STORAGE_KEY } from '../../lib/sizing';
+  import {
+    CAPITAL_SOURCE_STORAGE_KEY,
+    formatCapitalHeadline,
+    normalizeCapitalSource,
+    resolveCapital,
+    type CapitalSource,
+  } from '../../lib/sizing-capital';
+  import type { PageBalance } from '../../lib/page-account/parse-balance';
   import { fetchSymbolFilters } from '../../lib/trade-cards/filters';
   import { defaultPresets } from '../../lib/trade-cards/presets';
   import { publishSizingLoad, sizingLoadFromTicket } from '../../lib/trade-cards/sizing-bridge';
@@ -22,6 +30,10 @@
     findingsLevels,
     rules,
     canLoad = true,
+    pageBalance = null,
+    pageBalanceCapturedAt = null,
+    nowMs = 0,
+    readPageAccount = false,
   }: {
     symbol: string;
     lastPrice: number | null;
@@ -29,10 +41,16 @@
     findingsLevels: FindingLevelInput[];
     rules: RulesSettings;
     canLoad?: boolean;
+    /** Caja de cuenta leída de la página (opt-in `readPageAccount`). */
+    pageBalance?: PageBalance | null;
+    pageBalanceCapturedAt?: number | null;
+    nowMs?: number;
+    readPageAccount?: boolean;
   } = $props();
 
   let presets = $state<TradeCardPreset[]>(defaultPresets());
   let capital = $state(DEFAULT_SIZING_PREFERENCES.capital);
+  let capitalSource = $state<CapitalSource>('manual');
   let filters = $state<SymbolFilters | null>(null);
   let expandedId = $state<string | null>(null);
   let sideChoice = $state<Record<string, TradeSide>>({});
@@ -45,9 +63,18 @@
     const apply = (raw: unknown) => {
       capital = normalizeSizingPreferences(raw).capital;
     };
+    const applySource = (raw: unknown) => {
+      capitalSource = normalizeCapitalSource(raw);
+    };
     void browser.storage?.local?.get(SIZING_STORAGE_KEY).then((s) => apply(s?.[SIZING_STORAGE_KEY])).catch(() => {});
+    void browser.storage?.local
+      ?.get(CAPITAL_SOURCE_STORAGE_KEY)
+      .then((s) => applySource(s?.[CAPITAL_SOURCE_STORAGE_KEY]))
+      .catch(() => {});
     const onChanged = (changes: Record<string, { newValue?: unknown }>, areaName: string) => {
-      if (areaName === 'local' && changes[SIZING_STORAGE_KEY]) apply(changes[SIZING_STORAGE_KEY]?.newValue);
+      if (areaName !== 'local') return;
+      if (changes[SIZING_STORAGE_KEY]) apply(changes[SIZING_STORAGE_KEY]?.newValue);
+      if (changes[CAPITAL_SOURCE_STORAGE_KEY]) applySource(changes[CAPITAL_SOURCE_STORAGE_KEY]?.newValue);
     };
     browser.storage?.onChanged?.addListener(onChanged as never);
     return () => browser.storage?.onChanged?.removeListener(onChanged as never);
@@ -66,6 +93,21 @@
   });
 
   const candles = $derived(snapshot?.candles ?? null);
+  // Mismo capital que el dimensionador: si el usuario eligió «saldo de la
+  // página», las tarjetas se calculan con ese saldo y con SU activo (USDC para
+  // BTCUSDC), no con un USDT fijo.
+  const resolvedCapital = $derived(
+    resolveCapital({
+      source: capitalSource,
+      manualCapital: capital,
+      symbol,
+      balance: pageBalance,
+      capturedAtMs: pageBalanceCapturedAt,
+      nowMs,
+      readPageAccount,
+    }),
+  );
+  const effectiveCapital = $derived(resolvedCapital.capital);
   const levels = $derived(
     lastPrice !== null && lastPrice > 0
       ? buildLevels({ price: lastPrice, d1: candles?.d1, w1: candles?.w1, h1: candles?.h1, h4: candles?.h4, findingsLevels })
@@ -77,7 +119,7 @@
       preset,
       sides:
         lastPrice !== null && lastPrice > 0
-          ? buildTicketSides({ preset, symbol, price: lastPrice, levels, atrs, capital, rules, filters })
+          ? buildTicketSides({ preset, symbol, price: lastPrice, levels, atrs, capital: effectiveCapital, rules, filters })
           : [],
     })),
   );
@@ -132,7 +174,9 @@
 <section class="cards" data-testid="trade-cards" aria-label="Tarjetas de operación">
   <div class="card-head">
     <h2>Tarjetas de operación</h2>
-    <span class="head-hint">capital {usd.format(capital)} USDT</span>
+    <span class="head-hint" data-testid="trade-cards-capital">
+      {formatCapitalHeadline(resolvedCapital)}
+    </span>
   </div>
   <p class="foot">{CARDS_FOOTER}</p>
 

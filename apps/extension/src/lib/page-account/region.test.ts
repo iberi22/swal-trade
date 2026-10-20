@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseHTML } from 'linkedom';
-import { findHistoryRegion, findOpenPositionsRegion } from './region';
+import { findAccountBalanceRegion, findHistoryRegion, findOpenPositionsRegion } from './region';
 import { fingerprintOf, readPageAccount } from './content-reader';
 import { anonymizeTree, treeToCompactText } from './snapshot';
 
@@ -8,6 +8,14 @@ const PAGE = `
 <html><body>
   <div id="app">
     <div id="tabs"><div role="tab">Posiciones</div><div role="tab">Historial de posiciones</div></div>
+    <div id="account">
+      <div><span>USDC Cruzado</span></div>
+      <div><span>Margen de mantenimiento</span><span>0.9782 USDC</span></div>
+      <div><span>Balance de margen</span><span>71.9636 USDC</span></div>
+      <div><span>Balance de Billetera</span><span>72.4075 USDC</span></div>
+      <div><span>PNL no realizado</span><span>-0.4439 USDC</span></div>
+      <div><span>Disp.</span><span>70.83 USDC</span></div>
+    </div>
     <div id="positions-table">
       <div id="header" role="row">
         <div><span>Símbolo</span></div>
@@ -94,6 +102,18 @@ describe('findHistoryRegion', () => {
   });
 });
 
+describe('findAccountBalanceRegion', () => {
+  it('localiza la caja de cuenta por sus etiquetas', () => {
+    const region = findAccountBalanceRegion(page());
+    const id = (region as { getAttribute?: (n: string) => string | null }).getAttribute?.('id');
+    expect(id).toBe('account');
+  });
+
+  it('sin etiquetas de saldo no inventa una región', () => {
+    expect(findAccountBalanceRegion(page('<html><body><div><span>Hola</span></div></body></html>'))).toBeNull();
+  });
+});
+
 describe('readPageAccount', () => {
   it('lee posiciones e historial de la página', () => {
     const result = readPageAccount(page(), { tzOffsetMinutes: 0 });
@@ -101,6 +121,33 @@ describe('readPageAccount', () => {
     expect(result.history.map((r) => r.symbol)).toEqual(['BTCUSDC', 'HBARUSDC']);
     expect(result.fingerprint).toMatch(/^[0-9a-f]+:\d+$/);
     expect(result.tree).not.toBeNull();
+  });
+
+  it('lee la caja de cuenta de la página', () => {
+    const result = readPageAccount(page(), { tzOffsetMinutes: 0 });
+    expect(result.balance).toEqual({
+      asset: 'USDC',
+      marginBalance: 71.9636,
+      walletBalance: 72.4075,
+      available: 70.83,
+      unrealizedPnl: -0.4439,
+      maintenanceMargin: 0.9782,
+      marginMode: 'cross',
+      unusableReason: null,
+    });
+  });
+
+  it('la huella cambia si solo cambia el saldo', () => {
+    const a = readPageAccount(page(), { tzOffsetMinutes: 0 });
+    const b = readPageAccount(page(PAGE.replace('71.9636 USDC', '12.5 USDC')), { tzOffsetMinutes: 0 });
+    expect(b.balance?.marginBalance).toBe(12.5);
+    expect(a.positions).toEqual(b.positions);
+    expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+
+  it('una página sin caja de cuenta devuelve saldo null', () => {
+    const html = PAGE.replace(/<div id="account">[\s\S]*?<\/div>\s*<div id="positions-table">/, '<div id="positions-table">');
+    expect(readPageAccount(page(html), { tzOffsetMinutes: 0 }).balance).toBeNull();
   });
 
   it('la huella no cambia si los datos no cambian', () => {

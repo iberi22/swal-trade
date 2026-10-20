@@ -11,10 +11,12 @@ import {
   parsePageAccountMessage,
   parsePageAccountResult,
   parsePageAccountUpdate,
+  parsePageBalance,
   parsePagePosition,
   parseStoredPagePositions,
 } from './messages';
 import type { ClosedPosition } from './parse-history';
+import type { PageBalance } from './parse-balance';
 import type { PagePosition } from './parse-positions';
 
 const position = (over: Partial<PagePosition> = {}): PagePosition => ({
@@ -55,6 +57,18 @@ const row = (over: Partial<ClosedPosition> = {}): ClosedPosition => ({
   ...over,
 });
 
+const balance = (over: Partial<PageBalance> = {}): PageBalance => ({
+  asset: 'USDC',
+  marginBalance: 71.9636,
+  walletBalance: 72.4075,
+  available: 70.83,
+  unrealizedPnl: -0.4439,
+  maintenanceMargin: 0.9782,
+  marginMode: 'cross',
+  unusableReason: null,
+  ...over,
+});
+
 describe('parsePagePosition', () => {
   it('acepta una fila completa', () => {
     expect(parsePagePosition(position())).toEqual(position());
@@ -76,6 +90,60 @@ describe('parsePagePosition', () => {
     expect(p?.side).toBeNull();
     expect(p?.marginMode).toBeNull();
     expect(p?.contract).toBeNull();
+  });
+});
+
+describe('parsePageBalance', () => {
+  it('acepta una caja completa', () => {
+    expect(parsePageBalance(balance())).toEqual(balance());
+  });
+
+  it('acepta el PNL no realizado en negativo', () => {
+    const parsed = parsePageBalance(balance());
+    expect(parsed?.unrealizedPnl).toBe(-0.4439);
+  });
+
+  it('convierte la basura en null y no lanza', () => {
+    expect(parsePageBalance(null)).toBeNull();
+    expect(parsePageBalance('USDC')).toBeNull();
+    expect(parsePageBalance([])).toBeNull();
+    expect(parsePageBalance({})).toBeNull();
+    // Etiquetas sin ningun numero: no hay caja que enseñar.
+    expect(
+      parsePageBalance({
+        asset: null,
+        marginBalance: null,
+        walletBalance: null,
+        available: null,
+        unrealizedPnl: null,
+        maintenanceMargin: null,
+        marginMode: null,
+      }),
+    ).toBeNull();
+  });
+
+  it('descarta numeros no finitos y saldos negativos', () => {
+    const parsed = parsePageBalance({
+      ...balance(),
+      marginBalance: Number.NaN,
+      walletBalance: -1,
+      available: Infinity,
+      maintenanceMargin: -0.5,
+    });
+    expect(parsed?.marginBalance).toBeNull();
+    expect(parsed?.walletBalance).toBeNull();
+    expect(parsed?.available).toBeNull();
+    expect(parsed?.maintenanceMargin).toBeNull();
+    // El PNL sigue siendo valido (puede ser negativo): la caja no se pierde.
+    expect(parsed?.unrealizedPnl).toBe(-0.4439);
+  });
+
+  it('rechaza activos y modos de margen inventados', () => {
+    const parsed = parsePageBalance({ ...balance(), asset: 'usdc', marginMode: 'weird' });
+    expect(parsed?.asset).toBeNull();
+    expect(parsed?.marginMode).toBeNull();
+    expect(parsed?.marginBalance).toBe(71.9636);
+    expect(parsePageBalance({ ...balance(), marginMode: 'isolated' })?.marginMode).toBe('isolated');
   });
 });
 
@@ -153,6 +221,15 @@ describe('parsePageAccountUpdate', () => {
     const { tzOffsetMinutes: _ignored, ...raw } = update();
     expect(parsePageAccountUpdate(raw)?.tzOffsetMinutes).toBe(0);
   });
+
+  it('conserva la caja de cuenta del aviso', () => {
+    const parsed = parsePageAccountUpdate(update({ balance: balance() }));
+    expect(parsed?.balance).toEqual(balance());
+    // Sin caja en el aviso, el saldo es null y el resto sigue igual.
+    const withoutBalance = parsePageAccountUpdate(update());
+    expect(withoutBalance?.balance).toBeNull();
+    expect(withoutBalance?.positions).toHaveLength(1);
+  });
 });
 
 describe('parseStoredPagePositions', () => {
@@ -170,6 +247,21 @@ describe('parseStoredPagePositions', () => {
     expect(parseStoredPagePositions(null)).toBeNull();
     expect(parseStoredPagePositions({ positions: [] })).toBeNull();
     expect(parseStoredPagePositions({ positions: [], capturedAt: 0 })).toBeNull();
+  });
+
+  it('conserva la caja guardada junto a las posiciones', () => {
+    const stored = parseStoredPagePositions({
+      balance: balance(),
+      positions: [position()],
+      capturedAt: 1_700_000_000_000,
+      tzOffsetMinutes: -300,
+    });
+    expect(stored?.balance).toEqual(balance());
+    // Sin caja guardada, el saldo es null (no rompe la lectura anterior).
+    expect(
+      parseStoredPagePositions({ positions: [], capturedAt: 1_700_000_000_000, tzOffsetMinutes: 0 })
+        ?.balance,
+    ).toBeNull();
   });
 });
 
@@ -190,6 +282,21 @@ describe('parsePageAccountResult', () => {
   it('rechaza respuestas incompletas', () => {
     expect(parsePageAccountResult(null)).toBeNull();
     expect(parsePageAccountResult({ type: 'page-account:result' })).toBeNull();
+  });
+
+  it('conserva la caja de cuenta en la respuesta', () => {
+    const parsed = parsePageAccountResult({
+      type: 'page-account:result',
+      balance: balance(),
+      positions: [position()],
+      capturedAt: 1_700_000_000_000,
+      history: [row()],
+    });
+    expect(parsed?.balance).toEqual(balance());
+    expect(
+      parsePageAccountResult({ type: 'page-account:result', positions: [], capturedAt: null, history: [] })
+        ?.balance,
+    ).toBeNull();
   });
 });
 

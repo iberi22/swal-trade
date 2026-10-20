@@ -11,6 +11,7 @@ import {
   formatQuantity,
   formatQuantityPlain,
   planScaleIn,
+  invalidationPriceForSide,
   invalidationPriceFromFinding,
   normalizeSizingPreferences,
   TAKER_FEE_RATE,
@@ -146,6 +147,77 @@ describe('position sizing math (pure)', () => {
     };
     expect(invalidationPriceFromFinding(finding)).toBe(94.5);
     expect(invalidationPriceFromFinding(null)).toBe(null);
+  });
+
+  it('only pre-fills a stop on the correct side of the entry', () => {
+    // Bug real: en un largo a 81.513,1 el primer `invalidate` del hallazgo era
+    // 87.370 (invalidacion de corto) y el panel lo ponia como stop.
+    const finding: Finding = {
+      id: 'f1', kind: 'double_bottom', label: 'Doble suelo', explanation: 'Soporte', from: 1000, to: 2000,
+      levels: [
+        { price: 82000, role: 'neck', invalidate: 87370 },
+        { price: 80000, role: 'support', invalidate: 79000 },
+      ],
+      direction: 'bullish', strength: 0.8, evidence: {},
+    };
+    expect(invalidationPriceForSide(finding, 'long', 81513.1)).toBe(79000);
+    // En corto el 87.370 si sirve, pero el 79.000 no.
+    expect(invalidationPriceForSide(finding, 'short', 81513.1)).toBe(87370);
+  });
+
+  it('uses the first invalidation that fits the side, skipping the wrong ones', () => {
+    const finding: Finding = {
+      id: 'f1', kind: 'double_bottom', label: 'Doble suelo', explanation: 'Soporte', from: 1000, to: 2000,
+      levels: [
+        { price: 82000, role: 'neck', invalidate: 87370 },
+        { price: 80000, role: 'support', invalidate: 80000 },
+      ],
+      direction: 'bullish', strength: 0.8, evidence: {},
+    };
+    // 80.000 esta por debajo de 81.513,1: vale para largo.
+    expect(invalidationPriceForSide(finding, 'long', 81513.1)).toBe(80000);
+  });
+
+  it('returns null when no invalidation fits the side', () => {
+    const onlyWrongSide: Finding = {
+      id: 'f1', kind: 'double_top', label: 'Doble techo', explanation: 'Resistencia', from: 1000, to: 2000,
+      levels: [{ price: 82000, role: 'neck', invalidate: 87370 }],
+      direction: 'bullish', strength: 0.8, evidence: {},
+    };
+    // Largo: 87.370 queda por encima de la entrada, no es un stop valido.
+    expect(invalidationPriceForSide(onlyWrongSide, 'long', 81513.1)).toBeNull();
+    // Corto: 87.370 si lo es.
+    expect(invalidationPriceForSide(onlyWrongSide, 'short', 81513.1)).toBe(87370);
+  });
+
+  it('returns null without a known entry or a valid finding', () => {
+    const finding: Finding = {
+      id: 'f1', kind: 'double_bottom', label: 'Doble suelo', explanation: 'Soporte', from: 1000, to: 2000,
+      levels: [{ price: 80000, role: 'support', invalidate: 79000 }],
+      direction: 'bullish', strength: 0.8, evidence: {},
+    };
+    expect(invalidationPriceForSide(finding, 'long', null)).toBeNull();
+    expect(invalidationPriceForSide(finding, 'long', undefined)).toBeNull();
+    expect(invalidationPriceForSide(finding, 'long', Number.NaN)).toBeNull();
+    expect(invalidationPriceForSide(finding, 'long', 0)).toBeNull();
+    expect(invalidationPriceForSide(null, 'long', 100)).toBeNull();
+    // Niveles sueltos (numeros) no traen invalidacion: no se rellena nada.
+    const bare: Finding = { ...finding, levels: [80000] };
+    expect(invalidationPriceForSide(bare, 'long', 81513.1)).toBeNull();
+  });
+
+  it('ignores invalidations that are not positive finite numbers', () => {
+    const finding: Finding = {
+      id: 'f1', kind: 'double_bottom', label: 'Doble suelo', explanation: 'Soporte', from: 1000, to: 2000,
+      levels: [
+        { price: 82000, role: 'neck', invalidate: Number.NaN },
+        { price: 81000, role: 'neck', invalidate: -5 },
+        { price: 80500, role: 'neck', invalidate: 0 },
+        { price: 80000, role: 'support', invalidate: 79000 },
+      ],
+      direction: 'bullish', strength: 0.8, evidence: {},
+    };
+    expect(invalidationPriceForSide(finding, 'long', 81513.1)).toBe(79000);
   });
 
   it('normalizes sizing preferences properly', () => {

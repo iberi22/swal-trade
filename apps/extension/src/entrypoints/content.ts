@@ -14,6 +14,8 @@ import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand
 import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
+import { binanceAdapter } from '../lib/exchanges/binance';
+import { supportedAdapterForUrl } from '../lib/exchanges/registry';
 import {
   PAGE_ACCOUNT_DIAGNOSE_REQUEST,
   PAGE_ACCOUNT_DIAGNOSE_RESULT,
@@ -281,9 +283,17 @@ export default defineContentScript({
 
     const pageTzOffset = () => new Date().getTimezoneOffset();
 
+    // El adaptador sale del registro: hoy solo Binance está soportado. Cualquier
+    // otra página cae al adaptador de Binance, como antes (no hay lectores de
+    // otros exchanges y no se inventan datos).
+    const pageAdapter = () => supportedAdapterForUrl(location.href) ?? binanceAdapter;
+
     const readPageNow = () => {
       lastPageParseMs = Date.now();
-      const result = readPageAccount(document, { tzOffsetMinutes: pageTzOffset() });
+      const result = readPageAccount(document, {
+        tzOffsetMinutes: pageTzOffset(),
+        adapter: pageAdapter(),
+      });
       if (result.tree) lastPageTree = result.tree;
       return result;
     };
@@ -299,6 +309,7 @@ export default defineContentScript({
         void browser.runtime
           .sendMessage({
             type: PAGE_ACCOUNT_UPDATE,
+            balance: result.balance,
             positions: result.positions,
             history: result.history,
             tzOffsetMinutes: pageTzOffset(),

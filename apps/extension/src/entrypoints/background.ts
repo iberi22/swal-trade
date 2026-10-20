@@ -159,6 +159,7 @@ async function storePageAccountUpdate(update: PageAccountUpdate): Promise<void> 
   try {
     await browser.storage.session?.set({
       [PAGE_ACCOUNT_SESSION_KEY]: {
+        balance: update.balance,
         positions: update.positions,
         capturedAt: update.capturedAt,
         tzOffsetMinutes: update.tzOffsetMinutes,
@@ -181,6 +182,7 @@ async function readPageAccountState(): Promise<Record<string, unknown>> {
   const history = await pageHistory.load();
   return {
     type: PAGE_ACCOUNT_RESULT,
+    balance: session?.balance ?? null,
     positions: session?.positions ?? [],
     capturedAt: session?.capturedAt ?? null,
     tzOffsetMinutes: session?.tzOffsetMinutes ?? 0,

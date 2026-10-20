@@ -483,3 +483,30 @@ export function planScaleIn(input: ScaleInInput): ScaleInResult {
     honestNote: SCALE_IN_HONEST_NOTE,
   };
 }
+
+/**
+ * Nivel de invalidación que SIRVE como stop para ese lado: en largos tiene que
+ * quedar por DEBAJO de la entrada y en cortos por ENCIMA. Recorre los niveles en
+ * orden y devuelve el primero válido; null si ninguno lo es o si no se conoce
+ * la entrada (sin entrada no se puede saber el lado: mejor no rellenar que
+ * rellenar un stop del lado equivocado).
+ *
+ * Bug real que corrige: en un largo a 81.513,1 el primer `invalidate` del
+ * hallazgo era 87.370 (una invalidación de corto) y el panel lo ponía como
+ * stop, que quedaba por encima de la entrada.
+ */
+export function invalidationPriceForSide(
+  finding: Finding | null | undefined,
+  direction: SizingDirection,
+  entry: number | null | undefined,
+): number | null {
+  if (!finding || !Array.isArray(finding.levels)) return null;
+  if (typeof entry !== 'number' || !Number.isFinite(entry) || entry <= 0) return null;
+  for (const level of finding.levels) {
+    if (typeof level !== 'object' || level === null) continue;
+    const invalidate = level.invalidate;
+    if (typeof invalidate !== 'number' || !Number.isFinite(invalidate) || invalidate <= 0) continue;
+    if (direction === 'long' ? invalidate < entry : invalidate > entry) return invalidate;
+  }
+  return null;
+}
