@@ -18,7 +18,7 @@
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import { atrOf } from '../../lib/account/analysis-view';
   import { createPanelController, type PanelState, type PanelTab } from '../../lib/account/panel-controller';
-  import { hotkeyAction, focusDrawingCard, stepSymbol, symbolPool, type HotkeyAction } from '../../lib/hotkeys';
+  import { hotkeyAction, hotkeyEffect, focusDrawingCard, symbolPool, type HotkeyAction, type HotkeyEffect, type HotkeyPanelState } from '../../lib/hotkeys';
   import { parseStoredEvents, EVENTS_KEY } from '../../lib/scanner/scanner-runner';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
@@ -212,8 +212,74 @@
     });
   });
 
+  // Hotkeys: the same combo works on the page and in the panel. The page
+  // forwards its four actions (symbol, paint, drawing) as runtime messages;
+  // both paths end in this handler.
+  async function scannerSymbols(): Promise<string[]> {
+    try {
+      const stored = await browser.storage.local?.get(EVENTS_KEY);
+      return symbolPool([], parseStoredEvents(stored?.[EVENTS_KEY]));
+    } catch {
+      return [];
+    }
+  }
+
+  function applyHotkeyEffect(effect: HotkeyEffect | null) {
+    if (!effect) return;
+    if (effect.kind === 'timeframe') {
+      timeframe = effect.timeframe;
+      inferred = false;
+      return;
+    }
+    if (effect.kind === 'paint') {
+      applySettings({ ...settings, paintOnChart: effect.paintOnChart });
+      return;
+    }
+    if (effect.kind === 'drawing') {
+      const focus = () => {
+        focusDrawingCard(document);
+      };
+      // The card lives in Operación: switch first and wait for the DOM, so
+      // the focus lands on a visible card instead of a hidden one.
+      if (untrack(() => activeTab) !== 'operacion') {
+        activeTab = 'operacion';
+        void tick().then(focus);
+        return;
+      }
+      focus();
+      return;
+    }
+    // Symbol: already resolved to a full pair.
+    symbol = effect.symbol;
+    draft = effect.symbol;
+  }
+
+  function panelHotkeyState(): HotkeyPanelState {
+    return { symbol: untrack(() => symbol), paintOnChart: untrack(() => settings.paintOnChart) };
+  }
+
+  function runHotkeyAction(action: HotkeyAction) {
+    if (action.type !== 'symbol') {
+      applyHotkeyEffect(hotkeyEffect(action, panelHotkeyState()));
+      return;
+    }
+    // The user's list wins; empty, the scanner's symbols.
+    const own = untrack(() => settings.symbols);
+    if (own.length > 0) {
+      applyHotkeyEffect(hotkeyEffect(action, panelHotkeyState(), own));
+      return;
+    }
+    const state = panelHotkeyState();
+    void scannerSymbols().then((pool) => applyHotkeyEffect(hotkeyEffect(action, state, pool)));
+  }
+
   onMount(() => {
     const onMessage = (message: unknown) => {
+      const parsed = parseRuntimeMessage(message);
+      if (parsed?.type === 'swal:hotkey-action') {
+        runHotkeyAction(parsed.action);
+        return;
+      }
       applyContext(message);
     };
     browser.runtime.onMessage.addListener(onMessage);
@@ -255,57 +321,8 @@
     window.addEventListener('pagehide', onPageHide);
     const onVisibility = () => controller.visibilityChanged();
     document.addEventListener('visibilitychange', onVisibility);
-    // Atajos del panel: la misma combinación que en la página. La temporalidad
-    // cambia el análisis; el resto son acciones (símbolo, pintado, «Tu dibujo»).
-    // Nunca se disparan mientras se escribe en un campo.
-    const scannerPool = async (): Promise<string[]> => {
-      try {
-        const stored = await browser.storage.local?.get(EVENTS_KEY);
-        return symbolPool([], parseStoredEvents(stored?.[EVENTS_KEY]));
-      } catch {
-        return [];
-      }
-    };
-
-    const runHotkeyAction = (action: HotkeyAction) => {
-      if (action.type === 'timeframe') {
-        timeframe = action.timeframe;
-        inferred = false;
-        return;
-      }
-      if (action.type === 'paint') {
-        applySettings({ ...settings, paintOnChart: !untrack(() => settings.paintOnChart) });
-        return;
-      }
-      if (action.type === 'drawing') {
-        const focus = () => {
-          focusDrawingCard(document);
-        };
-        // La tarjeta vive en «Operación»: si el panel está en otra pestaña,
-        // primero se vuelve a ella y se espera al DOM.
-        if (untrack(() => activeTab) !== 'operacion') {
-          activeTab = 'operacion';
-          void tick().then(focus);
-          return;
-        }
-        focus();
-        return;
-      }
-      // Símbolo: manda la lista del usuario; vacía, la del escáner.
-      const move = (pool: string[]) => {
-        const next = stepSymbol(untrack(() => symbol), pool, action.direction);
-        if (!next) return;
-        symbol = next;
-        draft = next;
-      };
-      const own = untrack(() => settings.symbols);
-      if (own.length > 0) {
-        move(symbolPool(own));
-        return;
-      }
-      void scannerPool().then(move);
-    };
-
+    // Panel hotkeys: the same combo as on the page, sharing the same handler.
+    // They never fire while typing in a field.
     const onHotkey = (event: KeyboardEvent) => {
       const action = hotkeyAction(event, settings.hotkeyMap, settings.hotkeysEnabled && settingsLoaded);
       if (!action) return;
@@ -537,7 +554,7 @@
     </details>
   </section>
 
-  <Tabs onTabChange={(tab) => (activeTab = tab)}>
+  <Tabs bind:selected={activeTab}>
     {#snippet operacion()}
       <OperationTab
         {symbol}

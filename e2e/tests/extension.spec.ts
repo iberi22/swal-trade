@@ -736,6 +736,64 @@ test('panel tabs exist, keyboard navigation and sections collapsed by default', 
   }
 });
 
+test('hotkey «Tu dibujo» from Ajustes selects Operación and focuses the drawing card', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('drawing-card')).toBeHidden();
+
+    // Alt+Shift+D es el atajo por defecto de «Tu dibujo». Antes de este
+    // arreglo el panel cambiaba su pestaña activa pero la barra seguía
+    // mostrando Ajustes, así que la tarjeta nunca se veía.
+    await page.keyboard.press('Alt+Shift+D');
+
+    await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Ajustes' })).toHaveAttribute('aria-selected', 'false');
+    const card = page.getByTestId('drawing-card');
+    await expect(card).toBeVisible();
+    await expect(card).toBeFocused();
+    // La pestaña elegida por el atajo también se guarda.
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Operación' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('drawing-card')).toBeVisible();
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('symbol hotkey resolves bare list entries to full pairs before loading klines', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');
+
+    // Lista blanca de bases sueltas, como la escribe el usuario.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: { storage: { local: { set(v: unknown, cb: () => void): void } } };
+          }).chrome;
+          api.storage.local.set({ settings: { symbols: ['BTC', 'ETH'] } }, resolve);
+        }),
+    );
+    await page.reload();
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('BTCUSDT');
+
+    // Sin resolver la entrada a ETHUSDT el panel pedía velas de «ETH», que no
+    // es un par: el análisis se quedaba en error.
+    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await expect(page.locator('input[aria-label="Símbolo"]')).toHaveValue('ETHUSDT');
+    await expect(page.locator('.header p.hint')).not.toContainText('Fuera de tu lista de símbolos');
+    await expect(page.getByRole('region', { name: 'Hallazgos' })).toBeVisible();
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 test('hovering a level label opens the glossary tooltip and «Ver en Aprender» jumps to the tab', async () => {
   const panel = await openSidePanel();
   try {

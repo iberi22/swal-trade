@@ -10,6 +10,7 @@
     ajustes,
     escaner,
     mistrades,
+    selected = $bindable<PanelTab>('operacion'),
     onTabChange,
   }: {
     operacion: Snippet;
@@ -17,14 +18,26 @@
     ajustes: Snippet;
     escaner: Snippet;
     mistrades: Snippet;
+    /** Pestaña activa. El panel es el dueño: aquí solo se refleja y se edita. */
+    selected?: PanelTab;
     /** Avisa de la pestaña elegida (incluida la restaurada al abrir). */
     onTabChange?: (tab: PanelTab) => void;
   } = $props();
 
-  let selected = $state<PanelTab>('operacion');
+  // Una sola fuente de verdad: si el panel cambia la pestaña (atajo «Tu
+  // dibujo»), esta barra la pinta porque `selected` es el mismo estado. Antes
+  // cada uno guardaba su copia y la tarjeta seguía oculta.
   let touched = false;
+  let initialized = false;
   $effect(() => {
-    onTabChange?.(selected);
+    const tab = selected;
+    onTabChange?.(tab);
+    if (!initialized) {
+      initialized = true;
+      return;
+    }
+    touched = true;
+    void browser.storage.session?.set({ [PANEL_TAB_KEY]: tab }).catch(() => {});
   });
   const buttons: Record<string, HTMLButtonElement | undefined> = {};
 
@@ -36,7 +49,8 @@
     void browser.storage.session
       ?.get(PANEL_TAB_KEY)
       .then((stored) => {
-        // Si el usuario ya tocó una pestaña mientras tanto, manda su elección.
+        // Si ya se eligió una pestaña (con el ratón o con un atajo) mientras
+        // tanto, manda esa elección.
         if (!touched) selected = parsePanelTab(stored?.[PANEL_TAB_KEY]);
       })
       .catch(() => {});
@@ -45,7 +59,6 @@
   function select(tab: PanelTab, focus = false) {
     touched = true;
     selected = tab;
-    void browser.storage.session?.set({ [PANEL_TAB_KEY]: tab }).catch(() => {});
     if (focus) buttons[tab]?.focus();
   }
 
