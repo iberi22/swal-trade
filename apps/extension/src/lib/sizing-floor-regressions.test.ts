@@ -43,4 +43,19 @@ describe('regresiones del juez (ronda 5): nunca hacia arriba y nunca colgado', (
       expect(r.ticket.lossAtStopPctOfCapital).toBeLessThan(1);
     }
   });
+  it('la tolerancia de ruido no sube un céntimo con importes enormes', () => {
+    expect(floorLossUsdForDisplay(9999999999999.99)).toBeLessThanOrEqual(9999999999999.99);
+    expect(floorLossUsdForDisplay(0.009 * 1100)).toBe(9.9);
+  });
+
+  it('el aviso de regla usa la pérdida exacta: 1,0005 % con regla del 1 % avisa', () => {
+    const preset = DEFAULT_PRESETS.find((p) => p.size.basis === 'risk' && p.entry.kind === 'market') ?? DEFAULT_PRESETS[0]!;
+    const r = buildTicket({
+      preset: { ...preset, size: { basis: 'risk', pct: 1.0005 }, stop: { kind: 'pct', pct: 1 } },
+      symbol: 'BTCUSDT', price: 100, levels: [], atrs: { atr1h: 1 }, capital: 1000,
+      rules: { ...DEFAULT_SETTINGS.rules, maxRiskPct: 1 },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.ticket.warnings.some((w) => w.code === 'risk_above_rule')).toBe(true);
+  });
 });

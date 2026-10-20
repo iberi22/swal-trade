@@ -74,7 +74,10 @@ export function floorToDecimals(value: number, decimals = QUANTITY_DISPLAY_DECIM
     n -= 1;
   } else {
     const next = (n + 1) / factor;
-    if (next <= value || next - value <= value * Number.EPSILON * 8) n += 1;
+    // Tolerancia doble: relativa (unos ulps) Y absoluta (una millonésima de la
+    // última cifra). Con importes enormes la relativa sola llegaba a un céntimo.
+    const gap = next - value;
+    if (next <= value || (gap <= value * Number.EPSILON * 8 && gap <= 1e-6 / factor)) n += 1;
   }
   return n / factor;
 }
