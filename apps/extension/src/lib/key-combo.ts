@@ -68,19 +68,68 @@ export const RESERVED_COMBOS: readonly string[] = [
   'Ctrl+Shift+M', 'Ctrl+Shift+P', 'Ctrl+Shift+Delete', 'Ctrl+Equal', 'Ctrl+Minus',
   'Ctrl+0', 'Ctrl+1', 'Ctrl+2', 'Ctrl+3', 'Ctrl+4', 'Ctrl+5', 'Ctrl+6', 'Ctrl+7',
   'Ctrl+8', 'Ctrl+9', 'Alt+ArrowLeft', 'Alt+ArrowRight', 'Alt+Tab', 'Alt+F4', 'Alt+Space',
+  // Atajos comunes que el navegador se queda para sí (marcador, historial,
+  // descargas, código fuente, barra de marcadores...). Asignarlos solo serviría
+  // para perder la función del navegador.
+  'Ctrl+D', 'Ctrl+H', 'Ctrl+J', 'Ctrl+U', 'Ctrl+Shift+B', 'Ctrl+Shift+D',
+  'Alt+Home', 'Alt+D', 'Alt+E', 'Alt+F',
   'Meta+Space', 'Meta+Tab', 'Meta+ArrowLeft', 'Meta+ArrowRight', 'Meta+ArrowUp', 'Meta+ArrowDown',
   'Meta+L', 'Meta+Q', 'Meta+W', 'F5', 'F11', 'F12',
 ];
 
 const RESERVED = new Set(RESERVED_COMBOS.map((combo) => normalizeComboUnchecked(combo)));
 
-/** Nombre canónico de una tecla, o null si no se reconoce. */
+/**
+ * Nombre canónico de una tecla, o null si no se reconoce.
+ *
+ * Acepta tanto `KeyboardEvent.key` (`'a'`, `'ArrowLeft'`, `' '`) como
+ * `KeyboardEvent.code` (`'KeyA'`, `'Digit1'`, ...): el atajo se guarda siempre
+ * igual, se pulse donde se pulse. La diferencia entre los dos se resuelve en
+ * `keyFromCode` / `labelFromKey`.
+ */
 export function keyLabel(token: string): string | null {
   const lower = token.toLowerCase();
   if (NAMED_KEYS.has(lower)) return NAMED_LABEL[lower]!;
   if (/^[a-z]$/.test(lower)) return lower.toUpperCase();
   if (/^[0-9]$/.test(lower)) return lower;
+  // `KeyboardEvent.key` para la barra espaciadora es un espacio literal.
+  if (token === ' ') return NAMED_LABEL.space!;
   return null;
+}
+
+const CODE_KEYS: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (let digit = 0; digit <= 9; digit++) {
+    map[`Digit${digit}`] = String(digit);
+    map[`Numpad${digit}`] = String(digit);
+  }
+  for (let code = 65; code <= 90; code++) {
+    const letter = String.fromCharCode(code);
+    map[`Key${letter}`] = letter;
+  }
+  for (const name of [
+    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp',
+    'PageDown', 'Space', 'Enter', 'Tab', 'Escape', 'Insert', 'Delete', 'Backspace',
+    'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Semicolon',
+    'Quote', 'Comma', 'Period', 'Slash', 'Backquote',
+  ]) {
+    map[name] = name;
+  }
+  return map;
+})();
+
+/**
+ * Tecla canónica a partir de `KeyboardEvent.code` (posición física de la tecla).
+ *
+ * Es la fuente de verdad al escuchar: `event.key` depende de la distribución y
+ * de los modificadores (Alt+Shift+1 produce `'!'` en un teclado español o
+ * inglés, y `'1'` en uno AZERTY), así que un atajo guardado como `Alt+Shift+1`
+ * no dispararía nunca si se comparara con `event.key`. Con `code` la tecla es
+ * la misma en todas las distribuciones.
+ */
+export function keyFromCode(code: unknown): string | null {
+  if (typeof code !== 'string' || !code) return null;
+  return CODE_KEYS[code] ?? null;
 }
 
 function toCombo(parts: string[]): Combo | null {

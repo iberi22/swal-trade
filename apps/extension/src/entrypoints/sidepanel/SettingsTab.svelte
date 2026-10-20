@@ -4,10 +4,12 @@
   import {
     normalizeSymbolList,
     HOTKEY_SLOTS,
+    HOTKEY_SLOT_LABELS,
     DEFAULT_HOTKEY_MAP,
+    isTimeframeSlot,
     type ExtensionSettings,
   } from '../../lib/settings';
-  import { comboProblem } from '../../lib/hotkeys';
+  import { editCombo } from '../../lib/hotkeys';
   import { NEWS_REFRESH_MS } from '../../lib/news';
   import { TIMEFRAMES, type Timeframe } from '../../lib/types';
   import { LOCALES, isLocaleCode } from '../../lib/i18n/locales';
@@ -46,21 +48,23 @@
 
   function setCombo(input: HTMLInputElement, slot: (typeof HOTKEY_SLOTS)[number]) {
     hotkeyNote = null;
-    const problem = comboProblem(input.value, settings.hotkeyMap, slot);
-    if (problem) {
+    const edit = editCombo(input.value, settings.hotkeyMap, slot);
+    if (edit.problem) {
       // El campo vuelve al atajo que sigue guardado: nada de estados a medias.
       input.value = settings.hotkeyMap[slot].combo;
+      const typed = input.value.trim();
       hotkeyNote =
-        problem === 'reserved'
+        edit.problem === 'reserved'
           ? `${input.value || 'Esa combinación'} no se puede usar: ${input.value} es un atajo del navegador.`
-          : problem === 'duplicate'
+          : edit.problem === 'duplicate'
             ? 'Esa combinación ya la usa otro atajo.'
-            : 'Atajo no válido: usa Alt, Ctrl o Meta con Mayús y una tecla (por ejemplo Alt+Shift+7).';
+            : `Atajo no válido: "${typed || input.value}" no es una combinación. Usa Alt, Ctrl o Meta con una tecla (por ejemplo Alt+Shift+7).`;
       return;
     }
-    const combo = input.value.trim();
-    input.value = combo;
-    applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [slot]: { ...settings.hotkeyMap[slot], combo } } });
+    // Se guarda SIEMPRE la forma canónica: `shift+alt+a` se escribe como
+    // `Alt+Shift+A`, que es lo que compara el escucha del teclado.
+    input.value = edit.combo;
+    applySettings({ ...settings, hotkeyMap: { ...settings.hotkeyMap, [slot]: { ...settings.hotkeyMap[slot], combo: edit.combo } } });
   }
 
   function setSlotTimeframe(slot: (typeof HOTKEY_SLOTS)[number], raw: string) {
@@ -218,7 +222,7 @@
       pueden editar; F1 a F12 no se aceptan porque son teclas del navegador y del sistema.
     </p>
     <div class="field" data-testid="hotkey-editor">
-      <span>Atajos y temporalidad</span>
+      <span>Atajos</span>
       <div class="hotkeys-grid">
         {#each HOTKEY_SLOTS as slot (slot)}
           <div class="hotkey-row">
@@ -229,20 +233,26 @@
               aria-label={`Atajo ${slot}`}
               disabled={!settingsLoaded || !settings.hotkeysEnabled}
               value={settings.hotkeyMap[slot]?.combo ?? ''}
-              placeholder="Alt+Shift+{slot}"
+              placeholder={isTimeframeSlot(slot) ? `Alt+Shift+${slot}` : 'Alt+Shift+…'}
               spellcheck="false"
               autocomplete="off"
               onchange={(e) => setCombo(e.currentTarget as HTMLInputElement, slot)}
             />
-            <select
-              aria-label={`Temporalidad del atajo ${slot}`}
-              disabled={!settingsLoaded || !settings.hotkeysEnabled}
-              value={settings.hotkeyMap[slot]?.timeframe ?? ''}
-              onchange={(e) => setSlotTimeframe(slot, (e.currentTarget as HTMLSelectElement).value)}
-            >
-              <option value="">—</option>
-              {#each TIMEFRAMES as tf (tf)}<option value={tf}>{tf}</option>{/each}
-            </select>
+            {#if isTimeframeSlot(slot)}
+              <select
+                aria-label={`Temporalidad del atajo ${slot}`}
+                disabled={!settingsLoaded || !settings.hotkeysEnabled}
+                value={settings.hotkeyMap[slot]?.timeframe ?? ''}
+                onchange={(e) => setSlotTimeframe(slot, (e.currentTarget as HTMLSelectElement).value)}
+              >
+                <option value="">—</option>
+                {#each TIMEFRAMES as tf (tf)}<option value={tf}>{tf}</option>{/each}
+              </select>
+            {:else}
+              <span class="hotkey-action" data-testid={`hotkey-action-${slot}`}>
+                {HOTKEY_SLOT_LABELS[slot]}
+              </span>
+            {/if}
           </div>
         {/each}
       </div>

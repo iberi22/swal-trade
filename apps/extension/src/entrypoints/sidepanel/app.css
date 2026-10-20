@@ -444,6 +444,7 @@ select {
 .hotkey-row select { flex: 1; padding: 0.2rem 0.35rem; font-size: 0.75rem; }
 .hotkey-combo { width: 7.5rem; padding: 0.2rem 0.35rem; font-family: var(--font-mono); font-size: 0.72rem; }
 .hotkey-combo:invalid { border-color: hsl(var(--destructive, 0 70% 45%)); }
+.hotkey-action { flex: 1; font-size: 0.72rem; color: hsl(var(--muted-foreground)); }
 .claude-bridge-section {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, tick } from 'svelte';
   import { browser } from 'wxt/browser';
   import { analyze, usingAnalysisStub, volumeFlowOf } from '../../lib/analysis';
   import { mountChart, mountFlowPane, type ChartHandle, type FlowPaneHandle } from '../../lib/chart';
@@ -18,7 +18,8 @@
   import { fetchKlines, openKlineStream, type LiveSocket } from '../../lib/market-feed';
   import { atrOf } from '../../lib/account/analysis-view';
   import { createPanelController, type PanelState, type PanelTab } from '../../lib/account/panel-controller';
-  import { hotkeyTimeframe } from '../../lib/hotkeys';
+  import { hotkeyAction, focusDrawingCard, stepSymbol, symbolPool, type HotkeyAction } from '../../lib/hotkeys';
+  import { parseStoredEvents, EVENTS_KEY } from '../../lib/scanner/scanner-runner';
   import { normalizeSymbol } from '../../lib/market-context';
   import { parseRuntimeMessage } from '../../lib/messages';
   import { fetchNews, type NewsItem } from '../../lib/news';
@@ -254,15 +255,63 @@
     window.addEventListener('pagehide', onPageHide);
     const onVisibility = () => controller.visibilityChanged();
     document.addEventListener('visibilitychange', onVisibility);
-    // Atajos del panel: la misma combinación que en la página cambia la
-    // temporalidad del análisis. Nunca mientras se escribe en un campo.
+    // Atajos del panel: la misma combinación que en la página. La temporalidad
+    // cambia el análisis; el resto son acciones (símbolo, pintado, «Tu dibujo»).
+    // Nunca se disparan mientras se escribe en un campo.
+    const scannerPool = async (): Promise<string[]> => {
+      try {
+        const stored = await browser.storage.local?.get(EVENTS_KEY);
+        return symbolPool([], parseStoredEvents(stored?.[EVENTS_KEY]));
+      } catch {
+        return [];
+      }
+    };
+
+    const runHotkeyAction = (action: HotkeyAction) => {
+      if (action.type === 'timeframe') {
+        timeframe = action.timeframe;
+        inferred = false;
+        return;
+      }
+      if (action.type === 'paint') {
+        applySettings({ ...settings, paintOnChart: !untrack(() => settings.paintOnChart) });
+        return;
+      }
+      if (action.type === 'drawing') {
+        const focus = () => {
+          focusDrawingCard(document);
+        };
+        // La tarjeta vive en «Operación»: si el panel está en otra pestaña,
+        // primero se vuelve a ella y se espera al DOM.
+        if (untrack(() => activeTab) !== 'operacion') {
+          activeTab = 'operacion';
+          void tick().then(focus);
+          return;
+        }
+        focus();
+        return;
+      }
+      // Símbolo: manda la lista del usuario; vacía, la del escáner.
+      const move = (pool: string[]) => {
+        const next = stepSymbol(untrack(() => symbol), pool, action.direction);
+        if (!next) return;
+        symbol = next;
+        draft = next;
+      };
+      const own = untrack(() => settings.symbols);
+      if (own.length > 0) {
+        move(symbolPool(own));
+        return;
+      }
+      void scannerPool().then(move);
+    };
+
     const onHotkey = (event: KeyboardEvent) => {
-      const next = hotkeyTimeframe(event, settings.hotkeyMap, settings.hotkeysEnabled && settingsLoaded);
-      if (!next) return;
+      const action = hotkeyAction(event, settings.hotkeyMap, settings.hotkeysEnabled && settingsLoaded);
+      if (!action) return;
       event.preventDefault();
       event.stopPropagation();
-      timeframe = next;
-      inferred = false;
+      runHotkeyAction(action);
     };
     window.addEventListener('keydown', onHotkey, true);
     return () => {

@@ -11,12 +11,19 @@ import {
   formatCombo,
   hasCommandModifier,
   isReservedCombo,
+  keyFromCode,
   keyLabel,
   normalizeCombo,
   parseCombo,
   type Combo,
 } from './key-combo';
-import { HOTKEY_SLOTS, type HotkeyBinding, type HotkeyMap, type HotkeySlot } from './settings';
+import {
+  HOTKEY_SLOTS,
+  isTimeframeSlot,
+  type HotkeyBinding,
+  type HotkeyMap,
+  type HotkeySlot,
+} from './settings';
 import type { Timeframe } from './types';
 
 export type { Combo } from './key-combo';
@@ -25,12 +32,15 @@ export {
   formatCombo,
   hasCommandModifier,
   isReservedCombo,
+  keyFromCode,
   normalizeCombo,
   parseCombo,
 } from './key-combo';
 
 export interface KeyboardEventLike {
   key: string;
+  /** Posición física de la tecla: manda sobre `key` cuando está. */
+  code?: string;
   ctrlKey?: boolean;
   altKey?: boolean;
   metaKey?: boolean;
@@ -93,10 +103,20 @@ export function isEditableTarget(target: unknown): boolean {
   return false;
 }
 
-/** Combo del evento, si lo tiene; null si le falta modificador o la tecla no se reconoce. */
+/**
+ * Combo del evento, si lo tiene; null si le falta modificador o la tecla no se
+ * reconoce.
+ *
+ * La tecla sale de `event.code` (posición física) para que `Alt+Shift+1`
+ * dispare aunque `event.key` diga `'!'` — que es lo que produce Alt+Shift+1 en
+ * casi cualquier distribución — y para que la misma tecla valga en AZERTY.
+ * `event.key` solo se usa cuando el evento no trae `code` (teclados virtuales,
+ * eventos sintéticos).
+ */
 export function comboFromEvent(event: KeyboardEventLike): Combo | null {
-  if (!event || typeof event.key !== 'string') return null;
-  const key = keyLabel(event.key);
+  if (!event) return null;
+  const fromCode = keyFromCode(event.code);
+  const key = fromCode ?? (typeof event.key === 'string' ? keyLabel(event.key) : null);
   if (!key) return null;
   const combo: Combo = {
     ctrl: event.ctrlKey === true,
@@ -125,11 +145,84 @@ export function matchHotkey(
   const wanted = formatCombo(combo).toLowerCase();
   for (const slot of HOTKEY_SLOTS) {
     const binding = map[slot];
-    if (!binding || binding.timeframe === null) continue;
+    if (!binding || typeof binding.combo !== 'string' || !binding.combo) continue;
     if (binding.combo.toLowerCase() !== wanted) continue;
     return binding;
   }
   return null;
+}
+
+/** Acción que dispara un hueco. Los huecos de temporalidad se guardan aparte. */
+export type HotkeyAction =
+  /** Cambia la temporalidad del análisis. */
+  | { type: 'timeframe'; timeframe: Timeframe }
+  /** Avanza (`1`) o retrocede (`-1`) por la lista de símbolos del usuario. */
+  | { type: 'symbol'; direction: 1 | -1 }
+  /** Enciende o apaga el pintado de niveles en el gráfico. */
+  | { type: 'paint' }
+  /** Lleva el foco a la tarjeta «Tu dibujo». */
+  | { type: 'drawing' };
+
+/** Acción de un hueco, o null si el hueco no tiene atajo utilizable. */
+export function actionOfSlot(slot: HotkeySlot, binding: HotkeyBinding | undefined): HotkeyAction | null {
+  if (!binding) return null;
+  if (isTimeframeSlot(slot)) {
+    return binding.timeframe ? { type: 'timeframe', timeframe: binding.timeframe } : null;
+  }
+  switch (slot) {
+    case 'next-symbol':
+      return { type: 'symbol', direction: 1 };
+    case 'prev-symbol':
+      return { type: 'symbol', direction: -1 };
+    case 'toggle-paint':
+      return { type: 'paint' };
+    case 'focus-drawing':
+      return { type: 'drawing' };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Acción que dispara el evento, o null. Es el despacho puro de los atajos:
+ * mismo combo -> misma acción, sin tocar el DOM ni los ajustes.
+ */
+export function hotkeyAction(
+  event: KeyboardEventLike,
+  map: HotkeyMap,
+  enabled: boolean,
+): HotkeyAction | null {
+  if (!enabled) return null;
+  if (isEditableTarget(event.target)) return null;
+  const combo = comboFromEvent(event);
+  if (!combo) return null;
+  const wanted = formatCombo(combo).toLowerCase();
+  for (const slot of HOTKEY_SLOTS) {
+    const binding = map[slot];
+    if (!binding || typeof binding.combo !== 'string' || !binding.combo) continue;
+    if (binding.combo.toLowerCase() !== wanted) continue;
+    return actionOfSlot(slot, binding);
+  }
+  return null;
+}
+
+/** Resultado de editar un atajo: el combo canónico a guardar y su problema. */
+export interface ComboEdit {
+  /** Forma canónica (`Alt+Shift+A`); vacío si el texto era inválido. */
+  combo: string;
+  problem: ComboProblem | null;
+}
+
+/**
+ * Valida y canonicaliza lo que el usuario escribe en el editor de atajos.
+ * Acepta `shift+alt+a`, `Shift + Alt + A` y `Alt+Shift+A`, y siempre devuelve
+ * la forma canónica que se guarda y con la que se compara al escuchar: si se
+ * guardara el texto tal cual, `shift+alt+a` nunca dispararía `Alt+Shift+A`.
+ */
+export function editCombo(input: unknown, bindings: HotkeyMap, slot: HotkeySlot): ComboEdit {
+  const problem = comboProblem(input, bindings, slot);
+  if (problem) return { combo: '', problem };
+  return { combo: normalizeCombo(input) ?? '', problem: null };
 }
 
 /** Temporalidad del atajo que dispara el evento, o null. */
@@ -138,7 +231,76 @@ export function hotkeyTimeframe(
   map: HotkeyMap,
   enabled: boolean,
 ): Timeframe | null {
-  return matchHotkey(event, map, enabled)?.timeframe ?? null;
+  const action = hotkeyAction(event, map, enabled);
+  return action?.type === 'timeframe' ? action.timeframe : null;
+}
+
+/** Un evento del escáner, con lo mínimo para sacar símbolos. */
+export interface ScanSymbolEvent {
+  symbol?: unknown;
+  symbols?: unknown;
+}
+
+/**
+ * Lista de símbolos por la que avanzan los atajos: la del usuario si la puso
+ * (Ajustes > Símbolos) y, si está vacía, la del escáner (las señales que ya
+ * vio). Sin duplicados y en el orden recibido.
+ */
+export function symbolPool(
+  settingsSymbols: readonly string[],
+  scannerEvents: readonly ScanSymbolEvent[] = [],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: unknown) => {
+    const symbol = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    if (!symbol || symbol === 'MARKET' || seen.has(symbol)) return;
+    seen.add(symbol);
+    out.push(symbol);
+  };
+  for (const symbol of settingsSymbols) push(symbol);
+  for (const event of scannerEvents) {
+    push(event?.symbol);
+    if (Array.isArray(event?.symbols)) for (const symbol of event.symbols) push(symbol);
+  }
+  return out;
+}
+
+/**
+ * Siguiente símbolo del pool, circular. `current` fuera del pool arranca por el
+ * primero (`direction: 1`) o por el último (`-1`). Null si el pool está vacío.
+ */
+export function stepSymbol(
+  current: string,
+  pool: readonly string[],
+  direction: 1 | -1,
+): string | null {
+  if (pool.length === 0) return null;
+  const symbol = typeof current === 'string' ? current.trim().toUpperCase() : '';
+  const index = pool.findIndex((candidate) => candidate.toUpperCase() === symbol);
+  if (index === -1) return direction === 1 ? pool[0]! : pool[pool.length - 1]!;
+  const next = (index + direction + pool.length) % pool.length;
+  return pool[next]!;
+}
+
+/** Selector de la tarjeta «Tu dibujo» en el panel. */
+export const DRAWING_CARD_SELECTOR = '[data-testid="drawing-card"]';
+
+/** Lleva el foco a «Tu dibujo» y la deja a la vista. Null si no está montada. */
+export function focusDrawingCard(doc: Document): Element | null {
+  try {
+    const card = doc.querySelector(DRAWING_CARD_SELECTOR);
+    if (!card) return null;
+    card.scrollIntoView?.({ block: 'start' });
+    const focusable = card as Element & { focus?: () => void; tabIndex?: number };
+    if (typeof focusable.focus === 'function') {
+      focusable.tabIndex = -1;
+      focusable.focus();
+    }
+    return card;
+  } catch {
+    return null;
+  }
 }
 
 export function showTimeframeToast(doc: Document, timeframe: string): HTMLElement | null {
