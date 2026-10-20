@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   SWAL_HELLO,
   buildHello,
@@ -10,8 +10,11 @@ import {
   withinShapeBudget,
   DrawRateLimit,
   establishLink,
-  BRIDGE_LINK_WAIT_MS,
-  CONTENT_LINK_WAIT_MS,
+  LINK_ACK_WAIT_MS,
+  LINK_TAG,
+  LINK_RENDEZVOUS_EVENT,
+  LINK_PROTOCOL_VERSION,
+  type BridgeChannel,
 } from './handshake';
 
 describe('Handshake logic', () => {
@@ -52,158 +55,231 @@ describe('Handshake logic', () => {
 });
 
 describe('establishLink', () => {
+  const open: BridgeChannel[] = [];
+
   beforeEach(() => {
     document.documentElement.innerHTML = '';
     vi.useFakeTimers();
+    open.length = 0;
   });
 
-  it('links when MAIN is first and ISOLATED is second', async () => {
-    const mainPromise = establishLink('bridge');
+  afterEach(() => {
+    while (open.length > 0) open.pop()?.disconnect();
+    vi.useRealTimers();
+  });
 
-    // MAIN creates the element
-    const linkEl = document.documentElement.querySelector('swal-link');
-    expect(linkEl).not.toBeNull();
+  async function linked(): Promise<[BridgeChannel, BridgeChannel]> {
+    const bridgePromise = establishLink('bridge');
+    const contentPromise = establishLink('content');
+    const [bridge, content] = await Promise.all([bridgePromise, contentPromise]);
+    open.push(bridge, content);
+    return [bridge, content];
+  }
 
-    const isolatedPromise = establishLink('content');
+  it('links with the bridge waiting passively and leaves no node in the DOM', async () => {
+    const bridgePromise = establishLink('bridge');
 
-    // ISOLATED should detach the element
-    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+    // Mientras espera no hay punto de encuentro expuesto.
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
 
-    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
-    expect(mainChannel).toBeDefined();
-    expect(isolatedChannel).toBeDefined();
+    const [bridge, content] = await Promise.all([bridgePromise, establishLink('content')]);
+    open.push(bridge, content);
 
-    // Verify communication
-    let received: any = null;
-    isolatedChannel.onMessage((msg) => { received = msg; });
-    mainChannel.send({ type: 'test' });
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
 
+    let received: unknown = null;
+    content.onMessage((msg) => { received = msg; });
+    bridge.send({ type: 'test' });
     expect(received).toEqual({ type: 'test' });
   });
 
-  it('links when ISOLATED is first and MAIN is second', async () => {
-    const isolatedPromise = establishLink('content');
+  it('el puente aguanta la llegada tardía del aislado (50 s) y enlaza igual', async () => {
+    const bridgePromise = establishLink('bridge');
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
 
-    // ISOLATED creates the element
-    const linkEl = document.documentElement.querySelector('swal-link');
-    expect(linkEl).not.toBeNull();
+    // Cincuenta segundos de hueco (document_idle tardío): no hay plazo ni nodo.
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
 
-    const mainPromise = establishLink('bridge');
+    const [bridge, content] = await Promise.all([bridgePromise, establishLink('content')]);
+    open.push(bridge, content);
 
-    // MAIN should detach the element
-    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
 
-    const [isolatedChannel, mainChannel] = await Promise.all([isolatedPromise, mainPromise]);
-    expect(mainChannel).toBeDefined();
-    expect(isolatedChannel).toBeDefined();
-
-    // Verify communication
-    let received: any = null;
-    mainChannel.onMessage((msg) => { received = msg; });
-    isolatedChannel.send({ type: 'test' });
-
-    expect(received).toEqual({ type: 'test' });
-  });
-
-  it('rejects on timeout if second script never runs', async () => {
-    const promise = establishLink('bridge', 100);
-
-    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
-
-    vi.advanceTimersByTime(150);
-
-    await expect(promise).rejects.toThrow('Link timeout');
-    // Element should be cleaned up
-    expect(document.documentElement.querySelector('swal-link')).toBeNull();
-  });
-
-  it('page script cannot eavesdrop or forge messages', async () => {
-    const mainPromise = establishLink('bridge');
-    const isolatedPromise = establishLink('content');
-
-    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
-
-    let eavesdropped: any = null;
-    window.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
-    document.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
-
-    let receivedByIsolated: any = null;
-    isolatedChannel.onMessage((msg) => { receivedByIsolated = msg; });
-
-    mainChannel.send({ secret: true });
-
-    expect(receivedByIsolated).toEqual({ secret: true });
-    // Page script should not see the event since it's on a detached node
-    expect(eavesdropped).toBeNull();
-
-    // Page script forging a message
-    document.dispatchEvent(new CustomEvent('swal:to-bridge', { detail: JSON.stringify({ forged: true }) }));
-
-    expect(receivedByIsolated).toEqual({ secret: true }); // Still just the secret, forged didn't arrive
-  });
-
-  it('a side never receives its own send', async () => {
-    const mainPromise = establishLink('bridge');
-    const isolatedPromise = establishLink('content');
-
-    const [bridgeChannel, contentChannel] = await Promise.all([mainPromise, isolatedPromise]);
-
-    let bridgeReceived: any = null;
-    bridgeChannel.onMessage((msg) => { bridgeReceived = msg; });
-
-    bridgeChannel.send({ echo: true });
-
-    expect(bridgeReceived).toBeNull(); // Shouldn't receive its own message
-  });
-
-  // Regresión (pintado en Binance): el puente vive en `document_start` y el
-  // content script aislado en `document_idle`. El hueco entre ambos es el
-  // tiempo que tarda la página en estar lista, no milisegundos: medido en vivo
-  // con red móvil lenta, de 9 s a 30 s. Con el tope de 3 s el puente se rendía,
-  // borraba el `<swal-link>` y el aislado llegaba a un punto de encuentro vacío:
-  // sin canal, `paint()` no mandaba nada y el panel no pintaba (y no lo decía).
-  it('el puente aguanta la llegada tardía del aislado (document_idle) y enlaza', async () => {
-    const mainPromise = establishLink('bridge', BRIDGE_LINK_WAIT_MS);
-    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
-
-    // Treinta segundos de hueco: mucho más que el viejo tope de 3 s.
-    await vi.advanceTimersByTimeAsync(30_000);
-    // Sigue esperando: el punto de encuentro sigue en el DOM.
-    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
-
-    const isolatedPromise = establishLink('content', CONTENT_LINK_WAIT_MS);
-    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
-
-    expect(document.documentElement.querySelector('swal-link')).toBeNull();
-
-    let received: any = null;
-    isolatedChannel.onMessage((msg) => { received = msg; });
-    mainChannel.send(buildHello('sesion-tardia', true));
+    let received: unknown = null;
+    content.onMessage((msg) => { received = msg; });
+    bridge.send(buildHello('sesion-tardia', true));
     expect(parseHello(received)).toEqual(buildHello('sesion-tardia', true));
   });
 
-  it('la espera del puente cubre el hueco medido y la del aislado es corta', () => {
-    // Si alguien vuelve a bajarlas, el enlace se pierde otra vez en una página
-    // lenta. El hueco real medido llegó a 30 s.
-    expect(BRIDGE_LINK_WAIT_MS).toBeGreaterThanOrEqual(30_000);
-    expect(CONTENT_LINK_WAIT_MS).toBeGreaterThanOrEqual(3_000);
-    expect(CONTENT_LINK_WAIT_MS).toBeLessThan(BRIDGE_LINK_WAIT_MS);
+  it('el nodo solo vive durante el intercambio, no mientras el puente espera', async () => {
+    const bridgePromise = establishLink('bridge');
+    // Nada colgado durante la espera pasiva.
+    expect(document.documentElement.querySelectorAll(LINK_TAG)).toHaveLength(0);
+
+    const contentPromise = establishLink('content');
+    // La campana y la captura ocurren en el mismo turno: al volver de
+    // `establishLink` el nodo ya no está.
+    expect(document.documentElement.querySelectorAll(LINK_TAG)).toHaveLength(0);
+
+    const [bridge, content] = await Promise.all([bridgePromise, contentPromise]);
+    open.push(bridge, content);
   });
 
-  it('los dos entrypoints esperan con esas constantes, no con un tope corto', () => {
+  it('un atacante con una referencia al nodo no puede inyectar (sin nonce)', async () => {
+    // Un script de la página registrado ANTES del puente alcanza a capturar el
+    // nodo en el turno del encuentro. Esa referencia es justo lo que P1
+    // reproducía: antes valía un `swal:clear` y ahora no.
+    let captured: Element | null = null;
+    const eavesdrop = () => {
+      captured = document.documentElement.querySelector(LINK_TAG);
+    };
+    window.addEventListener(LINK_RENDEZVOUS_EVENT, eavesdrop);
+
+    const [bridge, content] = await linked();
+    window.removeEventListener(LINK_RENDEZVOUS_EVENT, eavesdrop);
+
+    expect(captured).not.toBeNull();
+
+    const received: unknown[] = [];
+    bridge.onMessage((msg) => { received.push(msg); });
+
+    // 1) Mensaje sin sobre ni nonce: descartado.
+    (captured as unknown as Element).dispatchEvent(
+      new CustomEvent('swal:to-bridge', { detail: JSON.stringify({ type: 'swal:clear' }) }),
+    );
+    // 2) Sobre con nonce inventado: descartado.
+    (captured as unknown as Element).dispatchEvent(
+      new CustomEvent('swal:to-bridge', {
+        detail: JSON.stringify({ v: LINK_PROTOCOL_VERSION, n: '00'.repeat(16), m: { type: 'swal:clear' } }),
+      }),
+    );
+
+    expect(received).toEqual([]);
+
+    // El canal legítimo sigue funcionando.
+    let legit: unknown = null;
+    content.onMessage((msg) => { legit = msg; });
+    bridge.send({ type: 'swal:hello', session: 's', enabled: true });
+    expect(legit).toEqual({ type: 'swal:hello', session: 's', enabled: true });
+  });
+
+  it('es one-shot: una segunda campana no crea otro canal', async () => {
+    const [bridge, content] = await linked();
+
+    const second = establishLink('content');
+    const secondResult = second.then(
+      () => 'linked',
+      (err: Error) => err.message,
+    );
+
+    await vi.advanceTimersByTimeAsync(LINK_ACK_WAIT_MS + 10);
+    expect(await secondResult).toBe('Link timeout');
+    // El nodo del intento tardío se retiró; no queda ningún canal huérfano.
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
+
+    let received: unknown = null;
+    content.onMessage((msg) => { received = msg; });
+    bridge.send({ ping: true });
+    expect(received).toEqual({ ping: true });
+  });
+
+  it('un evento de enlace tardío tras el cleanup no crea canal', async () => {
+    const pending = establishLink('content');
+    const outcome = pending.then(
+      () => 'linked',
+      (err: Error) => err.message,
+    );
+
+    // Nadie contesta: el aislado se rinde, retira el nodo y limpia listeners.
+    await vi.advanceTimersByTimeAsync(LINK_ACK_WAIT_MS + 10);
+    expect(await outcome).toBe('Link timeout');
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
+
+    // Un `swal:link`/campana a destiempo no resucita nada.
+    window.dispatchEvent(
+      new CustomEvent(LINK_RENDEZVOUS_EVENT, { detail: JSON.stringify({ nonce: 'ab'.repeat(16) }) }),
+    );
+    const late = document.createElement(LINK_TAG);
+    document.documentElement.appendChild(late);
+    late.dispatchEvent(new CustomEvent('swal:link', { detail: JSON.stringify({ nonce: 'ab'.repeat(16) }) }));
+
+    expect(document.documentElement.querySelector(LINK_TAG)).toBe(late); // nadie lo tocó
+    late.remove();
+  });
+
+  it('pagehide cancela un enlace pendiente del aislado', async () => {
+    const pending = establishLink('content');
+    const outcome = pending.then(
+      () => 'linked',
+      (err: Error) => err.message,
+    );
+
+    expect(document.documentElement.querySelector(LINK_TAG)).not.toBeNull();
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(await outcome).toBe('Link cancelled');
+    expect(document.documentElement.querySelector(LINK_TAG)).toBeNull();
+  });
+
+  it('pagehide cancela la espera pasiva del puente', async () => {
+    const pending = establishLink('bridge');
+    const outcome = pending.then(
+      () => 'linked',
+      (err: Error) => err.message,
+    );
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(await outcome).toBe('Link cancelled');
+  });
+
+  it('la espera del aislado está acotada (nodo fuera del DOM pronto)', () => {
+    // El nodo es lo único capturable: si alguien la sube a decenas de segundos,
+    // vuelve la ventana de exposición de P1.
+    expect(LINK_ACK_WAIT_MS).toBeGreaterThan(0);
+    expect(LINK_ACK_WAIT_MS).toBeLessThanOrEqual(2_000);
+  });
+
+  it('los entrypoints llaman sin tope numérico', () => {
     const entrypoints = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../entrypoints');
     const bridge = readFileSync(path.join(entrypoints, 'binance-tv-bridge.content.ts'), 'utf8');
     const content = readFileSync(path.join(entrypoints, 'content.ts'), 'utf8');
-    expect(bridge).toContain("establishLink('bridge', BRIDGE_LINK_WAIT_MS)");
-    expect(content).toContain("establishLink('content', CONTENT_LINK_WAIT_MS)");
+    expect(bridge).toContain("establishLink('bridge')");
+    expect(content).toContain("establishLink('content')");
     expect(bridge).not.toMatch(/establishLink\('bridge',\s*\d/);
     expect(content).not.toMatch(/establishLink\('content',\s*\d/);
   });
 
-  it('si de verdad no aparece nadie, se rinde y libera el punto de encuentro', async () => {
-    const promise = establishLink('bridge', 100);
-    vi.advanceTimersByTime(150);
-    await expect(promise).rejects.toThrow('Link timeout');
-    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+  it('page script cannot eavesdrop on the detached channel or forge on window', async () => {
+    const [bridge, content] = await linked();
+
+    let eavesdropped: Event | null = null;
+    window.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
+    document.addEventListener('swal:to-content', (e) => { eavesdropped = e; });
+
+    let receivedByIsolated: unknown = null;
+    content.onMessage((msg) => { receivedByIsolated = msg; });
+
+    bridge.send({ secret: true });
+
+    expect(receivedByIsolated).toEqual({ secret: true });
+    expect(eavesdropped).toBeNull();
+
+    document.dispatchEvent(new CustomEvent('swal:to-bridge', { detail: JSON.stringify({ forged: true }) }));
+
+    expect(receivedByIsolated).toEqual({ secret: true });
+  });
+
+  it('a side never receives its own send', async () => {
+    const [bridge] = await linked();
+
+    let bridgeReceived: unknown = null;
+    bridge.onMessage((msg) => { bridgeReceived = msg; });
+
+    bridge.send({ echo: true });
+
+    expect(bridgeReceived).toBeNull();
   });
 });
