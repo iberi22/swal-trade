@@ -448,7 +448,7 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
 
     // La temporalidad por defecto se guarda y sobrevive a una recarga.
     await timeframeSelect.selectOption('1h');
-    const symbolInput = settings.locator('input[type="text"]');
+    const symbolInput = settings.getByPlaceholder('BTC, ETH');
     await symbolInput.fill('ETH');
     await symbolInput.blur();
 
