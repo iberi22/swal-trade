@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   SWAL_HELLO,
@@ -6,7 +9,9 @@ import {
   parseHello,
   withinShapeBudget,
   DrawRateLimit,
-  establishLink
+  establishLink,
+  BRIDGE_LINK_WAIT_MS,
+  CONTENT_LINK_WAIT_MS,
 } from './handshake';
 
 describe('Handshake logic', () => {
@@ -149,5 +154,56 @@ describe('establishLink', () => {
     bridgeChannel.send({ echo: true });
 
     expect(bridgeReceived).toBeNull(); // Shouldn't receive its own message
+  });
+
+  // Regresión (pintado en Binance): el puente vive en `document_start` y el
+  // content script aislado en `document_idle`. El hueco entre ambos es el
+  // tiempo que tarda la página en estar lista, no milisegundos: medido en vivo
+  // con red móvil lenta, de 9 s a 30 s. Con el tope de 3 s el puente se rendía,
+  // borraba el `<swal-link>` y el aislado llegaba a un punto de encuentro vacío:
+  // sin canal, `paint()` no mandaba nada y el panel no pintaba (y no lo decía).
+  it('el puente aguanta la llegada tardía del aislado (document_idle) y enlaza', async () => {
+    const mainPromise = establishLink('bridge', BRIDGE_LINK_WAIT_MS);
+    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
+
+    // Treinta segundos de hueco: mucho más que el viejo tope de 3 s.
+    await vi.advanceTimersByTimeAsync(30_000);
+    // Sigue esperando: el punto de encuentro sigue en el DOM.
+    expect(document.documentElement.querySelector('swal-link')).not.toBeNull();
+
+    const isolatedPromise = establishLink('content', CONTENT_LINK_WAIT_MS);
+    const [mainChannel, isolatedChannel] = await Promise.all([mainPromise, isolatedPromise]);
+
+    expect(document.documentElement.querySelector('swal-link')).toBeNull();
+
+    let received: any = null;
+    isolatedChannel.onMessage((msg) => { received = msg; });
+    mainChannel.send(buildHello('sesion-tardia', true));
+    expect(parseHello(received)).toEqual(buildHello('sesion-tardia', true));
+  });
+
+  it('la espera del puente cubre el hueco medido y la del aislado es corta', () => {
+    // Si alguien vuelve a bajarlas, el enlace se pierde otra vez en una página
+    // lenta. El hueco real medido llegó a 30 s.
+    expect(BRIDGE_LINK_WAIT_MS).toBeGreaterThanOrEqual(30_000);
+    expect(CONTENT_LINK_WAIT_MS).toBeGreaterThanOrEqual(3_000);
+    expect(CONTENT_LINK_WAIT_MS).toBeLessThan(BRIDGE_LINK_WAIT_MS);
+  });
+
+  it('los dos entrypoints esperan con esas constantes, no con un tope corto', () => {
+    const entrypoints = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../entrypoints');
+    const bridge = readFileSync(path.join(entrypoints, 'binance-tv-bridge.content.ts'), 'utf8');
+    const content = readFileSync(path.join(entrypoints, 'content.ts'), 'utf8');
+    expect(bridge).toContain("establishLink('bridge', BRIDGE_LINK_WAIT_MS)");
+    expect(content).toContain("establishLink('content', CONTENT_LINK_WAIT_MS)");
+    expect(bridge).not.toMatch(/establishLink\('bridge',\s*\d/);
+    expect(content).not.toMatch(/establishLink\('content',\s*\d/);
+  });
+
+  it('si de verdad no aparece nadie, se rinde y libera el punto de encuentro', async () => {
+    const promise = establishLink('bridge', 100);
+    vi.advanceTimersByTime(150);
+    await expect(promise).rejects.toThrow('Link timeout');
+    expect(document.documentElement.querySelector('swal-link')).toBeNull();
   });
 });

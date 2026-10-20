@@ -8,7 +8,7 @@ import {
 } from '../lib/page-probe';
 import { buildClearMessage, buildDrawMessage, buildSetReadMessage, buildSetResolutionMessage, coerceShapes, isBridgeResolution, parseBridgeMessage, SWAL_POSITION_TOOLS } from '../lib/tv-bridge/schema';
 import { TV_SET_RESOLUTION, TV_SWITCH_TAB } from '../lib/tv-paint-send';
-import { buildHello, createSession, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
+import { buildHello, createSession, establishLink, CONTENT_LINK_WAIT_MS, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 import { SETTINGS_KEY, settingsFromStorage } from '../lib/settings';
@@ -402,7 +402,7 @@ export default defineContentScript({
     }
 
     if (PAINTABLE_URL.test(location.href)) {
-      linkPromise = establishLink('content', 3000)
+      linkPromise = establishLink('content', CONTENT_LINK_WAIT_MS)
         .then((ch) => {
           channel = ch;
           channel.onMessage((data: unknown) => {

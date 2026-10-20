@@ -29,7 +29,7 @@ import {
   parseBridgeMessage,
   type BridgeMessage,
 } from '../lib/tv-bridge/schema';
-import { parseHello, withinShapeBudget, DrawRateLimit, establishLink, type BridgeChannel } from '../lib/tv-bridge/handshake';
+import { parseHello, withinShapeBudget, DrawRateLimit, establishLink, BRIDGE_LINK_WAIT_MS, type BridgeChannel } from '../lib/tv-bridge/handshake';
 import { ChartSession, type BridgeReport } from '../lib/tv-bridge/tv-session';
 import { chartFromWindow, findChartWindow } from '../lib/tv-bridge/tv-chart';
 import { createBridgeMessageHandler } from '../lib/tv-bridge/message-handler';
@@ -146,8 +146,11 @@ export default defineContentScript({
       },
     );
 
-    // Establecer la comunicación síncrona
-    establishLink('bridge', 3000)
+    // Establecer la comunicación síncrona. El puente llega en `document_start`
+    // y el aislado en `document_idle`: la espera tiene que cubrir ese hueco
+    // (medido hasta 30 s en Binance con red móvil lenta). Rendirse antes deja
+    // la página sin canal y el panel sin pintar.
+    establishLink('bridge', BRIDGE_LINK_WAIT_MS)
       .then((ch) => {
         channel = ch;
         channel.onMessage((data: unknown) => handler(data));

@@ -52,12 +52,39 @@ export interface BridgeChannel {
 }
 
 /**
+ * Cuánto espera el puente a que aparezca el content script aislado.
+ *
+ * El puente arranca en `document_start` y el aislado en `document_idle`, así que
+ * el primero llega siempre antes. El hueco entre los dos NO es de milisegundos:
+ * es el tiempo que tarda la página en llegar a `document_idle`. Medido en vivo
+ * contra Binance con red móvil lenta: 9 s, 12 s, 24 s y hasta 30 s. Con el
+ * antiguo tope de 3 s el puente se rendía, borraba el punto de encuentro y el
+ * content script (que llegaba después) esperaba a un puente que ya no existía:
+ * el canal se perdía, `paint` se quedaba sin puerto y el panel no pintaba nada
+ * (ni siquiera decía por qué). Este tope solo acota la espera; el encuentro
+ * sigue siendo el mismo nodo `<swal-link>` desvinculado.
+ */
+export const BRIDGE_LINK_WAIT_MS = 60_000;
+/**
+ * Cuánto espera el content script aislado. Cuando llega, el puente lleva rato
+ * esperando: enlace inmediato. El margen sirve para el orden inverso (el puente
+ * aparece después, p. ej. al recargar la extensión con la página abierta).
+ */
+export const CONTENT_LINK_WAIT_MS = 10_000;
+
+/**
  * Establece el canal de comunicación síncrono por el DOM.
  * Crea un elemento `<swal-link>` en `document.documentElement` y lo escucha.
- * El primero que llega lo crea. El segundo lo encuentra, lo saca del DOM,
- * y usa ese nodo desvinculado (detached) como bus de eventos.
+ * El primero que llega lo crea y espera hasta `timeoutMs`. El segundo lo
+ * encuentra, lo saca del DOM, y usa ese nodo desvinculado (detached) como bus
+ * de eventos. El que espera debe aguantar más que el retraso del otro lado: si
+ * se rinde antes de que el segundo llegue, no hay canal (ver
+ * `BRIDGE_LINK_WAIT_MS`).
  */
-export function establishLink(role: 'bridge' | 'content', timeoutMs = 3000): Promise<BridgeChannel> {
+export function establishLink(
+  role: 'bridge' | 'content',
+  timeoutMs: number = BRIDGE_LINK_WAIT_MS,
+): Promise<BridgeChannel> {
   return new Promise((resolve, reject) => {
     const TAG = 'SWAL-LINK';
     const INBOUND = role === 'bridge' ? 'swal:to-bridge' : 'swal:to-content';
@@ -74,7 +101,7 @@ export function establishLink(role: 'bridge' | 'content', timeoutMs = 3000): Pro
       el.dispatchEvent(new CustomEvent('swal:link'));
       resolve(channel);
     } else {
-      // Somos los primeros. Lo creamos.
+      // Somos los primeros. Lo creamos y esperamos.
       el = document.createElement(TAG);
       document.documentElement.appendChild(el);
 
