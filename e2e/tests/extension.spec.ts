@@ -1480,6 +1480,110 @@ test('operación: sin clave usa la posición leída de la página y la marca com
   }
 });
 
+test('operación: el saldo de la página en USDC se usa como capital con un par USDC', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // Lo que el content script deja tras leer la caja de cuenta: 71,9636 USDC.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                balance: {
+                  asset: 'USDC',
+                  marginBalance: 71.9636,
+                  walletBalance: 72.4075,
+                  available: 70.83,
+                  unrealizedPnl: -0.4439,
+                  maintenanceMargin: 0.9782,
+                  marginMode: 'cross',
+                },
+                positions: [],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    // Un par que cotiza en USDC: el saldo de la página es del mismo activo.
+    const symbolInput = page.getByRole('textbox', { name: 'Símbolo', exact: true });
+    await symbolInput.fill('BTCUSDC');
+    await symbolInput.press('Enter');
+    await expect(page.getByTestId('sizing-card')).toBeVisible();
+
+    const pageButton = page.getByTestId('capital-source-page');
+    await expect(pageButton).toBeVisible();
+    await pageButton.click();
+    await expect(pageButton).toHaveAttribute('aria-pressed', 'true');
+
+    const line = page.getByTestId('capital-page-line');
+    await expect(line).toContainText('saldo de la página: 71,96 USDC');
+    await expect(line).toContainText('capital 71,96 USDC');
+    // Nada de respaldo manual: hay dato de la página que sirve.
+    await expect(page.getByTestId('capital-fallback-note')).toHaveCount(0);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operación: un saldo en otra moneda no se ofrece como capital', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    // La página dice USDT; el par cotiza en USDC: no puede usarse ese saldo.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                balance: { asset: 'USDT', marginBalance: 71.9636, walletBalance: 72.4075 },
+                positions: [],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    const symbolInput = page.getByRole('textbox', { name: 'Símbolo', exact: true });
+    await symbolInput.fill('BTCUSDC');
+    await symbolInput.press('Enter');
+    await expect(page.getByTestId('sizing-card')).toBeVisible();
+    await expect(page.getByTestId('capital-source-page')).toHaveCount(0);
+    await expect(page.getByTestId('capital-source-manual')).toHaveAttribute('aria-pressed', 'true');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 test('mis trades: lee la posición de la página y avisa de que no hay evidencia', async () => {
   const panel = await openSidePanel();
   try {
