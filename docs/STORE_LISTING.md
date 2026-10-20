@@ -166,7 +166,7 @@ Regenerar: `cd apps/extension && npm run icons` (`rsvg-convert` o ImageMagick).
 
 ## Capturas
 
-Las cinco son PNG 1280×800, RGB sin canal alfa, del panel real con datos mockeados (la misma serie determinista que `e2e/tests/extension.spec.ts`).
+Las cinco son PNG 1280×800, RGB sin canal alfa, del panel real con datos mockeados (la misma serie determinista que `e2e/tests/helpers/panel.ts`).
 
 | Archivo | Qué enseña |
 |---|---|
