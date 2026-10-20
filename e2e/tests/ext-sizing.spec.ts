@@ -326,3 +326,132 @@ test('operación: un saldo en otra moneda no se ofrece como capital', async () =
     await panel.close();
   }
 });
+
+test('sizing: fee-inclusive loss never above the budget and quantities truncated', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+
+    const sizingCard = page.getByTestId('sizing-card');
+    await expect(sizingCard).toBeVisible();
+    await sizingCard.getByLabel('Capital de la cuenta', { exact: true }).fill('1100');
+
+    await expect(page.getByTestId('trade-cards')).toBeVisible();
+    await page.getByTestId('trade-card').first().click();
+
+    const ticket = page.getByTestId('trade-ticket');
+    await expect(ticket).toBeVisible();
+
+    const lossText = await ticket.locator('dt:has-text("Pérdida en stop") + dd').innerText();
+    const lossMatch = lossText.match(/([\d,]+)\s+USD/);
+    expect(lossMatch).toBeTruthy();
+    const lossVal = parseFloat((lossMatch?.[1] ?? '0').replace(',', '.'));
+    expect(lossVal).toBeLessThanOrEqual(11);
+
+    const entryText = await ticket.locator('dt:has-text("Entrada") + dd').first().innerText();
+    const qtyMatch = entryText.match(/cant\.\s+([0-9.]+)/);
+    expect(qtyMatch).toBeTruthy();
+
+    const qtyVal = qtyMatch?.[1] ?? '0';
+    expect(qtyVal).toBe('5.555');
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('sizing: wrong-side stop never pre-filled', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const card = page.getByTestId('sizing-card');
+
+    await expect(card.getByText('invalida hallazgo')).toBeVisible();
+    await expect(card.getByLabel('Stop loss', { exact: true })).not.toHaveValue('');
+
+    await card.getByLabel('Stop loss', { exact: true }).fill('');
+    await page.getByRole('button', { name: 'Corto' }).click();
+
+    await expect(card.getByLabel('Stop loss', { exact: true })).toHaveValue('');
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('sizing: margin cards keep their exact quantity when loaded', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+
+    const cardFold = page.getByTestId('trade-card').first();
+    await cardFold.click();
+    const loadBtn = page.getByTestId('trade-load');
+    await expect(loadBtn).toBeVisible();
+
+    const ticketStr = await page.getByTestId('trade-ticket').innerText();
+    const match = ticketStr.match(/cant\.\s+([0-9,.]+)/);
+    const qtyStrRaw = match ? match[1] : '';
+    expect(qtyStrRaw).toBeTruthy();
+    const qtyStr = qtyStrRaw.replace('.', ',');
+
+    await loadBtn.click();
+
+    const sizingResults = page.getByTestId('sizing-results');
+    await expect(sizingResults).toContainText(qtyStr);
+    await expect(page.getByTestId('sizing-from-card')).toBeVisible();
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operación: el saldo de la página muestra cuando es un dato viejo (más de 60 s)', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                balance: { asset: 'USDC', marginBalance: 71.9636, walletBalance: 72.4075 },
+                positions: [],
+                capturedAt: Date.now() - 65000,
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+
+    const symbolInput = page.getByRole('textbox', { name: 'Símbolo', exact: true });
+    await symbolInput.fill('BTCUSDC');
+    await symbolInput.press('Enter');
+
+    const pageButton = page.getByTestId('capital-source-page');
+    await pageButton.click();
+
+    const line = page.getByTestId('capital-page-line');
+    await expect(line).toContainText('dato viejo');
+    await expect(line).toHaveClass(/stale/);
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
