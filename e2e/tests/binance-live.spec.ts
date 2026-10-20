@@ -230,7 +230,7 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
     }
   });
 
-  test('atajo F3 en el frame del gráfico cambia la resolución a 15', async () => {
+  test('atajo Alt+Shift+3 en el frame del gráfico cambia la resolución a 15', async () => {
     const userData = await mkdtemp(path.join(tmpdir(), 'swal-binance-live-'));
     const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
     const context = await chromium.launchPersistentContext(userData, {
@@ -247,10 +247,10 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
       await openFuturesPage(page);
       const tvFrame = page.frames().find((f) => f.url().includes('tradingview')) ?? page.mainFrame();
       if ((await chartResolution(page)) === '15') {
-        await tvFrame.locator('body').press('F1');
+        await tvFrame.locator('body').press('Alt+Shift+Digit1');
         await expect.poll(() => chartResolution(page), { timeout: 30_000, intervals: [1_000] }).toBe('1');
       }
-      await tvFrame.locator('body').press('F3');
+      await tvFrame.locator('body').press('Alt+Shift+Digit3');
       await expect.poll(() => chartResolution(page), { timeout: 30_000, intervals: [1_000] }).toBe('15');
       await page.screenshot({ path: path.join(repoRoot, 'e2e/test-results/binance-tv-f3-resolution.png') });
     } finally {

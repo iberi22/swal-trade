@@ -414,3 +414,12 @@ describe('focusDrawingCard', () => {
     expect(focusDrawingCard(empty.document as unknown as Document)).toBeNull();
   });
 });
+
+describe('eventos sintéticos de la página', () => {
+  it('un KeyboardEvent fabricado por un script (isTrusted=false) no cuenta como atajo', async () => {
+    const { isSyntheticKeyEvent } = await import('./hotkeys');
+    expect(isSyntheticKeyEvent({ isTrusted: false })).toBe(true);
+    expect(isSyntheticKeyEvent({ isTrusted: true })).toBe(false);
+    expect(isSyntheticKeyEvent({})).toBe(false);
+  });
+});

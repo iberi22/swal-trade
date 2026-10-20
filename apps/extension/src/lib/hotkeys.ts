@@ -441,3 +441,8 @@ export function showTimeframeToast(doc: Document, timeframe: string): HTMLElemen
     return null;
   }
 }
+
+/** true si el evento lo fabricó un script (isTrusted === false): no dispara atajos. */
+export function isSyntheticKeyEvent(event: { isTrusted?: boolean } | null | undefined): boolean {
+  return !!event && event.isTrusted === false;
+}

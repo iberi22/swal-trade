@@ -12,7 +12,7 @@ import { buildHello, createSession, establishLink, type BridgeChannel } from '..
 import { probeTvChart } from '../lib/tv-chart-state';
 import { PAINTABLE_URL, TV_PAINT, TV_POSITION_TOOLS, TV_STATE, type PaintCommand, type TvChartState } from '../lib/tv-paint';
 import { SETTINGS_KEY, settingsFromStorage, type ExtensionSettings } from '../lib/settings';
-import { hotkeyAction, showTimeframeToast } from '../lib/hotkeys';
+import { hotkeyAction, showTimeframeToast, isSyntheticKeyEvent } from '../lib/hotkeys';
 import { pageHotkeyMessage } from '../lib/messages';
 import { getActiveChartTab, switchChartTab } from '../lib/binance-chart-tabs';
 import { readPageAccount } from '../lib/page-account/content-reader';
@@ -280,6 +280,9 @@ export default defineContentScript({
     let hotkeySettings: ExtensionSettings | null = null;
 
     const onPageKeyDown = (event: KeyboardEvent) => {
+      // Solo teclas reales: un script de la página puede despachar KeyboardEvent
+      // sintéticos (isTrusted=false) y no debe poder cambiar par, pintado ni temporalidad.
+      if (isSyntheticKeyEvent(event)) return;
       const current = hotkeySettings;
       if (!current) return;
       const action = hotkeyAction(event, current.hotkeyMap, current.hotkeysEnabled);
