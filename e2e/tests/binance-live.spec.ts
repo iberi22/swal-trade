@@ -77,11 +77,8 @@ function tradingViewShown(page: import('@playwright/test').Page): Promise<boolea
   });
 }
 
-/** Abre la página pública, descarta el banner y cambia a la pestaña indicada (por defecto Trading View). */
-async function openFuturesPage(
-  page: import('playwright/test').Page,
-  tab: 'Trading View' | 'Original' = 'Trading View',
-) {
+/** Carga la página pública, descarta el banner y pulsa la pestaña pedida. */
+async function loadAndSelectTab(page: import('playwright/test').Page, label: string) {
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page.waitForTimeout(9_000);
   // Único clic permitido sobre la página: el banner de cookies.
@@ -97,16 +94,35 @@ async function openFuturesPage(
     }
   }
   await page.waitForTimeout(2_000);
-  const tabPattern = tab === 'Original' ? 'Original' : 'Trading\\s*View';
-  await page.evaluate((pattern) => {
-    const matches = [...document.querySelectorAll('div,span,a,button,li')].filter(
-      (element) =>
-        element.childElementCount <= 2 &&
-        new RegExp(`^\\s*${pattern}\\s*$`, 'i').test(element.textContent ?? '') &&
-        element.offsetParent !== null,
-    );
-    matches[matches.length - 1]?.click();
-  }, tabPattern);
+  // Clic por texto exacto: el heurístico de "último elemento visible" dejó de
+  // acertar con el DOM actual de Binance.
+  await page.getByText(label, { exact: true }).first().click({ timeout: 15_000 });
+}
+
+/**
+ * Abre la página pública, descarta el banner y cambia a la pestaña indicada
+ * (por defecto Trading View).
+ *
+ * La página pública a veces sirve un documento en blanco y sólo se recupera al
+ * recargar. Reintentar la carga acotada evita leer esa caída del sitio como un
+ * fallo de pintado; ninguna aserción del test se relaja por ello.
+ */
+async function openFuturesPage(
+  page: import('playwright/test').Page,
+  tab: 'Trading View' | 'Original' = 'Trading View',
+) {
+  const label = tab === 'Original' ? 'Original' : 'Trading View';
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await loadAndSelectTab(page, label);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
   if (tab === 'Original') return;
   // El iframe tarda en montar el chart y en tener rango visible.
   await expect
@@ -164,8 +180,8 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
       const panel = await context.newPage();
       await panel.goto(`chrome-extension://${extensionId}/${sidePath}`);
 
-      const settings = panel.locator('details.settings');
-      await settings.locator('summary').click();
+      // Los ajustes viven en la pestaña «Ajustes» del panel.
+      await panel.getByRole('tab', { name: 'Ajustes' }).click();
       const toggle = panel.getByRole('checkbox', {
         name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
       });
@@ -279,8 +295,8 @@ test.describe('Binance, pestaña Trading View (en vivo, opcional)', () => {
 
       const panel = await context.newPage();
       await panel.goto(`chrome-extension://${extensionId}/${sidePath}`);
-      const settings = panel.locator('details.settings');
-      await settings.locator('summary').click();
+      // Los ajustes viven en la pestaña «Ajustes» del panel.
+      await panel.getByRole('tab', { name: 'Ajustes' }).click();
       const toggle = panel.getByRole('checkbox', {
         name: 'Pintar en el gráfico de Binance (pestaña Trading View)',
       });

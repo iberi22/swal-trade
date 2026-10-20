@@ -402,7 +402,7 @@ export default defineContentScript({
     }
 
     if (PAINTABLE_URL.test(location.href)) {
-      linkPromise = establishLink('content', 3000)
+      linkPromise = establishLink('content')
         .then((ch) => {
           channel = ch;
           channel.onMessage((data: unknown) => {

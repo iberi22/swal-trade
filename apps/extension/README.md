@@ -152,6 +152,11 @@ aparecen y que desaparecen al apagarlo. Las velas van mockeadas
 
 La API del gráfico está en el mundo de la página (`MAIN`). Nuestro puente tiene que vivir ahí, pero un content script `MAIN` comparte ventana con cualquier script de la página (incluyendo anuncios o tag managers), lo que abría la puerta a que otro script fabricara un mensaje de dibujo y pintara en el gráfico del usuario inventando análisis.
 
-Para solucionarlo, los dos scripts (el aislado y el puente) establecen un canal privado síncrono en la fase `document_start` (antes de que la página ejecute nada). El script que corre primero inserta un elemento marcador en el DOM (`<swal-link>`). El segundo script lo encuentra, lo retira del DOM inmediatamente (quedando como un nodo desvinculado/detached) y emite un evento `swal:link` sobre él para avisar al primero.
+El reparto de papeles es asimétrico y el punto de encuentro existe solo durante el intercambio:
 
-A partir de ahí, ambos se comunican disparando y escuchando eventos sobre este nodo desvinculado. El puente ignora por completo los mensajes de la ventana y atiende solo los mensajes que lleguen por ese nodo. Un script de la página no puede interceptar ni falsificar estos mensajes porque no puede ejecutarse antes de `document_start` ni obtener una referencia al elemento desvinculado. La autenticidad la da la tenencia exclusiva del nodo, no una clave o un nonce en el mensaje.
+- El **puente** (MAIN, `document_start`) espera de forma **pasiva**: no crea ni cuelga nada en el DOM, solo registra un listener de la campana `swal:rendezvous`. Puede esperar sin plazo porque no expone nada que retirar.
+- El **content script aislado** (`document_idle`) inicia el encuentro cuando arranca: genera un nonce con `crypto.getRandomValues`, cuelga `<swal-link>`, lanza la campana y el puente lo desvincula y contesta en el mismo turno síncrono. Al volver de `dispatchEvent` el nodo ya no está en el DOM y no vuelve.
+
+A partir de ahí, ambos se comunican disparando y escuchando eventos sobre ese nodo desvinculado, con un sobre `{ v, n, m }` por mensaje donde `n` es el nonce del enlace: un evento sin el nonce correcto se descarta. El enlace es **one-shot** (una segunda campana no crea canal) y `pagehide` cancela tanto una espera pendiente como el canal establecido.
+
+El nonce no convierte el mundo MAIN en un secreto: un script de la página que ya estuviera escuchando la campana puede leer el `detail` del encuentro. Lo que elimina es la ventana de exposición larga (el nodo vivía hasta 60 s esperando al aislado en una red lenta) y la inyección tardía con referencias obsoletas a ese nodo.
