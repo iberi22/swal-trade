@@ -4,6 +4,7 @@ import {
   calculatePositionSizeWithFees,
   defaultScaleEntries,
   floorLossUsdForDisplay,
+  floorToDecimals,
   floorToStep,
   formatQuantityPlain,
   planScaleIn,
@@ -250,9 +251,12 @@ function build(input: BuildTicketInput): TicketResult {
   const feeUsd = roundToDecimals(entryFeeUsd + exitFeeUsd, 2);
   // La pérdida se enseña recortada hacia abajo: redondearla al céntimo más
   // cercano podía mostrar más de lo que realmente cuesta el stop.
-  const lossAtStopUsd = floorLossUsdForDisplay(priceLoss + entryFeeUsd + exitFeeUsd);
+  const exactLossUsd = priceLoss + entryFeeUsd + exitFeeUsd;
+  const lossAtStopUsd = floorLossUsdForDisplay(exactLossUsd);
   const lossIncludesFees = true;
-  const lossPct = roundToDecimals((lossAtStopUsd / capital) * 100, 2);
+  // Las reglas usan la pérdida EXACTA (sin recortar); la pantalla, la recortada.
+  const exactLossPct = (exactLossUsd / capital) * 100;
+  const lossPct = floorToDecimals(exactLossPct, 2);
   const notionalUsd = roundToDecimals(notionalRaw, 2);
   const marginUsd = roundToDecimals(notionalRaw / leverage, 2);
   const weightsOut = entries.map((e) => ({ ...e, weightPct: Math.round(((e.qty * e.price) / notionalRaw) * 100) }));
@@ -281,7 +285,8 @@ function build(input: BuildTicketInput): TicketResult {
   tps.splice(MAX_TPS);
 
   /* Avisos (texto llano, sin lenguaje de compra/venta). */
-  if (lossPct > rules.maxRiskPct + 0.005) {
+  // Solo se perdona el ruido de la coma flotante (relativo ~1e-12), nunca un exceso real.
+  if (exactLossPct > rules.maxRiskPct * (1 + 1e-12)) {
     warnings.push(warn('risk_above_rule', `supera tu regla de riesgo (${fmt(rules.maxRiskPct)} %)`));
   }
   if (leverage > rules.maxLeverage) {
@@ -333,7 +338,7 @@ function build(input: BuildTicketInput): TicketResult {
     lossAtStopUsd,
     lossIncludesFees,
     lossAtStopPctOfCapital: lossPct,
-    highRisk: lossPct > 2,
+    highRisk: exactLossPct > 2,
     feeUsd,
     fees: {
       makerRate: MAKER_FEE_RATE,

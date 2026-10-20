@@ -34,7 +34,8 @@ describe('buildTicket sizing', () => {
     expect(t.lossAtStopUsd).toBe(9.99);
     expect(t.lossAtStopUsd).toBeLessThanOrEqual(10);
     expect(t.lossIncludesFees).toBe(true);
-    expect(t.lossAtStopPctOfCapital).toBe(1);
+    // Recortado, nunca al alza: 9,99 USD de 1.000 es 0,999 % y se enseña 0,99.
+    expect(t.lossAtStopPctOfCapital).toBe(0.99);
     expect(t.notionalUsd).toBe(909.5);
     expect(t.leverage).toBe(1);
     expect(t.marginUsd).toBe(909.5);
