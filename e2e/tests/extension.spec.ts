@@ -494,6 +494,67 @@ test('settings persist to storage.local and gate the symbol and timeframe', asyn
   }
 });
 
+test('hotkeys: the edited combo and timeframe survive a reload, and browser shortcuts are refused', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await openTab(page, 'Ajustes');
+    // Los controles se habilitan cuando storage.local ha respondido.
+    await expect(page.locator('section.settings select').first()).toBeEnabled();
+
+    const combo = page.getByTestId('hotkey-combo-1');
+    const slotTimeframe = page.getByLabel('Temporalidad del atajo 1');
+    await combo.fill('shift+alt+a');
+    await combo.blur();
+    await slotTimeframe.selectOption('4h');
+
+    const readSettings = () =>
+      page.evaluate(
+        () =>
+          new Promise<{ settings?: { hotkeyMap?: Record<string, { combo?: string; timeframe?: string | null }> } }>(
+            (resolve) => {
+              const api = (
+                window as unknown as {
+                  chrome: { storage: { local: { get(k: string, cb: (v: unknown) => void): void } } };
+                }
+              ).chrome;
+              api.storage.local.get('settings', (value) => resolve(value as never));
+            },
+          ),
+      );
+
+    // Se guarda la forma canónica, no el texto tecleado.
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.combo).toBe('Alt+Shift+A');
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.timeframe).toBe('4h');
+    await expect(combo).toHaveValue('Alt+Shift+A');
+
+    // Ctrl+D es del navegador: se rechaza y el campo vuelve a lo guardado.
+    await combo.fill('ctrl+d');
+    await combo.blur();
+    await expect(page.getByTestId('hotkey-note')).toContainText('atajo del navegador');
+    await expect(combo).toHaveValue('Alt+Shift+A');
+    await expect.poll(async () => (await readSettings()).settings?.hotkeyMap?.['1']?.combo).toBe('Alt+Shift+A');
+
+    // Recarga de verdad: antes de este arreglo el editor leía otra clave y los
+    // atajos volvían a los valores por defecto.
+    await page.reload();
+    await openTab(page, 'Ajustes');
+    await expect(page.getByTestId('hotkey-combo-1')).toHaveValue('Alt+Shift+A');
+    await expect(page.getByLabel('Temporalidad del atajo 1')).toHaveValue('4h');
+
+    // Las acciones nuevas viven en la misma sección con sus defaults.
+    await expect(page.getByTestId('hotkey-combo-next-symbol')).toHaveValue('Alt+Shift+ArrowRight');
+    await expect(page.getByTestId('hotkey-combo-prev-symbol')).toHaveValue('Alt+Shift+ArrowLeft');
+    await expect(page.getByTestId('hotkey-combo-toggle-paint')).toHaveValue('Alt+Shift+L');
+    await expect(page.getByTestId('hotkey-combo-focus-drawing')).toHaveValue('Alt+Shift+D');
+    await expect(page.getByTestId('hotkey-action-focus-drawing')).toContainText('Tu dibujo');
+
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
 test('explain card: opt-in gate, mocked AI answer, and local fallback on 429', async () => {
   const panel = await openSidePanel();
   try {
