@@ -1,7 +1,7 @@
 // Mensajes de la lectura de página (fase 2): el content script manda lo que ya
 // se ve en la página de Binance y el background lo guarda en local. Aquí no hay
 // secretos, pero tampoco se confía en nada: cada fila se valida campo a campo y
-// los topes son duros (50 posiciones, 500 filas por aviso, 2000 guardadas).
+// los topes son duros (50 posiciones, 500 filas por aviso, 5000 guardadas).
 
 import type { HistoryMetrics } from './metrics';
 import type { ClosedPosition } from './parse-history';
@@ -21,13 +21,15 @@ export const PAGE_ACCOUNT_DIAGNOSE_RESULT = 'page-account:diagnose:result' as co
 
 /** Clave de `storage.session` con las posiciones abiertas de la página. */
 export const PAGE_ACCOUNT_SESSION_KEY = 'pageAccount.positions';
+/** Clave de `storage.session` con el instante de la última fusión del historial. */
+export const PAGE_ACCOUNT_SYNCED_KEY = 'pageAccount.syncedAt';
 
 /** Tope de posiciones abiertas por aviso. */
 export const PAGE_POSITIONS_MAX = 50;
 /** Tope de filas de historial por aviso. */
 export const PAGE_HISTORY_MAX = 500;
 /** Tope de filas de historial guardadas en total. */
-export const PAGE_HISTORY_KEEP = 2000;
+export const PAGE_HISTORY_KEEP = 5000;
 /** Tope de caracteres del diagnóstico copiable. */
 export const PAGE_DIAGNOSE_MAX_CHARS = 80_000;
 
@@ -49,6 +51,8 @@ export interface PageAccountResult {
   balance: PageBalance | null;
   positions: PagePosition[];
   capturedAt: number | null;
+  /** Instante en que el background fusionó el historial por última vez. */
+  syncedAt: number | null;
   history: ClosedPosition[];
   metrics: HistoryMetrics;
 }
@@ -280,6 +284,7 @@ export function parsePageAccountResult(raw: unknown): PageAccountResult | null {
     balance: parsePageBalance(raw.balance),
     positions,
     capturedAt: captured,
+    syncedAt: finitePositive(raw.syncedAt),
     history,
     // Las métricas se recalculan aquí: el background no manda números de confianza.
     metrics: historyMetrics(history),

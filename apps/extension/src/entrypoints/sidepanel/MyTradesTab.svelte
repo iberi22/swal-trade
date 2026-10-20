@@ -3,7 +3,7 @@
   import { aiErrorText } from '../../lib/account/analysis-view';
   import { pageHistoryAiPayload, pageHistoryAiText } from '../../lib/page-account/ai-payload';
   import { pageHistoryFilename, pageHistoryToCsv } from '../../lib/page-account/export';
-  import { pageHistoryTime } from '../../lib/page-account/page-history';
+  import { pageHistoryTime, pageSyncLabel } from '../../lib/page-account/page-history';
   import { pageStaleLabel } from '../../lib/page-account/page-position';
   import {
     parsePageAccountResult,
@@ -113,6 +113,7 @@
   const metrics = $derived(state?.metrics ?? null);
   const capturedAt = $derived(state?.capturedAt ?? null);
   const stale = $derived(pageStaleLabel(capturedAt, nowMs));
+  const synced = $derived(pageSyncLabel(state?.syncedAt ?? null, nowMs));
   const symbols = $derived(historySymbols(history));
   const filtered = $derived(filterHistory(history, { symbol: filterSymbol, side: filterSide }));
   const newestFirst = $derived(
@@ -332,6 +333,9 @@
     {#if stale}
       <p class="hint" data-testid="mytrades-stale">{stale}</p>
     {/if}
+    {#if synced}
+      <p class="hint" data-testid="mytrades-synced">{synced}</p>
+    {/if}
 
     <h3>Posiciones abiertas</h3>
     <ul class="rows" data-testid="mytrades-positions">
@@ -343,6 +347,13 @@
         {/each}
       {/if}
     </ul>
+    {#if positions.length > 0}
+      <p class="hint" data-testid="mytrades-positions-count">
+        {positions.length}
+        {positions.length === 1 ? 'posición leída' : 'posiciones leídas'} · desliza la lista en
+        Binance para cargar más
+      </p>
+    {/if}
 
     <h3>Historial de posiciones</h3>
     {#if history.length === 0}

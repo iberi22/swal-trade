@@ -8,6 +8,20 @@
 import type { ClosedPosition } from './parse-history';
 import { PAGE_HISTORY_KEEP } from './messages';
 
+/** «última sincronización hace X» a partir del instante de la última fusión. */
+export function pageSyncLabel(syncedAtMs: number | null | undefined, nowMs: number): string | null {
+  if (typeof syncedAtMs !== 'number' || !Number.isFinite(syncedAtMs)) return null;
+  if (!Number.isFinite(nowMs)) return null;
+  const seconds = Math.max(0, Math.floor((nowMs - syncedAtMs) / 1000));
+  if (seconds < 60) return `última sincronización hace ${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `última sincronización hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `última sincronización hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `última sincronización hace ${days} ${days === 1 ? 'día' : 'días'}`;
+}
+
 /** Instante de la fila: el cierre manda; si falta, la apertura. */
 export function pageHistoryTime(row: ClosedPosition): number {
   if (typeof row.closedAtMs === 'number' && Number.isFinite(row.closedAtMs)) return row.closedAtMs;

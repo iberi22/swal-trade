@@ -89,6 +89,36 @@ describe('findOpenPositionsRegion', () => {
   });
 });
 
+/** Una tarjeta de historial con la forma que publica Binance. */
+function historyCard(symbol: string): string {
+  return `
+      <div class="card" data-symbol="${symbol}">
+        <div><span>${symbol}</span><span>Perp.</span><span>20x</span><span>Cruzado Short</span><span>Cerrado</span></div>
+        <div><span>10/18/2026 23:45:54 Abierto</span><span>|</span><span>10/19/2026 10:21:28 Cerrado</span></div>
+        <div><span>PnL realizado (USDC)</span><span>+1.01 USDC</span></div>
+        <div><span>ROI</span><span>+9.25%</span></div>
+        <div><span>Precio de entrada</span><span>82,644.1</span></div>
+        <div><span>Precio de cierre prom.</span><span>82,330.0</span></div>
+      </div>`;
+}
+
+const TWELVE = Array.from({ length: 12 }, (_, i) => `COIN${i}USDC`);
+
+/** Doce tarjetas en una sola lista. */
+function twelveCardPage(): string {
+  return `<html><body><div id="app"><div id="history">${TWELVE.map(historyCard).join('')}</div></div></body></html>`;
+}
+
+/** Doce tarjetas repartidas en dos contenedores (por fecha / lista virtual). */
+function splitHistoryPage(): string {
+  return `<html><body><div id="app">
+    <div id="history-split">
+      <div id="hist-a">${TWELVE.slice(0, 6).map(historyCard).join('')}</div>
+      <div id="hist-b">${TWELVE.slice(6).map(historyCard).join('')}</div>
+    </div>
+  </div></body></html>`;
+}
+
 describe('findHistoryRegion', () => {
   it('coge el contenedor con todas las tarjetas, no la primera', () => {
     const region = findHistoryRegion(page());
@@ -99,6 +129,41 @@ describe('findHistoryRegion', () => {
   it('sin la pestaña de historial devuelve null', () => {
     const html = '<html><body><div><span>Posiciones</span><span>Sin historial</span></div></body></html>';
     expect(findHistoryRegion(page(html))).toBeNull();
+  });
+
+  it('con doce tarjetas devuelve la lista entera y se leen las doce', () => {
+    const region = findHistoryRegion(page(twelveCardPage()));
+    const id = (region as { getAttribute?: (n: string) => string | null }).getAttribute?.('id');
+    expect(id).toBe('history');
+    const result = readPageAccount(page(twelveCardPage()), { tzOffsetMinutes: 0 });
+    expect(result.history).toHaveLength(12);
+    expect(result.history.map((row) => row.symbol).sort()).toEqual([...TWELVE].sort());
+  });
+
+  it('con las tarjetas en dos contenedores devuelve su ancestro común, no el primero', () => {
+    const region = findHistoryRegion(page(splitHistoryPage()));
+    const id = (region as { getAttribute?: (n: string) => string | null }).getAttribute?.('id');
+    expect(id).toBe('history-split');
+    const result = readPageAccount(page(splitHistoryPage()), { tzOffsetMinutes: 0 });
+    // Si la región fuera el primer contenedor solo se leerían seis.
+    expect(result.history).toHaveLength(12);
+  });
+
+  it('una sola tarjeta se devuelve tal cual', () => {
+    const html = `<html><body><div id="only">${historyCard('SOLUSDC')}</div></body></html>`;
+    const region = findHistoryRegion(page(html));
+    const symbol = (region as { getAttribute?: (n: string) => string | null }).getAttribute?.('data-symbol');
+    expect(symbol).toBe('SOLUSDC');
+  });
+
+  it('el tope de elementos por defecto cubre una página grande', () => {
+    // 8000 nodos de ruido antes del historial: con el tope viejo (6000) no se
+    // llegaba y la región salía null.
+    const noise = `<div id="noise">${Array.from({ length: 4000 }, (_, i) => `<span>n${i}</span>`).join('')}</div>`;
+    const html = `<html><body><div id="app">${noise}<div id="history">${TWELVE.map(historyCard).join('')}</div></div></body></html>`;
+    const region = findHistoryRegion(page(html));
+    const id = (region as { getAttribute?: (n: string) => string | null }).getAttribute?.('id');
+    expect(id).toBe('history');
   });
 });
 

@@ -22,11 +22,17 @@ export interface RegionSource {
 }
 
 export interface RegionOptions {
-  /** Tope de elementos inspeccionados (por defecto 6000). */
+  /** Tope de elementos inspeccionados (por defecto 20000). */
   maxElements?: number;
 }
 
-const DEFAULT_MAX_ELEMENTS = 6000;
+/**
+ * La página de futuros de Binance monta miles de nodos (gráfico, libros,
+ * tablas). Con 6000 el recorrido se quedaba antes de la caja de cuenta y del
+ * historial, que viven al final del documento. 20000 cubre la página real sin
+ * volver el escaneo caro: cada elemento se visita una sola vez.
+ */
+const DEFAULT_MAX_ELEMENTS = 20_000;
 const MAX_TEXT_FOR_LABEL = 120;
 
 const HEADER_KEYS: readonly LabelKey[] = [
@@ -124,6 +130,10 @@ interface HistoryInfo {
   size: number;
   hasOpen: boolean;
   hasClosed: boolean;
+  /** Es una tarjeta por sí mismo (tiene las etiquetas y las dos fechas). */
+  isCard: boolean;
+  /** Cuántas tarjetas minimales hay en su subárbol, contando él mismo. */
+  cards: number;
 }
 
 function ownHistoryInfo(el: DomNodeLike): { hit: boolean; hasOpen: boolean; hasClosed: boolean } {
@@ -138,10 +148,28 @@ function ownHistoryInfo(el: DomNodeLike): { hit: boolean; hasOpen: boolean; hasC
   };
 }
 
+/** Cadena de padres de un elemento, de él mismo hacia arriba. */
+function ancestorChain(el: DomNodeLike): DomNodeLike[] {
+  const chain: DomNodeLike[] = [];
+  let current: DomNodeLike | null | undefined = el;
+  let guard = 0;
+  while (current && guard++ < 512) {
+    chain.push(current);
+    current = (current as DomElementLike).parentElement ?? null;
+  }
+  return chain;
+}
+
 /**
- * Región de las tarjetas de «Historial de posiciones»: el contenedor más
- * pequeño que reúne al menos tres etiquetas de valores del historial y las dos
- * marcas de fecha («Abierto» y «Cerrado»). Null si esa pestaña no está abierta.
+ * Región de las tarjetas de «Historial de posiciones».
+ *
+ * Se localizan las tarjetas MINIMALES (las que cumplen las etiquetas y no
+ * contienen otra tarjeta) y se devuelve su ancestro común más bajo. Así la
+ * región incluye todas las tarjetas aunque Binance las reparta en varios
+ * contenedores (por fecha, por lista virtual) y no solo la primera. Con una
+ * sola tarjeta se devuelve esa tarjeta.
+ *
+ * Null si la pestaña de historial no está abierta.
  */
 export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}): DomNodeLike | null {
   const elements = collectElements(source, opts.maxElements);
@@ -157,7 +185,10 @@ export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}
       size: 1,
       hasOpen: own.hasOpen,
       hasClosed: own.hasClosed,
+      isCard: false,
+      cards: 0,
     };
+    let childCards = 0;
     for (const kid of childElements(el)) {
       const kidInfo = infos.get(kid);
       if (!kidInfo) continue;
@@ -165,37 +196,39 @@ export function findHistoryRegion(source: RegionSource, opts: RegionOptions = {}
       info.size += kidInfo.size;
       info.hasOpen = info.hasOpen || kidInfo.hasOpen;
       info.hasClosed = info.hasClosed || kidInfo.hasClosed;
+      childCards += kidInfo.cards;
     }
+    info.isCard = info.hits >= 3 && info.hasOpen && info.hasClosed && info.size >= 3;
+    info.cards = childCards > 0 ? childCards : info.isCard ? 1 : 0;
     infos.set(el, info);
   }
 
-  const isCard = (info: HistoryInfo): boolean =>
-    info.hits >= 3 && info.hasOpen && info.hasClosed && info.size >= 3;
-
-  const candidates: Array<{ el: DomNodeLike; info: HistoryInfo }> = [];
+  // Tarjetas minimales: cumplen la forma de tarjeta y ninguna de sus
+  // descendientes lo hace.
+  const cards: DomNodeLike[] = [];
   for (const [el, info] of infos) {
-    if (isCard(info)) candidates.push({ el, info });
+    if (!info.isCard) continue;
+    let childIsCard = false;
+    for (const kid of childElements(el)) {
+      const kidInfo = infos.get(kid);
+      if (kidInfo && kidInfo.cards > 0) {
+        childIsCard = true;
+        break;
+      }
+    }
+    if (!childIsCard) cards.push(el);
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.info.size - b.info.size);
+  if (cards.length === 0) return null;
+  if (cards.length === 1) return cards[0]!;
 
-  // Una sola tarjeta también cumple los mínimos. Se sube mientras el padre
-  // sea una lista de tarjetas (dos o más hijos que ya son tarjeta): así se coge
-  // el contenedor con todas ellas y no la primera.
-  let current = candidates[0]!;
-  for (;;) {
-    const parent = (current.el as DomElementLike).parentElement;
-    if (!parent) break;
-    const parentInfo = infos.get(parent);
-    if (!parentInfo || !isCard(parentInfo)) break;
-    const cards = childElements(parent).filter((kid) => {
-      const info = infos.get(kid);
-      return info ? isCard(info) : false;
-    }).length;
-    if (cards < 2) break;
-    current = { el: parent, info: parentInfo };
+  // Ancestro común más bajo: se cruzan las cadenas de padres de todas las
+  // tarjetas y se queda el primero que aparece en todas.
+  const [first, ...rest] = cards;
+  const restChains = rest.map((card) => new Set(ancestorChain(card)));
+  for (const candidate of ancestorChain(first!)) {
+    if (restChains.every((chain) => chain.has(candidate))) return candidate;
   }
-  return current.el;
+  return cards[0]!;
 }
 
 /**
