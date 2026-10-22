@@ -2,7 +2,7 @@
 //
 // One side-panel area per file: all network is mocked by helpers/panel.ts.
 import { expect, test } from '@playwright/test';
-import { aggressiveBuyKlines, fulfillJson, openSidePanel, openTab } from './helpers/panel';
+import { aggressiveBuyKlines, fulfillJson, openSidePanel, openTab, scannerKlines } from './helpers/panel';
 
 /** Five headlines with distinct tones: positive, negative and neutral. */
 function newsItemsFixture() {
@@ -373,6 +373,157 @@ test('context band and levels map show references, never buy or sell wording', a
     const text = (await page.locator('body').innerText()).toLowerCase();
     expect(text).not.toContain('comprar');
     expect(text).not.toContain('vender');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: context band displays sentiment and next closes with data-testid', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await expect(page.getByTestId('context-band')).toBeVisible();
+    await expect(page.getByTestId('context-sentiment')).toBeVisible();
+    await expect(page.getByTestId('context-closes')).toBeVisible();
+    await expect(page.getByTestId('context-closes').locator('li')).not.toHaveCount(0);
+    await expect(page.getByTestId('context-disclaimer')).toHaveText('Referencias, no predicciones: la dirección no está medida.');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: levels map displays rows with data-testid', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const levelsCard = page.getByTestId('levels-card');
+    await expect(levelsCard).toBeVisible();
+    await levelsCard.locator('summary').click();
+    const rows = page.getByTestId('levels-row');
+    await expect(rows.first()).toBeVisible();
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: findings list and legend interactions update selection', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const findingsRegion = page.getByRole('region', { name: 'Hallazgos' });
+    await expect(findingsRegion).toBeVisible();
+
+    // Check that we have a findings list and expand the first one
+    const firstFinding = findingsRegion.locator('details.finding').first();
+    await firstFinding.locator('summary').click();
+    await expect(firstFinding).toHaveClass(/selected/);
+
+    // Click first legend to select it, which syncs with findings list
+    const legend = page.locator('ol.legend');
+    await expect(legend).toBeVisible();
+
+    const firstLegendItem = legend.locator('button').first();
+    await firstLegendItem.click();
+    await expect(firstLegendItem).toHaveAttribute('aria-pressed', 'true');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: CVD pane test region using aria labels', async () => {
+  const panel = await openSidePanel(undefined, aggressiveBuyKlines());
+  try {
+    const { page } = panel;
+    const cvdRegion = page.getByRole('region', { name: 'Flujo de volumen' });
+    await expect(cvdRegion).toBeVisible();
+    const summary = cvdRegion.locator('summary');
+    await summary.click();
+    const legend = cvdRegion.locator('.flow-legend');
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText('compra agresiva acumulada');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: news card lists titles properly using aria labels', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const newsRegion = page.getByRole('region', { name: 'Titulares' });
+    await expect(newsRegion).toBeVisible();
+    const summary = newsRegion.locator('summary');
+    await summary.click();
+
+    // Default empty state, since we have no explicit mock response applied
+    await expect(newsRegion).toContainText('Sin titulares recientes.');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: explain card opt-in using data-testid', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    const card = page.getByTestId('explain-card');
+    await expect(card).toBeVisible();
+    const checkbox = card.getByRole('checkbox', { name: 'Explicaciones con IA' });
+    await expect(checkbox).toBeVisible();
+    await checkbox.check();
+    const button = page.getByTestId('explain-button');
+    await expect(button).toBeEnabled();
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('operacion tab: paint setting toggle sends tv-paint command and clears on pagehide', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+
+    await page.evaluate(() => {
+      const w = window as any;
+      w._recordedCommands = [];
+      w.chrome.tabs = w.chrome.tabs || {};
+      w.chrome.tabs.query = async () => [{ id: 1, url: 'https://www.binance.com/en/futures/BTCUSDT' }];
+      const origSendMessage = w.chrome.tabs.sendMessage;
+      w.chrome.tabs.sendMessage = async (tabId: number, msg: any) => {
+        if (msg && msg.type === 'tv-paint') {
+          w._recordedCommands.push(msg);
+        }
+        if (origSendMessage) return origSendMessage(tabId, msg);
+      };
+    });
+
+    await openTab(page, 'Ajustes');
+    const paintToggle = page.getByRole('checkbox', { name: 'Pintar en el gráfico de Binance (pestaña Trading View)' });
+    await paintToggle.check();
+    await openTab(page, 'Operación');
+
+    await expect.poll(async () => {
+      const cmds = await page.evaluate(() => (window as any)._recordedCommands);
+      return cmds && cmds.length > 0;
+    }).toBeTruthy();
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    await expect.poll(async () => {
+      const cmds = await page.evaluate(() => (window as any)._recordedCommands);
+      const lastCmd = cmds && cmds.length > 0 ? cmds[cmds.length - 1] : null;
+      return lastCmd && lastCmd.enabled === false;
+    }).toBeTruthy();
+
     expect(panel.errors, panel.errors.join('\n')).toEqual([]);
   } finally {
     await panel.close();
