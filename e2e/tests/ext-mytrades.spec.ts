@@ -236,3 +236,187 @@ test('mis trades: lee la posición de la página y avisa de que no hay evidencia
     await panel.close();
   }
 });
+
+test('diagnostics are disabled when page reading is off', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                positions: [],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
+
+    // Intercept sendMessage to return disabled report
+    await page.evaluate(() => {
+      const api = (window as unknown as { chrome: { runtime: { sendMessage: (...args: unknown[]) => Promise<unknown> } } }).chrome;
+      const original = api.runtime.sendMessage.bind(api.runtime);
+      api.runtime.sendMessage = async (message: unknown, ...args: unknown[]) => {
+        if (message && typeof message === 'object' && (message as { type: string }).type === 'page-account:diagnose') {
+          return { type: 'page-account:diagnose:result', outline: '', disabled: true };
+        }
+        return original(message, ...args);
+      };
+    });
+
+    const diagnoseBtn = page.getByTestId('mytrades-diagnose');
+    await expect(diagnoseBtn).toBeVisible();
+    await diagnoseBtn.click();
+
+    await expect(page.getByTestId('mytrades-note')).toContainText('El diagnóstico lee la página: activa «Leer mis posiciones e historial» en Ajustes');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('history list has working symbol and side filters', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const baseTime = Date.now();
+          const p1 = {
+            key: 'BTCUSDT|' + (baseTime - 1000) + '|' + baseTime,
+            symbol: 'BTCUSDT', side: 'long', closedAtMs: baseTime, openedAtMs: baseTime - 1000,
+            realizedPnl: 10, roiPct: 5, leverage: 10, pnlAsset: 'USDT', status: 'closed',
+            marginMode: 'cross', durationMs: 1000, closeVolume: 1, closeVolumeAsset: 'BTC', entry: 100, avgClose: 110, maxOpenInterest: null
+          };
+          const p2 = {
+            key: 'ETHUSDT|' + (baseTime - 2000) + '|' + (baseTime - 1000),
+            symbol: 'ETHUSDT', side: 'short', closedAtMs: baseTime - 1000, openedAtMs: baseTime - 2000,
+            realizedPnl: -5, roiPct: -2, leverage: 5, pnlAsset: 'USDT', status: 'closed',
+            marginMode: 'cross', durationMs: 1000, closeVolume: 1, closeVolumeAsset: 'ETH', entry: 100, avgClose: 110, maxOpenInterest: null
+          };
+
+          const request = indexedDB.open('swal-page-account', 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains('kv')) {
+              db.createObjectStore('kv');
+            }
+          };
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('kv', 'readwrite');
+            const store = tx.objectStore('kv');
+            store.put(p1, 'pagehist:' + p1.key);
+            store.put(p2, 'pagehist:' + p2.key);
+            tx.oncomplete = () => {
+              const api = (window as unknown as { chrome: { storage: { local: { set(v: unknown, cb: () => void): void } } } }).chrome;
+              api.storage.local.set({ settings: { readPageAccount: true } }, resolve);
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+          request.onerror = () => reject(request.error);
+        }),
+    );
+    await page.reload();
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    await expect(page.getByTestId('mytrades-page-panel')).toBeVisible();
+
+    const rows = page.getByTestId('mytrades-history-row');
+    await expect(rows).toHaveCount(2);
+
+    const filterSymbol = page.getByTestId('mytrades-filter-symbol');
+    await filterSymbol.selectOption('BTCUSDT');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('BTCUSDT');
+
+    await filterSymbol.selectOption(''); // Todos
+    await expect(rows).toHaveCount(2);
+
+    const filterSide = page.getByTestId('mytrades-filter-side');
+    await filterSide.selectOption('short');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('ETHUSDT');
+
+    await filterSide.selectOption('all');
+    await expect(rows).toHaveCount(2);
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
+
+test('clear data button removes the stored positions', async () => {
+  const panel = await openSidePanel();
+  try {
+    const { page } = panel;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const api = (window as unknown as {
+            chrome: {
+              storage: {
+                session: { set(v: unknown, cb: () => void): void };
+                local: { set(v: unknown, cb: () => void): void };
+              };
+            };
+          }).chrome;
+          api.storage.session.set(
+            {
+              'pageAccount.positions': {
+                positions: [
+                  {
+                    symbol: 'BTCUSDC',
+                    contract: 'perp',
+                    leverage: 30,
+                    marginMode: 'cross',
+                    side: 'long',
+                    sizeQuote: null,
+                    sizeBase: 0.004,
+                    uPnl: 2.1,
+                    roiPct: 19,
+                    entry: 82644.1,
+                    breakEven: 82300,
+                    mark: 82500,
+                    liq: 70000,
+                  },
+                ],
+                capturedAt: Date.now(),
+                tzOffsetMinutes: -300,
+              },
+            },
+            () => api.storage.local.set({ settings: { readPageAccount: true } }, resolve),
+          );
+        }),
+    );
+    await page.reload();
+    await page.getByRole('tab', { name: 'Mis trades' }).click();
+    const positions = page.getByTestId('mytrades-positions');
+    await expect(positions).toBeVisible();
+    await expect(positions).toContainText('BTCUSDC');
+
+    await page.getByTestId('mytrades-clear').click();
+
+    await expect(positions).toContainText('Abre la página de futuros de Binance.');
+    await expect(page.getByTestId('mytrades-note')).toContainText('Datos leídos borrados de este navegador.');
+    expect(panel.errors, panel.errors.join('\n')).toEqual([]);
+  } finally {
+    await panel.close();
+  }
+});
