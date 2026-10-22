@@ -8,3 +8,10 @@ target/
 .dev.vars
 __pycache__/
 *.pyc
+
+# Planificación local GitCore y estado de agentes: nunca van al repo público.
+.gitcore/
+.hermes*
+.last_*
+.last-*
+.xavier-settings*
